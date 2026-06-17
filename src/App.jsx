@@ -297,6 +297,7 @@ export default function App() {
   const lastSyncedRef = useRef({});
   const isSyncingFromCloudRef = useRef({});
   const isInitialPullSucceededRef = useRef(false);
+  const [realtimeStatus, setRealtimeStatus] = useState("connecting");
 
   // Keep stateRef updated with the absolute latest values
   useEffect(() => {
@@ -380,6 +381,7 @@ export default function App() {
     if (!client) {
       isInitialPullSucceededRef.current = true; // Permitir uso local si la nube no está configurada
       setIsInitialPullDone(true); // Allow local usage/saves if cloud is not active
+      setRealtimeStatus("disconnected");
       return;
     }
 
@@ -484,7 +486,16 @@ export default function App() {
           }
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        console.log(`[Realtime Sync] Status changed: ${status}`, err || '');
+        if (status === 'SUBSCRIBED') {
+          setRealtimeStatus('connected');
+        } else if (status === 'CLOSED') {
+          setRealtimeStatus('disconnected');
+        } else {
+          setRealtimeStatus('error');
+        }
+      });
 
     return () => {
       client.removeChannel(channel);
@@ -847,6 +858,7 @@ export default function App() {
             setClientes={setClientes}
             vehiculos={vehiculos}
             setVehiculos={setVehiculos}
+            realtimeStatus={realtimeStatus}
           />
         )}
 

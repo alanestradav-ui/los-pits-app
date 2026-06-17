@@ -54,7 +54,8 @@ export default function SettingsComponent({
   clientes = [],
   setClientes,
   vehiculos = [],
-  setVehiculos
+  setVehiculos,
+  realtimeStatus
 }) {
   const [activeTab, setActiveTab] = useState("general");
 
@@ -2181,15 +2182,46 @@ export default function SettingsComponent({
                 <div style={{ display: "flex", alignItems: "center", gap: "10px", margin: "15px 0" }}>
                   <span style={{ fontSize: "0.9rem", fontWeight: "bold" }}>Estado del Enlace:</span>
                   {connectionStatus === "connected" ? (
-                    <span className="badge" style={{ backgroundColor: "rgba(16, 185, 129, 0.15)", color: "#10b981", borderColor: "rgba(16, 185, 129, 0.3)", fontWeight: "800" }}>
-                      🟢 CONECTADO Y SINCRONIZANDO
-                    </span>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+                      <span className="badge" style={{ backgroundColor: "rgba(16, 185, 129, 0.15)", color: "#10b981", borderColor: "rgba(16, 185, 129, 0.3)", fontWeight: "800" }}>
+                        🟢 CREDENCIALES OK
+                      </span>
+                      {realtimeStatus === "connected" ? (
+                        <span className="badge" style={{ backgroundColor: "rgba(59, 130, 246, 0.15)", color: "#3b82f6", borderColor: "rgba(59, 130, 246, 0.3)", fontWeight: "800" }}>
+                          ⚡ TIEMPO REAL ACTIVO
+                        </span>
+                      ) : realtimeStatus === "connecting" ? (
+                        <span className="badge" style={{ backgroundColor: "rgba(245, 158, 11, 0.15)", color: "#f59e0b", borderColor: "rgba(245, 158, 11, 0.3)", fontWeight: "800" }}>
+                          🟡 CONECTANDO TIEMPO REAL...
+                        </span>
+                      ) : (
+                        <span className="badge" style={{ backgroundColor: "rgba(239, 68, 68, 0.15)", color: "#ef4444", borderColor: "rgba(239, 68, 68, 0.3)", fontWeight: "800" }}>
+                          🔴 TIEMPO REAL INACTIVO
+                        </span>
+                      )}
+                    </div>
                   ) : (
                     <span className="badge" style={{ backgroundColor: "rgba(156, 163, 175, 0.15)", color: "#9ca3af", borderColor: "rgba(156, 163, 175, 0.3)", fontWeight: "800" }}>
                       ⚪ SIN CONEXIÓN A LA NUBE
                     </span>
                   )}
                 </div>
+
+                {connectionStatus === "connected" && realtimeStatus !== "connected" && (
+                  <div className="glass-panel" style={{ padding: "15px", marginTop: "15px", border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: "10px", backgroundColor: "rgba(239, 68, 68, 0.03)" }}>
+                    <h5 style={{ color: "#f87171", margin: "0 0 5px 0", fontSize: "0.85rem", fontWeight: "bold" }}>⚠️ Sincronización Automática / Tiempo Real Inactiva</h5>
+                    <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", margin: 0 }}>
+                      La base de datos responde pero el canal de transmisión en vivo (WebSockets) no está enviando actualizaciones automáticas. Esto ocurre porque **no has activado la Replicación en Supabase**.
+                      <br /><br />
+                      <strong>Para solucionarlo en 3 clics:</strong>
+                      <ol style={{ margin: "8px 0 0 20px", padding: 0 }}>
+                        <li>Ve a tu panel de **[Supabase](https://supabase.com)** y abre tu proyecto.</li>
+                        <li>En el menú de la izquierda, entra a **Database** (icono de cilindro) ➔ **Replication**.</li>
+                        <li>Busca la publicación **`supabase_realtime`**, haz clic en **Edit** (o en '0 tables') y activa la tabla **`app_data`** para que quede marcada. Guarda los cambios.</li>
+                      </ol>
+                    </p>
+                  </div>
+                )}
 
                 {connectionStatus === "connected" && (
                   <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "15px", marginTop: "15px" }}>
