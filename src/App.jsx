@@ -26,6 +26,31 @@ const globalSyncFlags = {
   isInitialPullSucceeded: false,
   isInitialPullInProgress: false
 };
+const globalActiveSetters = {
+  usuarios: null,
+  ordenes: null,
+  carwash: null,
+  parkingEntries: null,
+  parkingRate: null,
+  parkingHistory: null,
+  vehiculosVenta: null,
+  workshopInventory: null,
+  cafeteriaInventory: null,
+  cafeteriaSales: null,
+  comisionMecanico: null,
+  dashboardPeriod: null,
+  carwashPresets: null,
+  carwashInventory: null,
+  carwashConsumption: null,
+  tiendaSales: null,
+  cuentasPorCobrar: null,
+  cuentasPorPagar: null,
+  fixedCosts: null,
+  clientes: null,
+  vehiculos: null,
+  setIsInitialPullDone: null,
+  setRealtimeStatus: null
+};
 
 export default function App() {
   // 🔐 USER DEFINITIONS
@@ -305,6 +330,42 @@ export default function App() {
   const stateRef = useRef(null);
   const [realtimeStatus, setRealtimeStatus] = useState("connecting");
 
+  // Register active state setters on every render/mount so async callbacks target the correct instance
+  useEffect(() => {
+    globalActiveSetters.usuarios = setUsuarios;
+    globalActiveSetters.ordenes = setOrdenes;
+    globalActiveSetters.carwash = setCarwash;
+    globalActiveSetters.parkingEntries = setParkingEntries;
+    globalActiveSetters.parkingRate = setParkingRate;
+    globalActiveSetters.parkingHistory = setParkingHistory;
+    globalActiveSetters.vehiculosVenta = setVehiculosVenta;
+    globalActiveSetters.workshopInventory = setWorkshopInventory;
+    globalActiveSetters.cafeteriaInventory = setCafeteriaInventory;
+    globalActiveSetters.cafeteriaSales = setCafeteriaSales;
+    globalActiveSetters.comisionMecanico = setComisionMecanico;
+    globalActiveSetters.dashboardPeriod = setDashboardPeriod;
+    globalActiveSetters.carwashPresets = setCarwashPresets;
+    globalActiveSetters.carwashInventory = setCarwashInventory;
+    globalActiveSetters.carwashConsumption = setCarwashConsumption;
+    globalActiveSetters.tiendaSales = setTiendaSales;
+    globalActiveSetters.cuentasPorCobrar = setCuentasPorCobrar;
+    globalActiveSetters.cuentasPorPagar = setCuentasPorPagar;
+    globalActiveSetters.fixedCosts = setFixedCosts;
+    globalActiveSetters.clientes = setClientes;
+    globalActiveSetters.vehiculos = setVehiculos;
+    globalActiveSetters.setIsInitialPullDone = setIsInitialPullDone;
+    globalActiveSetters.setRealtimeStatus = setRealtimeStatus;
+
+    return () => {
+      // If we are still the active setters, clean up on unmount
+      if (globalActiveSetters.usuarios === setUsuarios) {
+        Object.keys(globalActiveSetters).forEach(key => {
+          globalActiveSetters[key] = null;
+        });
+      }
+    };
+  });
+
   // Keep stateRef updated with the absolute latest values
   useEffect(() => {
     stateRef.current = {
@@ -387,16 +448,20 @@ export default function App() {
     if (!client) {
       globalSyncFlags.isInitialPullSucceeded = true; // Permitir uso local si la nube no está configurada
       globalSyncFlags.isInitialPullDone = true; // Allow local usage/saves if cloud is not active
-      setIsInitialPullDone(true);
-      setRealtimeStatus("disconnected");
+      const activeSetInitialPullDone = globalActiveSetters.setIsInitialPullDone || setIsInitialPullDone;
+      const activeSetRealtimeStatus = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
+      activeSetInitialPullDone(true);
+      activeSetRealtimeStatus("disconnected");
       return;
     }
 
     // If initial pull has already been completed by another mount/instance, skip redundant query
     if (globalSyncFlags.isInitialPullDone) {
-      setIsInitialPullDone(true);
+      const activeSetInitialPullDone = globalActiveSetters.setIsInitialPullDone || setIsInitialPullDone;
+      const activeSetRealtimeStatus = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
+      activeSetInitialPullDone(true);
       if (globalSyncFlags.isInitialPullSucceeded) {
-        setRealtimeStatus("connected");
+        activeSetRealtimeStatus("connected");
       }
       return;
     }
@@ -414,37 +479,13 @@ export default function App() {
         
         globalSyncFlags.isInitialPullSucceeded = true; // Marcar como exitoso
         if (data && data.length > 0) {
-          const setters = {
-            usuarios: setUsuarios,
-            ordenes: setOrdenes,
-            carwash: setCarwash,
-            parkingEntries: setParkingEntries,
-            parkingRate: setParkingRate,
-            parkingHistory: setParkingHistory,
-            vehiculosVenta: setVehiculosVenta,
-            workshopInventory: setWorkshopInventory,
-            cafeteriaInventory: setCafeteriaInventory,
-            cafeteriaSales: setCafeteriaSales,
-            comisionMecanico: setComisionMecanico,
-            dashboardPeriod: setDashboardPeriod,
-            carwashPresets: setCarwashPresets,
-            carwashInventory: setCarwashInventory,
-            carwashConsumption: setCarwashConsumption,
-            tiendaSales: setTiendaSales,
-            cuentasPorCobrar: setCuentasPorCobrar,
-            cuentasPorPagar: setCuentasPorPagar,
-            fixedCosts: setFixedCosts,
-            clientes: setClientes,
-            vehiculos: setVehiculos,
-          };
-
           data.forEach(item => {
-            const setter = setters[item.key];
-            if (setter) {
+            const activeSetter = globalActiveSetters[item.key];
+            if (activeSetter) {
               const valStr = JSON.stringify(item.value);
               globalLastSynced[item.key] = valStr;
               globalIsSyncingFromCloud[item.key] = true;
-              setter(item.value);
+              activeSetter(item.value);
               setLocalStorage(item.key, item.value);
             }
           });
@@ -454,13 +495,19 @@ export default function App() {
       } finally {
         globalSyncFlags.isInitialPullDone = true;
         globalSyncFlags.isInitialPullInProgress = false;
-        setIsInitialPullDone(true);
+        const activeSetInitialPullDone = globalActiveSetters.setIsInitialPullDone || setIsInitialPullDone;
+        activeSetInitialPullDone(true);
       }
     };
 
     pullAllCloudData();
+  }, []);
 
-    // Subscribe to Realtime Postgres changes
+  // Subscribe to Realtime Postgres changes once initial pull is complete
+  useEffect(() => {
+    const client = getSupabaseClient();
+    if (!client || !isInitialPullDone) return;
+
     const channel = client
       .channel('schema-db-changes')
       .on(
@@ -477,54 +524,31 @@ export default function App() {
             return; // No actual change, skip to avoid loop
           }
 
-          const setters = {
-            usuarios: setUsuarios,
-            ordenes: setOrdenes,
-            carwash: setCarwash,
-            parkingEntries: setParkingEntries,
-            parkingRate: setParkingRate,
-            parkingHistory: setParkingHistory,
-            vehiculosVenta: setVehiculosVenta,
-            workshopInventory: setWorkshopInventory,
-            cafeteriaInventory: setCafeteriaInventory,
-            cafeteriaSales: setCafeteriaSales,
-            comisionMecanico: setComisionMecanico,
-            dashboardPeriod: setDashboardPeriod,
-            carwashPresets: setCarwashPresets,
-            carwashInventory: setCarwashInventory,
-            carwashConsumption: setCarwashConsumption,
-            tiendaSales: setTiendaSales,
-            cuentasPorCobrar: setCuentasPorCobrar,
-            cuentasPorPagar: setCuentasPorPagar,
-            fixedCosts: setFixedCosts,
-            clientes: setClientes,
-            vehiculos: setVehiculos,
-          };
-
-          const setter = setters[key];
-          if (setter) {
+          const activeSetter = globalActiveSetters[key];
+          if (activeSetter) {
             globalLastSynced[key] = newValStr;
             globalIsSyncingFromCloud[key] = true;
-            setter(value);
+            activeSetter(value);
             setLocalStorage(key, value);
           }
         }
       )
       .subscribe((status, err) => {
         console.log(`[Realtime Sync] Status changed: ${status}`, err || '');
+        const activeSetRealtimeStatus = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
         if (status === 'SUBSCRIBED') {
-          setRealtimeStatus('connected');
+          activeSetRealtimeStatus('connected');
         } else if (status === 'CLOSED') {
-          setRealtimeStatus('disconnected');
+          activeSetRealtimeStatus('disconnected');
         } else {
-          setRealtimeStatus('error');
+          activeSetRealtimeStatus('error');
         }
       });
 
     return () => {
       client.removeChannel(channel);
     };
-  }, []);
+  }, [isInitialPullDone]);
 
   useEffect(() => {
     setLocalStorage("ordenes", ordenes);
