@@ -909,19 +909,24 @@ export default function SettingsComponent({
               <div>
                 <button 
                   type="button" 
-                  onClick={() => {
+                  onClick={async () => {
                     if (window.confirm("¿Seguro que deseas eliminar todos los registros de prueba? Se borrarán órdenes de taller, lavados, parqueos, ventas de tienda/cafetería, cuentas y vehículos en venta. Esta acción es definitiva.")) {
-                      localStorage.removeItem("ordenes");
-                      localStorage.removeItem("carwash");
-                      localStorage.removeItem("parkingEntries");
-                      localStorage.removeItem("parkingHistory");
-                      localStorage.removeItem("vehiculosVenta");
-                      localStorage.removeItem("cafeteriaSales");
-                      localStorage.removeItem("tiendaSales");
-                      localStorage.removeItem("cuentasPorCobrar");
-                      localStorage.removeItem("cuentasPorPagar");
-                      localStorage.removeItem("clientes");
-                      localStorage.removeItem("vehiculos");
+                      const keysToDelete = [
+                        "ordenes", "carwash", "parkingEntries", "parkingHistory", 
+                        "vehiculosVenta", "cafeteriaSales", "tiendaSales", 
+                        "cuentasPorCobrar", "cuentasPorPagar", "clientes", "vehiculos"
+                      ];
+                      
+                      const client = getSupabaseClient();
+                      if (client) {
+                        try {
+                          await client.from('app_data').delete().in('key', keysToDelete);
+                        } catch (err) {
+                          console.error("Error deleting cloud data:", err);
+                        }
+                      }
+                      
+                      keysToDelete.forEach(key => localStorage.removeItem(key));
                       alert("Datos de prueba eliminados. La aplicación se recargará ahora.");
                       window.location.reload();
                     }
