@@ -18,6 +18,15 @@ import ClientesVehiculos from "./components/ClientesVehiculos";
 import { getLocalStorage, setLocalStorage } from "./utils/storage";
 import { getSupabaseClient, syncKeyToCloud } from "./utils/supabase";
 
+// ☁️ GLOBAL CLOUD SYNC STATE (Saves data across React remounts/Strict Mode)
+const globalLastSynced = {};
+const globalIsSyncingFromCloud = {};
+const globalSyncFlags = {
+  isInitialPullDone: false,
+  isInitialPullSucceeded: false,
+  isInitialPullInProgress: false
+};
+
 export default function App() {
   // 🔐 USER DEFINITIONS
   const [usuarios, setUsuarios] = useState(() => {
@@ -292,11 +301,8 @@ export default function App() {
   }, [usuarioActual]);
 
   // ☁️ CLOUD SYNC ENGINE (Supabase)
-  const [isInitialPullDone, setIsInitialPullDone] = useState(false);
+  const [isInitialPullDone, setIsInitialPullDone] = useState(globalSyncFlags.isInitialPullDone);
   const stateRef = useRef(null);
-  const lastSyncedRef = useRef({});
-  const isSyncingFromCloudRef = useRef({});
-  const isInitialPullSucceededRef = useRef(false);
   const [realtimeStatus, setRealtimeStatus] = useState("connecting");
 
   // Keep stateRef updated with the absolute latest values
@@ -355,23 +361,23 @@ export default function App() {
     const client = getSupabaseClient();
     if (!client) return;
 
-    if (!isInitialPullSucceededRef.current) {
+    if (!globalSyncFlags.isInitialPullSucceeded) {
       console.warn(`[Sync] Sincronización bloqueada para la llave "${key}" porque la descarga inicial de la nube no ha sido completada con éxito en este ciclo de vida.`);
       return;
     }
     
     // Check if this update was triggered by a cloud sync event to prevent feedback loop
-    if (isSyncingFromCloudRef.current[key]) {
-      isSyncingFromCloudRef.current[key] = false;
+    if (globalIsSyncingFromCloud[key]) {
+      globalIsSyncingFromCloud[key] = false;
       return;
     }
     
     const valueStr = JSON.stringify(value);
-    if (lastSyncedRef.current[key] === valueStr) {
+    if (globalLastSynced[key] === valueStr) {
       return; // Already in sync, avoid loops
     }
     
-    lastSyncedRef.current[key] = valueStr;
+    globalLastSynced[key] = valueStr;
     await syncKeyToCloud(key, value);
   };
 
@@ -379,18 +385,34 @@ export default function App() {
   useEffect(() => {
     const client = getSupabaseClient();
     if (!client) {
-      isInitialPullSucceededRef.current = true; // Permitir uso local si la nube no está configurada
-      setIsInitialPullDone(true); // Allow local usage/saves if cloud is not active
+      globalSyncFlags.isInitialPullSucceeded = true; // Permitir uso local si la nube no está configurada
+      globalSyncFlags.isInitialPullDone = true; // Allow local usage/saves if cloud is not active
+      setIsInitialPullDone(true);
       setRealtimeStatus("disconnected");
       return;
     }
+
+    // If initial pull has already been completed by another mount/instance, skip redundant query
+    if (globalSyncFlags.isInitialPullDone) {
+      setIsInitialPullDone(true);
+      if (globalSyncFlags.isInitialPullSucceeded) {
+        setRealtimeStatus("connected");
+      }
+      return;
+    }
+
+    // Prevent concurrent queries from multiple mounts
+    if (globalSyncFlags.isInitialPullInProgress) {
+      return;
+    }
+    globalSyncFlags.isInitialPullInProgress = true;
 
     const pullAllCloudData = async () => {
       try {
         const { data, error } = await client.from('app_data').select('*');
         if (error) throw error;
         
-        isInitialPullSucceededRef.current = true; // Marcar como exitoso
+        globalSyncFlags.isInitialPullSucceeded = true; // Marcar como exitoso
         if (data && data.length > 0) {
           const setters = {
             usuarios: setUsuarios,
@@ -420,8 +442,8 @@ export default function App() {
             const setter = setters[item.key];
             if (setter) {
               const valStr = JSON.stringify(item.value);
-              lastSyncedRef.current[item.key] = valStr;
-              isSyncingFromCloudRef.current[item.key] = true;
+              globalLastSynced[item.key] = valStr;
+              globalIsSyncingFromCloud[item.key] = true;
               setter(item.value);
               setLocalStorage(item.key, item.value);
             }
@@ -430,6 +452,8 @@ export default function App() {
       } catch (err) {
         console.error("Error doing initial sync from cloud:", err);
       } finally {
+        globalSyncFlags.isInitialPullDone = true;
+        globalSyncFlags.isInitialPullInProgress = false;
         setIsInitialPullDone(true);
       }
     };
@@ -479,8 +503,8 @@ export default function App() {
 
           const setter = setters[key];
           if (setter) {
-            lastSyncedRef.current[key] = newValStr;
-            isSyncingFromCloudRef.current[key] = true;
+            globalLastSynced[key] = newValStr;
+            globalIsSyncingFromCloud[key] = true;
             setter(value);
             setLocalStorage(key, value);
           }
