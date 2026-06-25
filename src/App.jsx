@@ -837,7 +837,14 @@ export default function App() {
 
   // Render Login page if not authenticated
   if (!usuarioActual) {
-    return <Login usuarios={usuarios} onLogin={handleLogin} />;
+    return (
+      <Login 
+        usuarios={usuarios} 
+        onLogin={handleLogin} 
+        isInitialPullDone={isInitialPullDone} 
+        realtimeStatus={realtimeStatus} 
+      />
+    );
   }
 
   return (
