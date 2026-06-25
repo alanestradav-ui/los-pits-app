@@ -20,7 +20,6 @@ import { getSupabaseClient, syncKeyToCloud } from "./utils/supabase";
 
 // ☁️ GLOBAL CLOUD SYNC STATE (Saves data across React remounts/Strict Mode)
 const globalLastSynced = {};
-const globalIsSyncingFromCloud = {};
 const globalSyncFlags = {
   isInitialPullDone: false,
   isInitialPullSucceeded: false,
@@ -52,6 +51,72 @@ const globalActiveSetters = {
   setRealtimeStatus: null
 };
 
+const ARRAY_KEYS = [
+  "usuarios",
+  "ordenes",
+  "carwash",
+  "parkingEntries",
+  "parkingHistory",
+  "vehiculosVenta",
+  "workshopInventory",
+  "cafeteriaInventory",
+  "cafeteriaSales",
+  "carwashPresets",
+  "carwashInventory",
+  "carwashConsumption",
+  "tiendaSales",
+  "cuentasPorCobrar",
+  "cuentasPorPagar",
+  "fixedCosts",
+  "clientes",
+  "vehiculos"
+];
+
+// Helper to merge local cached array data with cloud data to prevent silent data wipes on initial connection
+const mergeCollections = (key, localVal, cloudVal) => {
+  const isArrayKey = ARRAY_KEYS.includes(key);
+
+  if (isArrayKey) {
+    const safeLocal = Array.isArray(localVal) ? localVal : [];
+    const safeCloud = Array.isArray(cloudVal) ? cloudVal : [];
+    
+    // Define lookup key based on collection type
+    let identifier = "id";
+    if (key === "clientes") {
+      identifier = "telefono";
+    } else if (key === "vehiculos") {
+      identifier = "placa";
+    } else if (key === "usuarios") {
+      identifier = "user";
+    } else if (key === "carwashPresets") {
+      identifier = "tipo";
+    }
+
+    const map = new Map();
+
+    // Load local items first
+    safeLocal.forEach(item => {
+      if (item && item[identifier] !== undefined && item[identifier] !== null) {
+        const idVal = typeof item[identifier] === "string" ? item[identifier].trim().toLowerCase() : item[identifier];
+        map.set(idVal, item);
+      }
+    });
+
+    // Overwrite/add cloud items
+    safeCloud.forEach(item => {
+      if (item && item[identifier] !== undefined && item[identifier] !== null) {
+        const idVal = typeof item[identifier] === "string" ? item[identifier].trim().toLowerCase() : item[identifier];
+        map.set(idVal, item);
+      }
+    });
+
+    return Array.from(map.values());
+  } else {
+    // For primitives or non-arrays, cloud is the direct source of truth if not null/undefined, otherwise fall back to local
+    return (cloudVal !== null && cloudVal !== undefined) ? cloudVal : localVal;
+  }
+};
+
 export default function App() {
   // 🔐 USER DEFINITIONS
   const [usuarios, setUsuarios] = useState(() => {
@@ -62,7 +127,8 @@ export default function App() {
       { user: "lavador", pass: "1234", rol: "lavador", permissions: ["carwash"], salarioBase: 2000, comisionTaller: 0, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 0 },
       { user: "jefe", pass: "1234", rol: "jefe de taller", permissions: ["dashboard", "taller", "repuestosFaltantes", "historial"], salarioBase: 4000, comisionTaller: 10, comisionCarwash: 0, comisionarLabor: true, comisionarRepuestos: true, comisionarCarwash: false, comisionRepuestos: 5 }
     ];
-    const loaded = getLocalStorage("usuarios", defaultUsers);
+    const val = getLocalStorage("usuarios", defaultUsers);
+    const loaded = Array.isArray(val) ? val : defaultUsers;
     return loaded.map(u => {
       const perms = u.permissions || [];
       const updatedPerms = (u.rol === "admin" || u.rol === "cajero")
@@ -85,10 +151,20 @@ export default function App() {
     });
   });
 
-  const listMecanicos = usuarios.filter(u => u.rol === "mecanico" || u.rol === "jefe de taller").map(u => u.user);
+  const listMecanicos = usuarios
+    .filter(u => {
+      const r = (u.rol || "").trim().toLowerCase();
+      return r === "mecanico" || r === "mecánico" || r === "jefe de taller" || r === "jefe" || r === "admin" || r === "administrador" || r === "administradora";
+    })
+    .map(u => u.user);
   const mecanicos = listMecanicos.length > 0 ? listMecanicos : ["Juan", "Pedro"];
 
-  const listLavadores = usuarios.filter(u => u.rol === "lavador").map(u => u.user);
+  const listLavadores = usuarios
+    .filter(u => {
+      const r = (u.rol || "").trim().toLowerCase();
+      return r === "lavador" || r === "admin" || r === "administrador" || r === "administradora";
+    })
+    .map(u => u.user);
   const lavadores = listLavadores.length > 0 ? listLavadores : ["Luis", "Carlos"];
 
   // 🔑 LOGIN STATES
@@ -191,7 +267,8 @@ export default function App() {
   ];
 
   const [ordenes, setOrdenes] = useState(() => {
-    const raw = getLocalStorage("ordenes", []);
+    const val = getLocalStorage("ordenes", []);
+    const raw = Array.isArray(val) ? val : [];
     return raw.map(o => {
       let migratedEstado = o.estado;
       if (o.estado === "En proceso") migratedEstado = "En proceso de reparación";
@@ -202,7 +279,8 @@ export default function App() {
   });
 
   const [carwash, setCarwash] = useState(() => {
-    const raw = getLocalStorage("carwash", []);
+    const val = getLocalStorage("carwash", []);
+    const raw = Array.isArray(val) ? val : [];
     return raw.map(c => {
       let migratedEstado = c.estado;
       if (c.estado === "Listo") migratedEstado = "Listo para entrega";
@@ -212,7 +290,8 @@ export default function App() {
   });
 
   const [parkingEntries, setParkingEntries] = useState(() => {
-    return getLocalStorage("parkingEntries", []);
+    const val = getLocalStorage("parkingEntries", []);
+    return Array.isArray(val) ? val : [];
   });
 
   const [parkingRate, setParkingRate] = useState(() => {
@@ -220,23 +299,28 @@ export default function App() {
   });
 
   const [parkingHistory, setParkingHistory] = useState(() => {
-    return getLocalStorage("parkingHistory", []);
+    const val = getLocalStorage("parkingHistory", []);
+    return Array.isArray(val) ? val : [];
   });
 
   const [vehiculosVenta, setVehiculosVenta] = useState(() => {
-    return getLocalStorage("vehiculosVenta", []);
+    const val = getLocalStorage("vehiculosVenta", []);
+    return Array.isArray(val) ? val : [];
   });
 
   const [workshopInventory, setWorkshopInventory] = useState(() => {
-    return getLocalStorage("workshopInventory", initialWorkshopInventory);
+    const val = getLocalStorage("workshopInventory", initialWorkshopInventory);
+    return Array.isArray(val) ? val : initialWorkshopInventory;
   });
 
   const [cafeteriaInventory, setCafeteriaInventory] = useState(() => {
-    return getLocalStorage("cafeteriaInventory", initialCafeteriaInventory);
+    const val = getLocalStorage("cafeteriaInventory", initialCafeteriaInventory);
+    return Array.isArray(val) ? val : initialCafeteriaInventory;
   });
 
   const [cafeteriaSales, setCafeteriaSales] = useState(() => {
-    return getLocalStorage("cafeteriaSales", []);
+    const val = getLocalStorage("cafeteriaSales", []);
+    return Array.isArray(val) ? val : [];
   });
 
   const [comisionMecanico, setComisionMecanico] = useState(() => {
@@ -248,45 +332,55 @@ export default function App() {
   });
 
   const [carwashPresets, setCarwashPresets] = useState(() => {
-    return getLocalStorage("carwashPresets", [
+    const defaultPresets = [
       { tipo: "Pequeño", precio: 70, comision: 5 },
       { tipo: "Mediano", precio: 90, comision: 7 },
       { tipo: "Grande", precio: 110, comision: 10 }
-    ]);
+    ];
+    const val = getLocalStorage("carwashPresets", defaultPresets);
+    return Array.isArray(val) ? val : defaultPresets;
   });
 
   const [carwashInventory, setCarwashInventory] = useState(() => {
-    return getLocalStorage("carwashInventory", [
+    const defaultInventory = [
       { id: 1, name: "Shampoo con Cera (Litro)", quantity: 10, purchasePrice: 45.00 },
       { id: 2, name: "Silicona para Llantas (Litro)", quantity: 5, purchasePrice: 60.00 },
       { id: 3, name: "Microfibras", quantity: 20, purchasePrice: 15.00 },
       { id: 4, name: "Aromatizante (Galón)", quantity: 2, purchasePrice: 80.00 }
-    ]);
+    ];
+    const val = getLocalStorage("carwashInventory", defaultInventory);
+    return Array.isArray(val) ? val : defaultInventory;
   });
 
   const [carwashConsumption, setCarwashConsumption] = useState(() => {
-    return getLocalStorage("carwashConsumption", []);
+    const val = getLocalStorage("carwashConsumption", []);
+    return Array.isArray(val) ? val : [];
   });
 
   const [tiendaSales, setTiendaSales] = useState(() => {
-    return getLocalStorage("tiendaSales", []);
+    const val = getLocalStorage("tiendaSales", []);
+    return Array.isArray(val) ? val : [];
   });
 
   const [cuentasPorCobrar, setCuentasPorCobrar] = useState(() => {
-    return getLocalStorage("cuentasPorCobrar", []);
+    const val = getLocalStorage("cuentasPorCobrar", []);
+    return Array.isArray(val) ? val : [];
   });
 
   const [cuentasPorPagar, setCuentasPorPagar] = useState(() => {
-    return getLocalStorage("cuentasPorPagar", []);
+    const val = getLocalStorage("cuentasPorPagar", []);
+    return Array.isArray(val) ? val : [];
   });
 
   const [fixedCosts, setFixedCosts] = useState(() => {
-    return getLocalStorage("fixedCosts", [
+    const defaultFixedCosts = [
       { id: 1, name: "Alquiler del Taller", amount: 3500 },
       { id: 2, name: "Planilla Fija", amount: 6000 },
       { id: 3, name: "Servicios Públicos (Luz y Agua)", amount: 800 },
       { id: 4, name: "Seguro y Conectividad", amount: 500 }
-    ]);
+    ];
+    const val = getLocalStorage("fixedCosts", defaultFixedCosts);
+    return Array.isArray(val) ? val : defaultFixedCosts;
   });
 
   const initialClientes = [
@@ -302,11 +396,13 @@ export default function App() {
   ];
 
   const [clientes, setClientes] = useState(() => {
-    return getLocalStorage("clientes", initialClientes);
+    const val = getLocalStorage("clientes", initialClientes);
+    return Array.isArray(val) ? val : initialClientes;
   });
 
   const [vehiculos, setVehiculos] = useState(() => {
-    return getLocalStorage("vehiculos", initialVehiculos);
+    const val = getLocalStorage("vehiculos", initialVehiculos);
+    return Array.isArray(val) ? val : initialVehiculos;
   });
 
   // 💾 PERSISTENCE EFFECT
@@ -427,12 +523,6 @@ export default function App() {
       return;
     }
     
-    // Check if this update was triggered by a cloud sync event to prevent feedback loop
-    if (globalIsSyncingFromCloud[key]) {
-      globalIsSyncingFromCloud[key] = false;
-      return;
-    }
-    
     const valueStr = JSON.stringify(value);
     if (globalLastSynced[key] === valueStr) {
       return; // Already in sync, avoid loops
@@ -482,11 +572,41 @@ export default function App() {
           data.forEach(item => {
             const activeSetter = globalActiveSetters[item.key];
             if (activeSetter) {
-              const valStr = JSON.stringify(item.value);
-              globalLastSynced[item.key] = valStr;
-              globalIsSyncingFromCloud[item.key] = true;
-              activeSetter(item.value);
-              setLocalStorage(item.key, item.value);
+              const localValue = getLocalStorage(item.key, null);
+              let cloudValue = item.value;
+              if (typeof cloudValue === "string") {
+                try {
+                  cloudValue = JSON.parse(cloudValue);
+                } catch (e) {
+                  console.error("Error parsing cloud value for key " + item.key, e);
+                  cloudValue = null; // Do not use corrupt values
+                }
+              }
+              
+              if (cloudValue === null || cloudValue === undefined) {
+                // If cloud value is invalid, keep local data
+                if (localValue) {
+                  globalLastSynced[item.key] = JSON.stringify(localValue);
+                  activeSetter(localValue);
+                  return;
+                }
+                cloudValue = ARRAY_KEYS.includes(item.key) ? [] : null;
+              }
+              
+              let mergedValue = localValue ? mergeCollections(item.key, localValue, cloudValue) : cloudValue;
+              
+              if (ARRAY_KEYS.includes(item.key) && !Array.isArray(mergedValue)) {
+                if (mergedValue && typeof mergedValue === "object") {
+                  mergedValue = Object.values(mergedValue);
+                } else {
+                  mergedValue = [];
+                }
+              }
+              
+              const mergedValStr = JSON.stringify(mergedValue);
+              globalLastSynced[item.key] = mergedValStr;
+              activeSetter(mergedValue);
+              setLocalStorage(item.key, mergedValue);
             }
           });
         }
@@ -517,19 +637,50 @@ export default function App() {
           if (!payload.new) return;
           const { key, value } = payload.new;
           
-          const localValStr = stateRef.current ? JSON.stringify(stateRef.current[key]) : "";
-          const newValStr = JSON.stringify(value);
+          if (value === null || value === undefined) {
+            console.warn(`[Realtime Sync] Recibido valor nulo o indefinido para la llave "${key}". Se ignora para evitar pérdida de datos locales.`);
+            return;
+          }
+
+          console.log(`[Realtime Sync] Received payload for "${key}":`, {
+            type: typeof value,
+            isArray: Array.isArray(value)
+          });
+
+          let sanitizedValue = value;
+          if (typeof value === "string") {
+            try {
+              sanitizedValue = JSON.parse(value);
+            } catch (e) {
+              console.error("Error parsing realtime value for key " + key, e);
+              return; // Ignorar actualización si el JSON está corrupto/incompleto para evitar vaciar datos
+            }
+          }
           
-          if (localValStr === newValStr) {
+          if (ARRAY_KEYS.includes(key)) {
+            if (!Array.isArray(sanitizedValue)) {
+              if (sanitizedValue && typeof sanitizedValue === "object") {
+                sanitizedValue = Object.values(sanitizedValue);
+                console.log(`[Realtime Sync] Converted object to array for key "${key}":`, sanitizedValue);
+              } else {
+                console.warn(`[Realtime Sync] Se recibió un valor que no es arreglo ni objeto convertible para la llave "${key}". Ignorando para proteger datos locales.`);
+                return; // Ignorar si el tipo recibido no es válido
+              }
+            }
+          }
+
+          const sanitizedValStr = JSON.stringify(sanitizedValue);
+          const localValStr = stateRef.current ? JSON.stringify(stateRef.current[key]) : "";
+          
+          if (localValStr === sanitizedValStr) {
             return; // No actual change, skip to avoid loop
           }
 
           const activeSetter = globalActiveSetters[key];
           if (activeSetter) {
-            globalLastSynced[key] = newValStr;
-            globalIsSyncingFromCloud[key] = true;
-            activeSetter(value);
-            setLocalStorage(key, value);
+            globalLastSynced[key] = sanitizedValStr;
+            activeSetter(sanitizedValue);
+            setLocalStorage(key, sanitizedValue);
           }
         }
       )
@@ -655,11 +806,11 @@ export default function App() {
     syncToCloud("cuentasPorPagar", cuentasPorPagar);
   }, [cuentasPorPagar]);
 
-  const usuarioActivo = usuarios.find(u => u.user.toLowerCase().trim() === usuarioActual?.user?.toLowerCase()?.trim()) || usuarioActual;
+  const usuarioActivo = usuarios.find(u => (u.user || "").toLowerCase().trim() === (usuarioActual?.user || "").toLowerCase().trim()) || usuarioActual;
 
   const userHasPermission = (user, tabId) => {
     if (!user) return false;
-    const activeUser = usuarios.find(u => u.user.toLowerCase().trim() === user.user.toLowerCase().trim()) || user;
+    const activeUser = usuarios.find(u => (u.user || "").toLowerCase().trim() === (user.user || "").toLowerCase().trim()) || user;
     const activeRol = activeUser.rol?.toLowerCase()?.trim();
     if (activeRol === "admin") return true;
     if (activeUser.permissions) {
@@ -702,6 +853,7 @@ export default function App() {
         onLogout={handleLogout} 
         isOpen={isSidebarOpen}
         setIsOpen={setIsSidebarOpen}
+        realtimeStatus={realtimeStatus}
       />
 
       {/* Floating Menu Button for mobile */}

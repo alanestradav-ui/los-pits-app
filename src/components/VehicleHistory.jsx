@@ -131,14 +131,14 @@ export default function VehicleHistory({ ordenes = [], carwash = [] }) {
 
   // 2. Filter list by query
   const filteredVehicles = vehiclesList.filter(v => {
-    const query = searchQuery.toLowerCase().trim();
+    const query = (searchQuery || "").toLowerCase().trim();
     if (!query) return true;
     return (
-      v.placa.toLowerCase().includes(query) ||
-      v.marca.toLowerCase().includes(query) ||
-      v.linea.toLowerCase().includes(query) ||
-      v.cliente.toLowerCase().includes(query) ||
-      v.chasis.toLowerCase().includes(query)
+      (v.placa || "").toLowerCase().includes(query) ||
+      (v.marca || "").toLowerCase().includes(query) ||
+      (v.linea || "").toLowerCase().includes(query) ||
+      (v.cliente || "").toLowerCase().includes(query) ||
+      (v.chasis || "").toLowerCase().includes(query)
     );
   });
 

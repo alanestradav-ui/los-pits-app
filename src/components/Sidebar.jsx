@@ -17,7 +17,7 @@ import {
   Users
 } from "lucide-react";
 
-export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLogout, isOpen, setIsOpen }) {
+export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLogout, isOpen, setIsOpen, realtimeStatus }) {
   const rol = usuarioActual?.rol?.toLowerCase()?.trim();
   
   // Define menu items based on role permissions
@@ -152,6 +152,34 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
           </div>
         </div>
 
+        {/* Cloud Connection Status */}
+        <div className="cloud-status-container" style={styles.cloudStatusContainer}>
+          {realtimeStatus === "connected" && (
+            <div className="cloud-status-badge badge-connected" style={{ ...styles.cloudStatusBadge, ...styles.badgeConnected }}>
+              <span className="cloud-status-dot dot-connected" style={{ ...styles.cloudStatusDot, ...styles.dotConnected }}></span>
+              <span>Conectado a la Nube</span>
+            </div>
+          )}
+          {realtimeStatus === "connecting" && (
+            <div className="cloud-status-badge badge-connecting" style={{ ...styles.cloudStatusBadge, ...styles.badgeConnecting }}>
+              <span className="cloud-status-dot dot-connecting" style={{ ...styles.cloudStatusDot, ...styles.dotConnecting }}></span>
+              <span>Conectando a la Nube...</span>
+            </div>
+          )}
+          {realtimeStatus === "disconnected" && (
+            <div className="cloud-status-badge badge-disconnected" style={{ ...styles.cloudStatusBadge, ...styles.badgeDisconnected }}>
+              <span className="cloud-status-dot dot-disconnected" style={{ ...styles.cloudStatusDot, ...styles.dotDisconnected }}></span>
+              <span>Modo Local (Sin Nube)</span>
+            </div>
+          )}
+          {realtimeStatus === "error" && (
+            <div className="cloud-status-badge badge-error" style={{ ...styles.cloudStatusBadge, ...styles.badgeError }}>
+              <span className="cloud-status-dot dot-error" style={{ ...styles.cloudStatusDot, ...styles.dotError }}></span>
+              <span>Error de Conexión</span>
+            </div>
+          )}
+        </div>
+
         {/* Profile Card */}
         <div className="glass-panel" style={styles.profileCard}>
           <div style={styles.profileAvatar}>
@@ -214,6 +242,40 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
 
         {/* Embedded CSS for sidebar buttons */}
         <style>{`
+          @keyframes pulse-dot-blue {
+            0% {
+              transform: scale(0.9);
+              box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+            }
+            70% {
+              transform: scale(1.1);
+              box-shadow: 0 0 0 6px rgba(59, 130, 246, 0);
+            }
+            100% {
+              transform: scale(0.9);
+              box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+            }
+          }
+          @keyframes pulse-dot-green {
+            0% {
+              transform: scale(0.9);
+              box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+            }
+            70% {
+              transform: scale(1.1);
+              box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+            }
+            100% {
+              transform: scale(0.9);
+              box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+            }
+          }
+          .dot-connecting {
+            animation: pulse-dot-blue 1.5s infinite ease-in-out;
+          }
+          .dot-connected {
+            animation: pulse-dot-green 2.5s infinite ease-in-out;
+          }
           .menu-button-item {
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
           }
@@ -280,6 +342,63 @@ const styles = {
     position: "sticky",
     top: 0,
     zIndex: 100,
+  },
+  cloudStatusContainer: {
+    marginBottom: "16px",
+    padding: "0 6px",
+  },
+  cloudStatusBadge: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "6px 12px",
+    borderRadius: "8px",
+    fontSize: "0.75rem",
+    fontWeight: "600",
+    border: "1px solid",
+    transition: "all 0.3s ease",
+  },
+  badgeConnected: {
+    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    borderColor: "rgba(16, 185, 129, 0.2)",
+    color: "#34d399",
+  },
+  badgeConnecting: {
+    backgroundColor: "rgba(59, 130, 246, 0.1)",
+    borderColor: "rgba(59, 130, 246, 0.2)",
+    color: "#60a5fa",
+  },
+  badgeDisconnected: {
+    backgroundColor: "rgba(245, 158, 11, 0.1)",
+    borderColor: "rgba(245, 158, 11, 0.2)",
+    color: "#fbbf24",
+  },
+  badgeError: {
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    borderColor: "rgba(239, 68, 68, 0.2)",
+    color: "#f87171",
+  },
+  cloudStatusDot: {
+    width: "8px",
+    height: "8px",
+    borderRadius: "50%",
+    display: "inline-block",
+  },
+  dotConnected: {
+    backgroundColor: "#10b981",
+    boxShadow: "0 0 8px #10b981",
+  },
+  dotConnecting: {
+    backgroundColor: "#3b82f6",
+    boxShadow: "0 0 8px #3b82f6",
+  },
+  dotDisconnected: {
+    backgroundColor: "#f59e0b",
+    boxShadow: "0 0 8px #f59e0b",
+  },
+  dotError: {
+    backgroundColor: "#ef4444",
+    boxShadow: "0 0 8px #ef4444",
   },
   brand: {
     display: "flex",

@@ -72,16 +72,17 @@ export default function Inventory({
     if (editingId) {
       // Edit
       setWorkshopInventory(
-        workshopInventory.map((item) =>
-          item.id === editingId
+        (workshopInventory || []).map((item) => {
+          if (!item) return item;
+          return item.id === editingId
             ? { ...item, code: code.toUpperCase().trim(), name: name.trim(), brand: brand.trim(), presentation: presentation.trim(), quantity: qty, purchasePrice: purchase, salePrice: sale, minStock: minS }
-            : item
-        )
+            : item;
+        })
       );
       setEditingId(null);
     } else {
       // Add
-      const exists = workshopInventory.some(item => item.code.toUpperCase().trim() === code.toUpperCase().trim());
+      const exists = (workshopInventory || []).some(item => item && String(item.code || "").toUpperCase().trim() === code.toUpperCase().trim());
       if (exists) {
         alert("Ya existe un repuesto con este código en la bodega.");
         return;
@@ -161,24 +162,25 @@ export default function Inventory({
   };
 
   // Calculations for Valuation Dashboard
-  const totalItemsCount = workshopInventory.length;
-  const valuationCost = workshopInventory.reduce((sum, item) => sum + (item.quantity * item.purchasePrice), 0);
-  const valuationRetail = workshopInventory.reduce((sum, item) => sum + (item.quantity * item.salePrice), 0);
+  const totalItemsCount = (workshopInventory || []).length;
+  const valuationCost = (workshopInventory || []).reduce((sum, item) => sum + (item ? Number(item.quantity || 0) * Number(item.purchasePrice || 0) : 0), 0);
+  const valuationRetail = (workshopInventory || []).reduce((sum, item) => sum + (item ? Number(item.quantity || 0) * Number(item.salePrice || 0) : 0), 0);
   const potentialProfit = valuationRetail - valuationCost;
 
-  const filteredInventory = workshopInventory.filter((item) => {
-    const query = searchQuery.toLowerCase();
+  const filteredInventory = (workshopInventory || []).filter((item) => {
+    if (!item) return false;
+    const query = String(searchQuery || "").toLowerCase();
     return (
-      item.code.toLowerCase().includes(query) ||
-      item.name.toLowerCase().includes(query) ||
-      (item.brand && item.brand.toLowerCase().includes(query)) ||
-      (item.presentation && item.presentation.toLowerCase().includes(query))
+      String(item.code || "").toLowerCase().includes(query) ||
+      String(item.name || "").toLowerCase().includes(query) ||
+      (item.brand && String(item.brand).toLowerCase().includes(query)) ||
+      (item.presentation && String(item.presentation).toLowerCase().includes(query))
     );
   });
 
-  const filteredTotalStock = filteredInventory.reduce((sum, item) => sum + item.quantity, 0);
-  const filteredTotalCost = filteredInventory.reduce((sum, item) => sum + (item.quantity * item.purchasePrice), 0);
-  const filteredTotalSale = filteredInventory.reduce((sum, item) => sum + (item.quantity * item.salePrice), 0);
+  const filteredTotalStock = filteredInventory.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+  const filteredTotalCost = filteredInventory.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.purchasePrice || 0)), 0);
+  const filteredTotalSale = filteredInventory.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.salePrice || 0)), 0);
 
   // Lógica de cálculo de repuestos faltantes (Repuestos por Adquirir)
   const AUTHORIZED_STATUSES = [
@@ -190,15 +192,18 @@ export default function Inventory({
 
   // 1. Filtrar las órdenes con presupuesto autorizado (autorizado y no entregado)
   const activeAuthorizedOrders = (ordenes || []).filter(o => 
-    (o.diagnosticoAutorizado || AUTHORIZED_STATUSES.includes(o.estado)) && 
+    o && (o.diagnosticoAutorizado || AUTHORIZED_STATUSES.includes(o.estado)) && 
     o.estado !== "Entregado"
   );
 
   // 2. Crear una copia del stock en bodega para descontar conforme se asigna (running stock)
   const stockReservado = {};
   (workshopInventory || []).forEach(invItem => {
-    const key = invItem.code.toUpperCase().trim() || invItem.name.toLowerCase().trim();
-    stockReservado[key] = invItem.quantity;
+    if (!invItem) return;
+    const codeStr = String(invItem.code || "");
+    const nameStr = String(invItem.name || "");
+    const key = codeStr.toUpperCase().trim() || nameStr.toLowerCase().trim();
+    stockReservado[key] = Number(invItem.quantity || 0);
   });
 
   // 3. Compilar lista de repuestos faltantes
@@ -207,34 +212,43 @@ export default function Inventory({
   let inversionCompraEstimada = 0;
 
   activeAuthorizedOrders.forEach(o => {
+    if (!o) return;
     if (o.presupuesto && o.presupuesto.parts && o.presupuesto.parts.length > 0) {
       o.presupuesto.parts.forEach(part => {
+        if (!part) return;
+        const partCodeStr = String(part.code || "");
+        const partDescStr = String(part.desc || "");
+
         const invItem = (workshopInventory || []).find(inv => 
-          (part.code && inv.code.toUpperCase().trim() === part.code.toUpperCase().trim()) || 
-          inv.name.toLowerCase().trim() === part.desc.toLowerCase().trim()
+          inv && (
+            (part.code && inv.code && String(inv.code).toUpperCase().trim() === partCodeStr.toUpperCase().trim()) || 
+            (inv.name && part.desc && String(inv.name).toLowerCase().trim() === partDescStr.toLowerCase().trim())
+          )
         );
 
-        const key = invItem ? (invItem.code.toUpperCase().trim() || invItem.name.toLowerCase().trim()) : part.desc.toLowerCase().trim();
-        const stockDisponible = key in stockReservado ? stockReservado[key] : (invItem ? invItem.quantity : 0);
-        const requerido = part.qty;
+        const key = invItem 
+          ? (String(invItem.code || "").toUpperCase().trim() || String(invItem.name || "").toLowerCase().trim()) 
+          : partDescStr.toLowerCase().trim();
+        const stockDisponible = key in stockReservado ? stockReservado[key] : (invItem ? Number(invItem.quantity || 0) : 0);
+        const requerido = Number(part.qty || 0);
         
         if (requerido > stockDisponible) {
           const faltanteQty = requerido - stockDisponible;
-          const purchasePriceEst = invItem ? invItem.purchasePrice : (part.purchasePrice || 0);
+          const purchasePriceEst = invItem ? Number(invItem.purchasePrice || 0) : Number(part.purchasePrice || 0);
           
           repuestosFaltantes.push({
-            id: `${o.id}-${part.code || part.desc}-${Date.now()}-${Math.random()}`,
+            id: `${o.id}-${partCodeStr || partDescStr}-${Date.now()}-${Math.random()}`,
             ordenId: o.id,
             cliente: o.cliente,
             telefono: o.telefono || "",
-            placa: o.placa || (o.vehiculo && o.vehiculo.match(/\(([^)]+)\)/)?.[1]) || "N/A",
-            vehiculoDesc: o.marca ? `${o.marca} ${o.linea || ""}` : (o.vehiculo && o.vehiculo.split("(")[0]) || "N/A",
-            partCode: part.code || "S/C",
-            partName: part.desc,
+            placa: o.placa || (o.vehiculo && typeof o.vehiculo === "string" && o.vehiculo.match(/\(([^)]+)\)/)?.[1]) || "N/A",
+            vehiculoDesc: o.marca ? `${o.marca} ${o.linea || ""}` : (o.vehiculo && typeof o.vehiculo === "string" && o.vehiculo.split("(")[0]) || "N/A",
+            partCode: partCodeStr || "S/C",
+            partName: partDescStr,
             partBrand: part.brand || (invItem ? invItem.brand : ""),
             partPresentation: part.presentation || (invItem ? invItem.presentation : ""),
             requerido: requerido,
-            stockBodega: invItem ? invItem.quantity : 0,
+            stockBodega: invItem ? Number(invItem.quantity || 0) : 0,
             faltante: faltanteQty,
             purchasePrice: purchasePriceEst,
             totalCostoFaltante: faltanteQty * purchasePriceEst
@@ -251,15 +265,15 @@ export default function Inventory({
   });
 
   const filteredFaltantes = repuestosFaltantes.filter(item => {
-    const query = searchQuery.toLowerCase().trim();
+    const query = String(searchQuery || "").toLowerCase().trim();
     if (!query) return true;
     return (
-      item.partCode.toLowerCase().includes(query) ||
-      item.partName.toLowerCase().includes(query) ||
-      item.partBrand.toLowerCase().includes(query) ||
-      item.placa.toLowerCase().includes(query) ||
-      item.vehiculoDesc.toLowerCase().includes(query) ||
-      item.cliente.toLowerCase().includes(query)
+      String(item.partCode || "").toLowerCase().includes(query) ||
+      String(item.partName || "").toLowerCase().includes(query) ||
+      String(item.partBrand || "").toLowerCase().includes(query) ||
+      String(item.placa || "").toLowerCase().includes(query) ||
+      String(item.vehiculoDesc || "").toLowerCase().includes(query) ||
+      String(item.cliente || "").toLowerCase().includes(query)
     );
   });
 

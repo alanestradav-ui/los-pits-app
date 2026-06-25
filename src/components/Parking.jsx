@@ -15,6 +15,7 @@ import {
   AlertTriangle
 } from "lucide-react";
 import { formatMoney } from "../utils/storage";
+import { jsPDF } from "jspdf";
 
 const warningLightsDef = [
   { id: "engine", label: "Check Engine", color: "#f59e0b", glow: "rgba(245, 158, 11, 0.4)", icon: "⚠️" },
@@ -934,11 +935,11 @@ export default function Parking({
       ctx.textAlign = "left";
     }
 
-    const dataURL = canvas.toDataURL("image/png");
-    const link = document.createElement("a");
-    link.download = `Recepcion_Parqueo_${o.placa || "auto"}.png`;
-    link.href = dataURL;
-    link.click();
+    // Trigger PDF Download
+    const dataURL = canvas.toDataURL("image/jpeg", 0.95);
+    const pdf = new jsPDF("p", "px", [800, canvas.height]);
+    pdf.addImage(dataURL, "JPEG", 0, 0, 800, canvas.height);
+    pdf.save(`Recepcion_Parqueo_${o.placa || "auto"}.pdf`);
   };
 
   const eliminarRegistro = (id) => {

@@ -12,6 +12,7 @@ import {
   Coffee
 } from "lucide-react";
 import { formatMoney, formatDate } from "../utils/storage";
+import { jsPDF } from "jspdf";
 
 export default function Finance({ 
   ordenes, 
@@ -27,6 +28,36 @@ export default function Finance({
 }) {
   const [activeTab, setActiveTab] = useState("overview");
   const [breakevenPeriod, setBreakevenPeriod] = useState("mes");
+
+  // Default date ranges for commissions
+  const getFirstDayOfMonth = () => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split("T")[0];
+  };
+
+  const getTodayDate = () => {
+    return new Date().toISOString().split("T")[0];
+  };
+
+  const [commStart, setCommStart] = useState(getFirstDayOfMonth());
+  const [commEnd, setCommEnd] = useState(getTodayDate());
+
+  const isWithinCommDates = (dateVal, fallbackId) => {
+    let d = null;
+    if (dateVal) {
+      d = new Date(dateVal);
+    } else if (fallbackId) {
+      d = new Date(fallbackId);
+    }
+    if (!d || isNaN(d.getTime())) return true;
+    
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const dateStr = `${year}-${month}-${day}`;
+    
+    return dateStr >= commStart && dateStr <= commEnd;
+  };
 
   // Calculations for billing overview (only "Entregado")
   const billedTaller = ordenes.filter(o => o.estado === "Entregado");
@@ -55,7 +86,10 @@ export default function Finance({
   // Commissions Calculations per worker
   const getMechanicCommissions = (name) => {
     // Calculated from ready or delivered orders
-    const workerOrders = ordenes.filter(o => o.mecanico.toLowerCase() === name.toLowerCase());
+    const workerOrders = ordenes.filter(o => 
+      (o.mecanico || "").toLowerCase() === name.toLowerCase() &&
+      isWithinCommDates(o.fecha, o.id)
+    );
     const cobradas = workerOrders.filter(o => o.estado === "Entregado").reduce((sum, o) => sum + o.comision, 0);
     const pendientes = workerOrders.filter(o => o.estado !== "Entregado").reduce((sum, o) => sum + o.comision, 0);
     return { cobradas, pendientes, total: cobradas + pendientes };
@@ -71,7 +105,7 @@ export default function Finance({
         : (c.lavador ? c.lavador.split(", ").map(item => item.trim()).filter(Boolean) : []);
       
       const isAssigned = list.some(l => l.toLowerCase() === name.toLowerCase());
-      if (isAssigned) {
+      if (isAssigned && isWithinCommDates(c.fecha, c.id)) {
         const washerUser = (usuarios || []).find(u => u.user.toLowerCase() === name.toLowerCase());
         const splitComision = washerUser && washerUser.comisionCarwash !== undefined 
           ? parseFloat(washerUser.comisionCarwash) 
@@ -94,7 +128,7 @@ export default function Finance({
       : 0.10; // default 10%
     
     const cobradas = ordenes
-      .filter(o => o.estado === "Entregado" && o.cajero && o.cajero.toLowerCase() === name.toLowerCase() && o.cajeroComisionApplies !== false)
+      .filter(o => o.estado === "Entregado" && o.cajero && o.cajero.toLowerCase() === name.toLowerCase() && o.cajeroComisionApplies !== false && isWithinCommDates(o.fecha, o.id))
       .reduce((sum, o) => {
         const totalLabor = o.presupuesto?.labor?.reduce((lSum, item) => lSum + (parseFloat(item.price) || 0), 0) || o.total || 0;
         return sum + (totalLabor * pctTaller);
@@ -121,7 +155,7 @@ export default function Finance({
         commAmt = parseFloat(v.comisionTotalCalculada || 0);
       }
       
-      if (isAssigned) {
+      if (isAssigned && isWithinCommDates(v.fechaVenta, v.id)) {
         if (v.estado === "Vendido") {
           cobradas += commAmt;
         } else {
@@ -131,6 +165,291 @@ export default function Finance({
     });
     
     return { cobradas, pendientes, total: cobradas + pendientes };
+  };
+
+  const getCollaboratorCommissionDetails = (name, role) => {
+    const list = [];
+    let totalCobradas = 0;
+    let totalPendientes = 0;
+
+    const lowerName = name.toLowerCase();
+
+    if (role === "mecanico") {
+      const workerOrders = ordenes.filter(o => 
+        (o.mecanico || "").toLowerCase() === lowerName &&
+        isWithinCommDates(o.fecha, o.id)
+      );
+      workerOrders.forEach(o => {
+        const isDelivered = o.estado === "Entregado";
+        if (isDelivered) {
+          totalCobradas += o.comision;
+        } else {
+          totalPendientes += o.comision;
+        }
+        list.push({
+          placa: o.placa || "N/A",
+          marca: o.marca || "N/A",
+          linea: o.linea || "N/A",
+          color: o.color || "N/A",
+          fecha: o.fecha ? formatDate(o.fecha) : "Sin fecha",
+          totalServicio: o.total,
+          comision: o.comision,
+          estado: o.estado,
+          tipo: "Taller"
+        });
+      });
+    } else if (role === "lavador") {
+      carwash.forEach(c => {
+        const lavadoresList = c.lavadores && c.lavadores.length > 0
+          ? c.lavadores 
+          : (c.lavador ? c.lavador.split(", ").map(item => item.trim()).filter(Boolean) : []);
+        
+        const isAssigned = lavadoresList.some(l => l.toLowerCase() === lowerName);
+        if (isAssigned && isWithinCommDates(c.fecha, c.id)) {
+          const washerUser = (usuarios || []).find(u => u.user.toLowerCase() === lowerName);
+          const splitComision = washerUser && washerUser.comisionCarwash !== undefined 
+            ? parseFloat(washerUser.comisionCarwash) 
+            : (lavadoresList.length > 0 ? (c.comision / lavadoresList.length) : 0);
+          
+          if (c.estado === "Entregado") {
+            totalCobradas += splitComision;
+          } else {
+            totalPendientes += splitComision;
+          }
+          list.push({
+            placa: c.vehiculo?.placa || "N/A",
+            marca: c.vehiculo?.marca || "N/A",
+            linea: c.vehiculo?.linea || "N/A",
+            color: c.vehiculo?.color || "N/A",
+            fecha: c.fecha ? formatDate(c.fecha) : "Sin fecha",
+            totalServicio: c.precio,
+            comision: splitComision,
+            estado: c.estado,
+            tipo: `Carwash - ${c.tipo}`
+          });
+        }
+      });
+    } else if (role === "cajero") {
+      const cashierUser = (usuarios || []).find(u => u.user.toLowerCase() === lowerName);
+      const pctTaller = cashierUser && cashierUser.comisionTaller !== undefined 
+        ? cashierUser.comisionTaller / 100 
+        : 0.10; // default 10%
+      
+      const cashierOrders = ordenes.filter(o => 
+        o.estado === "Entregado" && 
+        o.cajero && 
+        o.cajero.toLowerCase() === lowerName && 
+        o.cajeroComisionApplies !== false &&
+        isWithinCommDates(o.fecha, o.id)
+      );
+
+      cashierOrders.forEach(o => {
+        const totalLabor = o.presupuesto?.labor?.reduce((lSum, item) => lSum + (parseFloat(item.price) || 0), 0) || o.total || 0;
+        const commAmt = totalLabor * pctTaller;
+        totalCobradas += commAmt;
+        list.push({
+          placa: o.placa || "N/A",
+          marca: o.marca || "N/A",
+          linea: o.linea || "N/A",
+          color: o.color || "N/A",
+          fecha: o.fecha ? formatDate(o.fecha) : "Sin fecha",
+          totalServicio: o.total,
+          comision: commAmt,
+          estado: o.estado,
+          tipo: "Taller (Caja)"
+        });
+      });
+    } else if (role === "vendedor") {
+      (vehiculosVenta || []).forEach(v => {
+        let commAmt = 0;
+        let isAssigned = false;
+        
+        if (v.vendedoresAsignados && v.vendedoresAsignados.length > 0) {
+          if (v.vendedoresAsignados.some(s => s.toLowerCase() === lowerName)) {
+            isAssigned = true;
+            commAmt = parseFloat(v.comisionTotalCalculada || 0) / v.vendedoresAsignados.length;
+          }
+        } else if (v.vendedorAsignado && v.vendedorAsignado.toLowerCase() === lowerName) {
+          isAssigned = true;
+          commAmt = parseFloat(v.comisionTotalCalculada || 0);
+        }
+        
+        if (isAssigned && isWithinCommDates(v.fechaVenta, v.id)) {
+          if (v.estado === "Vendido") {
+            totalCobradas += commAmt;
+          } else {
+            totalPendientes += commAmt;
+          }
+          list.push({
+            placa: v.placa || "N/A",
+            marca: v.marca || "N/A",
+            linea: v.linea || "N/A",
+            color: v.color || "N/A",
+            fecha: v.fechaVenta ? formatDate(v.fechaVenta) : (v.fechaIngreso ? formatDate(v.fechaIngreso) : "Sin fecha"),
+            totalServicio: v.precioVenta || v.precio || 0,
+            comision: commAmt,
+            estado: v.estado,
+            tipo: "Venta de Vehículo"
+          });
+        }
+      });
+    }
+
+    return { list, totalCobradas, totalPendientes, total: totalCobradas + totalPendientes };
+  };
+
+  const generarReporteColaborador = (colaboradorName, role) => {
+    const data = getCollaboratorCommissionDetails(colaboradorName, role);
+    const pdf = new jsPDF();
+
+    const primaryColor = [20, 24, 33];
+    const accentColor = [245, 158, 11];
+    const successColor = [16, 185, 129];
+    const mutedColor = [100, 116, 139];
+
+    pdf.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    pdf.rect(0, 0, 210, 40, "F");
+
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(16);
+    pdf.text("LOS PITS AUTO CENTER", 15, 18);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(10);
+    pdf.text("Reporte Detallado de Comisiones", 15, 26);
+    pdf.text(`Generado: ${new Date().toLocaleDateString()}`, 160, 26);
+
+    pdf.setFillColor(245, 247, 250);
+    pdf.rect(15, 50, 180, 25, "F");
+    pdf.setDrawColor(226, 232, 240);
+    pdf.rect(15, 50, 180, 25, "S");
+
+    pdf.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(10);
+    pdf.text("Colaborador:", 20, 60);
+    pdf.setFont("helvetica", "normal");
+    pdf.text(colaboradorName, 50, 60);
+
+    pdf.setFont("helvetica", "bold");
+    pdf.text("Rol/Puesto:", 20, 68);
+    pdf.setFont("helvetica", "normal");
+    const roleLabels = {
+      mecanico: "Mecánico",
+      lavador: "Lavador",
+      cajero: "Cajero",
+      vendedor: "Vendedor"
+    };
+    pdf.text(roleLabels[role] || role, 50, 68);
+
+    pdf.setFont("helvetica", "bold");
+    pdf.text("Período:", 115, 60);
+    pdf.setFont("helvetica", "normal");
+    pdf.text(`${formatDate(commStart)} al ${formatDate(commEnd)}`, 135, 60);
+
+    let y = 90;
+    pdf.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    pdf.rect(15, y, 180, 8, "F");
+
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(8);
+    pdf.text("Tipo / Serv.", 18, y + 6);
+    pdf.text("Vehículo", 45, y + 6);
+    pdf.text("Placa", 95, y + 6);
+    pdf.text("Color", 115, y + 6);
+    pdf.text("Entregado", 135, y + 6);
+    pdf.text("Total", 165, y + 6, { align: "right" });
+    pdf.text("Comisión", 192, y + 6, { align: "right" });
+
+    y += 8;
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(8);
+
+    if (data.list.length === 0) {
+      pdf.setTextColor(mutedColor[0], mutedColor[1], mutedColor[2]);
+      pdf.text("No se encontraron transacciones en este período para el colaborador.", 20, y + 10);
+      y += 15;
+    } else {
+      data.list.forEach((item, index) => {
+        if (y > 260) {
+          pdf.addPage();
+          y = 20;
+          pdf.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+          pdf.rect(15, y, 180, 8, "F");
+          pdf.setTextColor(255, 255, 255);
+          pdf.setFont("helvetica", "bold");
+          pdf.text("Tipo / Serv.", 18, y + 6);
+          pdf.text("Vehículo", 45, y + 6);
+          pdf.text("Placa", 95, y + 6);
+          pdf.text("Color", 115, y + 6);
+          pdf.text("Entregado", 135, y + 6);
+          pdf.text("Total", 165, y + 6, { align: "right" });
+          pdf.text("Comisión", 192, y + 6, { align: "right" });
+          y += 8;
+          pdf.setFont("helvetica", "normal");
+        }
+
+        if (index % 2 === 0) {
+          pdf.setFillColor(248, 250, 252);
+          pdf.rect(15, y, 180, 8, "F");
+        }
+
+        pdf.setDrawColor(241, 245, 249);
+        pdf.line(15, y + 8, 195, y + 8);
+
+        pdf.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        
+        const typeStr = item.tipo.length > 15 ? item.tipo.substring(0, 15) : item.tipo;
+        const vehicleStr = `${item.marca} ${item.linea}`;
+        const truncateVehicle = vehicleStr.length > 25 ? vehicleStr.substring(0, 25) : vehicleStr;
+
+        pdf.text(typeStr, 18, y + 6);
+        pdf.text(truncateVehicle, 45, y + 6);
+        pdf.text(item.placa, 95, y + 6);
+        pdf.text(item.color.substring(0, 10), 115, y + 6);
+        pdf.text(item.fecha, 135, y + 6);
+        pdf.text(formatMoney(item.totalServicio), 165, y + 6, { align: "right" });
+        pdf.text(formatMoney(item.comision), 192, y + 6, { align: "right" });
+
+        y += 8;
+      });
+    }
+
+    y += 10;
+
+    if (y > 230) {
+      pdf.addPage();
+      y = 20;
+    }
+
+    pdf.setFillColor(245, 247, 250);
+    pdf.rect(120, y, 75, 30, "F");
+    pdf.setDrawColor(226, 232, 240);
+    pdf.rect(120, y, 75, 30, "S");
+
+    pdf.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(8);
+    pdf.text("Resumen de Comisiones:", 125, y + 8);
+
+    pdf.setFont("helvetica", "normal");
+    pdf.text("Cobradas (Entregados):", 125, y + 15);
+    pdf.text(formatMoney(data.totalCobradas), 190, y + 15, { align: "right" });
+
+    pdf.text("Pendientes (Activos):", 125, y + 21);
+    pdf.text(formatMoney(data.totalPendientes), 190, y + 21, { align: "right" });
+
+    pdf.setDrawColor(203, 213, 225);
+    pdf.line(125, y + 23, 190, y + 23);
+
+    pdf.setFont("helvetica", "bold");
+    pdf.text("Total General:", 125, y + 27);
+    pdf.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
+    pdf.text(formatMoney(data.total), 190, y + 27, { align: "right" });
+
+    pdf.save(`Reporte_Comisiones_${colaboradorName.replace(/\s+/g, "_")}_${commStart}_${commEnd}.pdf`);
   };
 
   const printReport = () => {
@@ -442,9 +761,31 @@ export default function Finance({
         <div style={styles.tabContent}>
           <div className="glass-panel" style={styles.sectionCard}>
             <h2 style={styles.sectionTitle}>Comisiones por Colaborador</h2>
-            <p style={{ marginBottom: "24px" }}>Control detallado del dinero devengado por cada mecánico y lavador, ideal para cálculo de nómina diaria o semanal.</p>
+            <p style={{ marginBottom: "20px" }}>Control detallado del dinero devengado por cada mecánico, lavador, cajero y vendedor.</p>
 
-             <h3 style={{ ...styles.subtitle, color: "var(--color-primary)", borderBottom: "1px solid rgba(59, 130, 246, 0.2)", paddingBottom: "8px", marginBottom: "16px" }}>
+            {/* Date Filters Row */}
+            <div style={styles.filterRow} className="hide-print">
+              <div style={styles.filterGroup}>
+                <label style={styles.filterLabel}>Fecha Inicio:</label>
+                <input
+                  type="date"
+                  value={commStart}
+                  onChange={(e) => setCommStart(e.target.value)}
+                  style={styles.dateInput}
+                />
+              </div>
+              <div style={styles.filterGroup}>
+                <label style={styles.filterLabel}>Fecha Fin:</label>
+                <input
+                  type="date"
+                  value={commEnd}
+                  onChange={(e) => setCommEnd(e.target.value)}
+                  style={styles.dateInput}
+                />
+              </div>
+            </div>
+
+             <h3 style={{ ...styles.subtitle, color: "var(--color-primary)", borderBottom: "1px solid rgba(59, 130, 246, 0.2)", paddingBottom: "8px", marginBottom: "16px", marginTop: "16px" }}>
               🔧 Mecánicos (Comisión porcentual)
             </h3>
             
@@ -456,6 +797,7 @@ export default function Finance({
                     <th style={styles.th}>Comisiones Cobradas</th>
                     <th style={styles.th}>Comisiones Pendientes</th>
                     <th style={styles.th}>Total Acumulado</th>
+                    <th style={{ ...styles.th, textAlign: "right" }} className="hide-print">Acción</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -467,6 +809,14 @@ export default function Finance({
                         <td style={{ ...styles.td, color: "var(--color-success)" }}>{formatMoney(comms.cobradas)}</td>
                         <td style={{ ...styles.td, color: "var(--color-warning)" }}>{formatMoney(comms.pendientes)}</td>
                         <td style={{ ...styles.td, fontWeight: "700", color: "#fff" }}>{formatMoney(comms.total)}</td>
+                        <td style={{ ...styles.td, textAlign: "right" }} className="hide-print">
+                          <button
+                            onClick={() => generarReporteColaborador(m, "mecanico")}
+                            style={styles.generateReportBtn}
+                          >
+                            Generar Reporte
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -486,6 +836,7 @@ export default function Finance({
                     <th style={styles.th}>Comisiones Cobradas</th>
                     <th style={styles.th}>Comisiones Pendientes</th>
                     <th style={styles.th}>Total Acumulado</th>
+                    <th style={{ ...styles.th, textAlign: "right" }} className="hide-print">Acción</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -497,6 +848,14 @@ export default function Finance({
                         <td style={{ ...styles.td, color: "var(--color-success)" }}>{formatMoney(comms.cobradas)}</td>
                         <td style={{ ...styles.td, color: "var(--color-warning)" }}>{formatMoney(comms.pendientes)}</td>
                         <td style={{ ...styles.td, fontWeight: "700", color: "#fff" }}>{formatMoney(comms.total)}</td>
+                        <td style={{ ...styles.td, textAlign: "right" }} className="hide-print">
+                          <button
+                            onClick={() => generarReporteColaborador(l, "lavador")}
+                            style={styles.generateReportBtn}
+                          >
+                            Generar Reporte
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -516,6 +875,7 @@ export default function Finance({
                     <th style={styles.th}>Comisión Taller</th>
                     <th style={styles.th}>Salario Base</th>
                     <th style={styles.th}>Total Nómina</th>
+                    <th style={{ ...styles.th, textAlign: "right" }} className="hide-print">Acción</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -528,6 +888,14 @@ export default function Finance({
                         <td style={{ ...styles.td, color: "var(--color-success)" }}>{formatMoney(comms.cobradas)}</td>
                         <td style={{ ...styles.td, color: "#fff" }}>{formatMoney(salario)}</td>
                         <td style={{ ...styles.td, fontWeight: "700", color: "var(--color-primary)" }}>{formatMoney(comms.cobradas + salario)}</td>
+                        <td style={{ ...styles.td, textAlign: "right" }} className="hide-print">
+                          <button
+                            onClick={() => generarReporteColaborador(c.user, "cajero")}
+                            style={styles.generateReportBtn}
+                          >
+                            Generar Reporte
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -547,6 +915,7 @@ export default function Finance({
                     <th style={styles.th}>Comisiones Cobradas (Vendido)</th>
                     <th style={styles.th}>Comisiones Pendientes (Disponible)</th>
                     <th style={styles.th}>Total Acumulado</th>
+                    <th style={{ ...styles.th, textAlign: "right" }} className="hide-print">Acción</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -559,12 +928,20 @@ export default function Finance({
                         <td style={{ ...styles.td, color: "var(--color-success)" }}>{formatMoney(comms.cobradas)}</td>
                         <td style={{ ...styles.td, color: "var(--color-warning)" }}>{formatMoney(comms.pendientes)}</td>
                         <td style={{ ...styles.td, fontWeight: "700", color: "#fff" }}>{formatMoney(comms.total)}</td>
+                        <td style={{ ...styles.td, textAlign: "right" }} className="hide-print">
+                          <button
+                            onClick={() => generarReporteColaborador(u.user, "vendedor")}
+                            style={styles.generateReportBtn}
+                          >
+                            Generar Reporte
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
                   {!(usuarios || []).some(u => getVehicleCommissions(u.user).total > 0) && (
                     <tr style={styles.tr}>
-                      <td colSpan="4" style={{ ...styles.td, textAlign: "center", color: "var(--text-muted)", padding: "16px" }}>
+                      <td colSpan="5" style={{ ...styles.td, textAlign: "center", color: "var(--text-muted)", padding: "16px" }}>
                         No hay comisiones de venta asignadas a colaboradores.
                       </td>
                     </tr>
@@ -1093,4 +1470,45 @@ const styles = {
     fontSize: "0.95rem",
     color: "var(--text-muted)",
   },
+  filterRow: {
+    display: "flex",
+    gap: "20px",
+    marginBottom: "24px",
+    flexWrap: "wrap",
+    backgroundColor: "rgba(255, 255, 255, 0.02)",
+    padding: "16px",
+    borderRadius: "10px",
+    border: "1px solid rgba(255, 255, 255, 0.05)"
+  },
+  filterGroup: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "6px"
+  },
+  filterLabel: {
+    fontSize: "0.8rem",
+    color: "var(--text-muted)",
+    fontWeight: "600"
+  },
+  dateInput: {
+    padding: "8px 12px",
+    borderRadius: "6px",
+    border: "1px solid rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(20, 24, 33, 0.8)",
+    color: "#fff",
+    fontSize: "0.85rem",
+    outline: "none",
+    width: "150px"
+  },
+  generateReportBtn: {
+    padding: "6px 12px",
+    fontSize: "0.8rem",
+    fontWeight: "600",
+    borderRadius: "6px",
+    cursor: "pointer",
+    border: "none",
+    backgroundColor: "var(--color-primary)",
+    color: "#fff",
+    transition: "all 0.2s ease"
+  }
 };

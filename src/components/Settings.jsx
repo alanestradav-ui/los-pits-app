@@ -904,17 +904,17 @@ export default function SettingsComponent({
               </div>
               <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: "0" }}>
                 Utiliza esta sección para eliminar todos los registros de prueba antes de comenzar el uso real del sistema. 
-                Se borrarán todas las órdenes de taller, lavados, parqueos, ventas, cuentas e historial. <strong>Los usuarios registrados e inventario de bodega se conservarán.</strong>
+                Se borrarán todas las órdenes de taller, lavados, parqueos, ventas, cuentas e historial. <strong>Los clientes, vehículos, usuarios e inventario de bodega se conservarán.</strong>
               </p>
               <div>
                 <button 
                   type="button" 
                   onClick={async () => {
-                    if (window.confirm("¿Seguro que deseas eliminar todos los registros de prueba? Se borrarán órdenes de taller, lavados, parqueos, ventas de tienda/cafetería, cuentas y vehículos en venta. Esta acción es definitiva.")) {
+                    if (window.confirm("¿Seguro que deseas eliminar todos los registros de prueba? Se borrarán las órdenes de taller, lavados, parqueos, ventas de tienda/cafetería y cuentas. Tus clientes, vehículos registrados, usuarios e inventario se conservarán intactos.")) {
                       const keysToDelete = [
                         "ordenes", "carwash", "parkingEntries", "parkingHistory", 
                         "vehiculosVenta", "cafeteriaSales", "tiendaSales", 
-                        "cuentasPorCobrar", "cuentasPorPagar", "clientes", "vehiculos"
+                        "cuentasPorCobrar", "cuentasPorPagar"
                       ];
                       
                       const client = getSupabaseClient();
@@ -2268,12 +2268,51 @@ export default function SettingsComponent({
   updated_at timestamp with time zone DEFAULT now()
 );
 
+-- Desactivar seguridad RLS para permitir lecturas y escrituras sin autenticación compleja
+ALTER TABLE public.app_data DISABLE ROW LEVEL SECURITY;
+
 ALTER TABLE public.app_data REPLICA IDENTITY FULL;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.app_data;`}
                   </pre>
                   <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "8px" }}>
                     3. Ve a **Project Settings ➔ API** y copia la **Project URL** y la **anon key** para pegarlas aquí.
                   </p>
+                </div>
+              </div>
+
+              {/* Mobile Installation Guide Card */}
+              <div className="glass-panel" style={{ padding: "24px", gridColumn: "span 2", marginTop: "10px" }}>
+                <h3 style={{ ...styles.sectionTitle, display: "flex", alignItems: "center", gap: "8px", margin: "0 0 10px 0" }}>
+                  📱 Guía de Instalación en Celulares (Android / iPhone)
+                </h3>
+                <p style={{ ...styles.sectionSubtitle, marginBottom: "15px" }}>
+                  Para utilizar y descargar la aplicación en tu celular sin necesidad de archivos APK obsoletos ni tiendas de aplicaciones, instálala como **PWA (Progressive Web App)** en 10 segundos:
+                </p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "20px" }}>
+                  <div style={{ flex: "1 1 300px", padding: "15px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.05)", backgroundColor: "rgba(255,255,255,0.01)" }}>
+                    <h4 style={{ color: "#3b82f6", fontWeight: "bold", fontSize: "0.95rem", marginBottom: "10px", display: "flex", alignItems: "center", gap: "6px" }}>
+                      🤖 En Android (Google Chrome)
+                    </h4>
+                    <ol style={{ fontSize: "0.82rem", color: "var(--text-muted)", paddingLeft: "15px", margin: 0, display: "flex", flexDirection: "column", gap: "6px", lineHeight: "1.4" }}>
+                      <li>Abre **Google Chrome** en tu celular.</li>
+                      <li>Ingresa a la URL de la app: <a href="https://los-pits-app.vercel.app/" target="_blank" rel="noopener noreferrer" style={{ color: "var(--color-secondary)", textDecoration: "underline", fontWeight: "bold" }}>los-pits-app.vercel.app</a></li>
+                      <li>Toca el botón de **Menú (los 3 puntos)** en la esquina superior derecha.</li>
+                      <li>Selecciona la opción **"Instalar aplicación"** o **"Agregar a la pantalla principal"**.</li>
+                      <li>¡Listo! Se creará un ícono nativo en tu pantalla de inicio que se abre en pantalla completa y se actualiza solo.</li>
+                    </ol>
+                  </div>
+                  <div style={{ flex: "1 1 300px", padding: "15px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.05)", backgroundColor: "rgba(255,255,255,0.01)" }}>
+                    <h4 style={{ color: "#ec4899", fontWeight: "bold", fontSize: "0.95rem", marginBottom: "10px", display: "flex", alignItems: "center", gap: "6px" }}>
+                      🍎 En iPhone / iOS (Safari)
+                    </h4>
+                    <ol style={{ fontSize: "0.82rem", color: "var(--text-muted)", paddingLeft: "15px", margin: 0, display: "flex", flexDirection: "column", gap: "6px", lineHeight: "1.4" }}>
+                      <li>Abre el navegador **Safari** en tu iPhone.</li>
+                      <li>Ingresa a la URL: <a href="https://los-pits-app.vercel.app/" target="_blank" rel="noopener noreferrer" style={{ color: "var(--color-secondary)", textDecoration: "underline", fontWeight: "bold" }}>los-pits-app.vercel.app</a></li>
+                      <li>Toca el botón **Compartir** (ícono del cuadrado con la flecha hacia arriba en la barra inferior).</li>
+                      <li>Desplázate hacia abajo y selecciona **"Agregar al inicio"** (Add to Home Screen).</li>
+                      <li>Toca **"Agregar"** en la esquina superior derecha para crear el acceso directo en tu pantalla.</li>
+                    </ol>
+                  </div>
                 </div>
               </div>
 

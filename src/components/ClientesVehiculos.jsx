@@ -15,16 +15,19 @@ import {
   Calendar, 
   Palette,
   Mail,
-  MapPin
+  MapPin,
+  Layers
 } from "lucide-react";
 
 export default function ClientesVehiculos({
-  clientes = [],
+  clientes: rawClientes = [],
   setClientes,
-  vehiculos = [],
+  vehiculos: rawVehiculos = [],
   setVehiculos,
   usuarioActual
 }) {
+  const clientes = rawClientes || [];
+  const vehiculos = rawVehiculos || [];
   const [activeSubTab, setActiveSubTab] = useState("clientes");
   
   // Search states
@@ -172,10 +175,10 @@ export default function ClientesVehiculos({
   
   const handleSaveVehicle = (e) => {
     e.preventDefault();
-    const plcClean = vPlaca.toUpperCase().trim();
-    const chsClean = vChasis.toUpperCase().trim();
-    const marcaClean = vMarca.trim();
-    const lineaClean = vLinea.trim();
+    const plcClean = String(vPlaca || '').toUpperCase().trim();
+    const chsClean = String(vChasis || '').toUpperCase().trim();
+    const marcaClean = String(vMarca || '').trim();
+    const lineaClean = String(vLinea || '').trim();
     
     if (!plcClean && !chsClean) {
       alert("Debes ingresar al menos Placa o Chasis para identificar el vehículo.");
@@ -189,6 +192,7 @@ export default function ClientesVehiculos({
     
     // Check conflict with existing vehicles
     const conflict = vehiculos.find(v => {
+      if (!v) return false;
       if (editingVehicle) {
         const isSelf = (editingVehicle.placa && v.placa === editingVehicle.placa) ||
                        (editingVehicle.chasis && v.chasis === editingVehicle.chasis);
@@ -204,6 +208,7 @@ export default function ClientesVehiculos({
     
     if (editingVehicle) {
       const updated = vehiculos.map(v => {
+        if (!v) return v;
         const isSelf = (editingVehicle.placa && v.placa === editingVehicle.placa) ||
                        (editingVehicle.chasis && v.chasis === editingVehicle.chasis);
         return isSelf ? {
@@ -212,8 +217,8 @@ export default function ClientesVehiculos({
           chasis: chsClean,
           marca: marcaClean,
           linea: lineaClean,
-          anio: vAnio.trim(),
-          color: vColor.trim(),
+          anio: String(vAnio || '').trim(),
+          color: String(vColor || '').trim(),
           clienteTelefono: vClienteTelefono
         } : v;
       });
@@ -224,8 +229,8 @@ export default function ClientesVehiculos({
         chasis: chsClean,
         marca: marcaClean,
         linea: lineaClean,
-        anio: vAnio.trim(),
-        color: vColor.trim(),
+        anio: String(vAnio || '').trim(),
+        color: String(vColor || '').trim(),
         clienteTelefono: vClienteTelefono,
         fechaRegistro: new Date().toISOString()
       };
@@ -248,18 +253,22 @@ export default function ClientesVehiculos({
     return found ? `${found.nombre} (${phone})` : phone;
   };
   
-  const filteredClientes = (clientes || []).filter(c => 
-    c.nombre?.toLowerCase().includes(searchClient.toLowerCase()) ||
-    c.telefono?.includes(searchClient) ||
-    c.nit?.includes(searchClient)
-  );
+  const filteredClientes = (clientes || [])
+    .filter(c => c !== null && c !== undefined)
+    .filter(c => 
+      c.nombre?.toLowerCase().includes(searchClient.toLowerCase()) ||
+      c.telefono?.includes(searchClient) ||
+      c.nit?.includes(searchClient)
+    );
   
-  const filteredVehiculos = (vehiculos || []).filter(v => 
-    v.placa?.toLowerCase().includes(searchVehicle.toLowerCase()) ||
-    v.chasis?.toLowerCase().includes(searchVehicle.toLowerCase()) ||
-    v.marca?.toLowerCase().includes(searchVehicle.toLowerCase()) ||
-    v.linea?.toLowerCase().includes(searchVehicle.toLowerCase())
-  );
+  const filteredVehiculos = (vehiculos || [])
+    .filter(v => v !== null && v !== undefined)
+    .filter(v => 
+      v.placa?.toLowerCase().includes(searchVehicle.toLowerCase()) ||
+      v.chasis?.toLowerCase().includes(searchVehicle.toLowerCase()) ||
+      v.marca?.toLowerCase().includes(searchVehicle.toLowerCase()) ||
+      v.linea?.toLowerCase().includes(searchVehicle.toLowerCase())
+    );
 
   return (
     <div style={styles.container}>

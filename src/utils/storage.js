@@ -19,11 +19,13 @@ export const setLocalStorage = (key, value) => {
 };
 
 export const formatMoney = (amount) => {
+  const val = parseFloat(amount);
+  if (isNaN(val)) return 'Q 0.00';
   return new Intl.NumberFormat('es-GT', {
     style: 'currency',
     currency: 'GTQ',
     minimumFractionDigits: 2
-  }).format(amount);
+  }).format(val);
 };
 
 export const formatDate = (dateString) => {

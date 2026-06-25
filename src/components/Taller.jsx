@@ -17,6 +17,7 @@ import {
   Pencil
 } from "lucide-react";
 import { formatMoney, getLocalStorage, setLocalStorage } from "../utils/storage";
+import { jsPDF } from "jspdf";
 
 const TALLER_STATUSES = [
   "En recepción",
@@ -164,30 +165,31 @@ export default function Taller({
   const [nombreFacturacion, setNombreFacturacion] = useState("");
 
   const calculateOrderCommission = (orderObj) => {
+    if (!orderObj) return 0;
     const mechName = orderObj.mecanico;
     if (!mechName) return 0;
     
-    const mechUser = (usuarios || []).find(u => u.user.toLowerCase().trim() === mechName.toLowerCase().trim());
+    const mechUser = (usuarios || []).find(u => u && String(u.user || "").toLowerCase().trim() === String(mechName || "").toLowerCase().trim());
     
     // Determine flags and rates
     const comisionarLabor = mechUser ? (mechUser.comisionarLabor !== undefined ? mechUser.comisionarLabor : true) : true;
     const comisionarRepuestos = mechUser ? (mechUser.comisionarRepuestos !== undefined ? mechUser.comisionarRepuestos : false) : false;
     
-    const pctLabor = mechUser ? (mechUser.comisionTaller !== undefined ? mechUser.comisionTaller / 100 : comisionMecanico) : comisionMecanico;
-    const pctRepuestos = mechUser ? (mechUser.comisionRepuestos !== undefined ? mechUser.comisionRepuestos / 100 : 0) : 0;
+    const pctLabor = mechUser ? (mechUser.comisionTaller !== undefined ? Number(mechUser.comisionTaller) / 100 : comisionMecanico) : comisionMecanico;
+    const pctRepuestos = mechUser ? (mechUser.comisionRepuestos !== undefined ? Number(mechUser.comisionRepuestos) / 100 : 0) : 0;
     
     let laborComm = 0;
     let repuestosComm = 0;
     
     if (orderObj.presupuesto) {
-      const totalLabor = orderObj.presupuesto.labor?.reduce((sum, item) => sum + item.price, 0) || 0;
+      const totalLabor = orderObj.presupuesto.labor?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
       if (comisionarLabor) {
         laborComm = totalLabor * pctLabor;
       }
       
       if (comisionarRepuestos) {
         const totalPartsUtility = orderObj.presupuesto.parts?.reduce((sum, part) => {
-          const utility = Math.max(0, (part.salePrice - (part.purchasePrice || 0)) * part.qty);
+          const utility = Math.max(0, (Number(part.salePrice || 0) - Number(part.purchasePrice || 0)) * Number(part.qty || 0));
           return sum + utility;
         }, 0) || 0;
         repuestosComm = totalPartsUtility * pctRepuestos;
@@ -195,7 +197,7 @@ export default function Taller({
     } else {
       // Reception order or simple total
       if (comisionarLabor) {
-        laborComm = orderObj.total * pctLabor;
+        laborComm = Number(orderObj.total || 0) * pctLabor;
       }
     }
     
@@ -252,6 +254,7 @@ export default function Taller({
   
   const [inputServiceDesc, setInputServiceDesc] = useState("");
   const [inputServicePrice, setInputServicePrice] = useState("");
+  const [inputServicePurchasePrice, setInputServicePurchasePrice] = useState("");
   
   const [cajeroComisionApplies, setCajeroComisionApplies] = useState(true);
   const [budgetCajeroComisionApplies, setBudgetCajeroComisionApplies] = useState(true);
@@ -277,8 +280,8 @@ export default function Taller({
 
   const partSuggestions = inputPartDesc.trim()
     ? (workshopInventory || []).filter(item => 
-        item.name.toLowerCase().includes(inputPartDesc.toLowerCase()) || 
-        item.code.toLowerCase().includes(inputPartDesc.toLowerCase())
+        (item.name || "").toLowerCase().includes(inputPartDesc.toLowerCase()) || 
+        (item.code || "").toLowerCase().includes(inputPartDesc.toLowerCase())
       )
     : [];
 
@@ -290,15 +293,15 @@ export default function Taller({
     if (o.estado === "Entregado") return false; // Ocultar vehículos ya entregados de las listas activas
 
     // If mechanic role, show only their assigned orders
-    if (isWorker && o.mecanico.toLowerCase() !== usuarioActual.user.toLowerCase()) {
+    if (isWorker && (o.mecanico || "").toLowerCase() !== (usuarioActual?.user || "").toLowerCase()) {
       return false;
     }
     
     // Global search
     const matchesSearch = 
-      o.cliente.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      o.vehiculo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      o.mecanico.toLowerCase().includes(searchQuery.toLowerCase());
+      (o.cliente || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (o.vehiculo || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (o.mecanico || "").toLowerCase().includes(searchQuery.toLowerCase());
       
     return matchesSearch;
   });
@@ -420,16 +423,17 @@ export default function Taller({
     const tel = order.telefono?.trim();
     if (tel) {
       setClientes(prev => {
-        const exists = prev.find(c => c.telefono === tel);
+        const safePrev = Array.isArray(prev) ? prev : [];
+        const exists = safePrev.find(c => c.telefono === tel);
         if (exists) {
-          return prev.map(c => c.telefono === tel ? {
+          return safePrev.map(c => c.telefono === tel ? {
             ...c,
             nombre: order.cliente.trim(),
             nit: order.nit || c.nit,
             nombreFacturacion: order.nombreFacturacion || c.nombreFacturacion
           } : c);
         } else {
-          return [...prev, {
+          return [...safePrev, {
             telefono: tel,
             nombre: order.cliente.trim(),
             nit: order.nit || "C/F",
@@ -444,11 +448,12 @@ export default function Taller({
     const chs = order.chasis?.toUpperCase()?.trim();
     if (plc || chs) {
       setVehiculos(prev => {
-        const matchIndex = prev.findIndex(v => 
+        const safePrev = Array.isArray(prev) ? prev : [];
+        const matchIndex = safePrev.findIndex(v => 
           (plc && v.placa === plc) || (chs && v.chasis === chs)
         );
         if (matchIndex > -1) {
-          return prev.map((v, idx) => idx === matchIndex ? {
+          return safePrev.map((v, idx) => idx === matchIndex ? {
             ...v,
             placa: plc || v.placa,
             chasis: chs || v.chasis,
@@ -459,7 +464,7 @@ export default function Taller({
             clienteTelefono: tel || v.clienteTelefono
           } : v);
         } else {
-          return [...prev, {
+          return [...safePrev, {
             placa: plc || "",
             chasis: chs || "",
             marca: order.marca.trim(),
@@ -785,7 +790,8 @@ export default function Taller({
           setWorkshopInventory((prevInventory) => {
             return prevInventory.map(invItem => {
               const usedPart = o.presupuesto.parts.find(p => 
-                p.code === invItem.code || p.desc.toLowerCase().trim() === invItem.name.toLowerCase().trim()
+                (p.code && invItem.code && p.code === invItem.code) || 
+                (p.desc || "").toLowerCase().trim() === (invItem.name || "").toLowerCase().trim()
               );
               if (usedPart) {
                 const newQty = Math.max(0, invItem.quantity - usedPart.qty);
@@ -867,7 +873,7 @@ export default function Taller({
       return;
     }
 
-    const matchingInv = (workshopInventory || []).find(item => item.name.toLowerCase().trim() === inputPartDesc.trim().toLowerCase());
+    const matchingInv = (workshopInventory || []).find(item => (item.name || "").toLowerCase().trim() === (inputPartDesc || "").trim().toLowerCase());
     const code = matchingInv ? matchingInv.code : "";
     const brand = matchingInv ? matchingInv.brand : "";
     const presentation = matchingInv ? matchingInv.presentation : "";
@@ -940,13 +946,16 @@ export default function Taller({
 
   const addServiceItem = () => {
     if (!inputServiceDesc.trim()) return;
+    const purchasePrice = inputServicePurchasePrice.trim() !== "" ? parseFloat(inputServicePurchasePrice) : 0;
     const price = inputServicePrice.trim() !== "" ? parseFloat(inputServicePrice) : 0;
+    if (isNaN(purchasePrice) || purchasePrice < 0) return;
     if (isNaN(price) || price < 0) return;
     setCurrentBudget((prev) => ({
       ...prev,
-      services: [...(prev.services || []), { desc: inputServiceDesc.trim(), price }]
+      services: [...(prev.services || []), { desc: inputServiceDesc.trim(), purchasePrice, price }]
     }));
     setInputServiceDesc("");
+    setInputServicePurchasePrice("");
     setInputServicePrice("");
   };
 
@@ -1756,12 +1765,11 @@ export default function Taller({
       ctx.textAlign = "left";
     }
 
-    // Trigger download
-    const dataURL = canvas.toDataURL("image/png");
-    const link = document.createElement("a");
-    link.download = `Presupuesto_${o.placa || "auto"}.png`;
-    link.href = dataURL;
-    link.click();
+    // Trigger PDF Download
+    const dataURL = canvas.toDataURL("image/jpeg", 0.95);
+    const pdf = new jsPDF("p", "px", [800, canvas.height]);
+    pdf.addImage(dataURL, "JPEG", 0, 0, 800, canvas.height);
+    pdf.save(`Presupuesto_${o.placa || "auto"}.pdf`);
   };
 
   const exportarRecepcionImagen = async (o) => {
@@ -2412,12 +2420,11 @@ export default function Taller({
       ctx.textAlign = "left";
     }
 
-    // Trigger download
-    const dataURL = canvas.toDataURL("image/png");
-    const link = document.createElement("a");
-    link.download = `Recepcion_${o.placa || "auto"}.png`;
-    link.href = dataURL;
-    link.click();
+    // Trigger PDF Download
+    const dataURL = canvas.toDataURL("image/jpeg", 0.95);
+    const pdf = new jsPDF("p", "px", [800, canvas.height]);
+    pdf.addImage(dataURL, "JPEG", 0, 0, 800, canvas.height);
+    pdf.save(`Recepcion_${o.placa || "auto"}.pdf`);
   };
 
   const eliminarOrden = (id) => {
@@ -3073,6 +3080,9 @@ export default function Taller({
                                 margin: 0
                               }}
                             >
+                              {!mecanicos.includes(o.mecanico) && (
+                                <option value={o.mecanico}>{o.mecanico}</option>
+                              )}
                               {mecanicos.map((m, i) => (
                                 <option key={i} value={m}>{m}</option>
                               ))}
@@ -3277,8 +3287,8 @@ export default function Taller({
                         if (o.presupuesto && o.presupuesto.parts) {
                           o.presupuesto.parts.forEach(part => {
                             const invItem = (workshopInventory || []).find(inv => 
-                              (part.code && inv.code.toUpperCase().trim() === part.code.toUpperCase().trim()) || 
-                              inv.name.toLowerCase().trim() === part.desc.toLowerCase().trim()
+                              (part.code && inv.code && inv.code.toUpperCase().trim() === part.code.toUpperCase().trim()) || 
+                              (inv.name || "").toLowerCase().trim() === (part.desc || "").toLowerCase().trim()
                             );
                             const stock = invItem ? invItem.quantity : 0;
                             if (part.qty > stock) {
@@ -3936,21 +3946,29 @@ export default function Taller({
               {!isWorker && (
                 <div style={styles.budgetSection}>
                   <h3 style={styles.budgetSecTitle}>💼 Servicios Externos / Otros</h3>
-                  <div style={styles.budgetInputRow}>
+                  <div style={styles.budgetInputRow} style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "10px" }}>
                     <input
                       placeholder="Servicio (ej. Torno culata / Grúa)"
                       className="input-field"
                       value={inputServiceDesc}
                       onChange={(e) => setInputServiceDesc(e.target.value)}
-                      style={{ flex: 3 }}
+                      style={{ flex: 2 }}
                     />
                     <input
                       type="number"
-                      placeholder="Q 0"
+                      placeholder="P. Compra"
+                      className="input-field"
+                      value={inputServicePurchasePrice}
+                      onChange={(e) => setInputServicePurchasePrice(e.target.value)}
+                      style={{ flex: 1 }}
+                    />
+                    <input
+                      type="number"
+                      placeholder="P. Venta"
                       className="input-field"
                       value={inputServicePrice}
                       onChange={(e) => setInputServicePrice(e.target.value)}
-                      style={{ flex: 1.2 }}
+                      style={{ flex: 1 }}
                     />
                     <button type="button" className="btn btn-primary" onClick={addServiceItem} style={{ padding: "0 15px", height: "42px" }}>
                       +
@@ -3959,10 +3977,39 @@ export default function Taller({
                   <ul style={styles.budgetList}>
                     {(currentBudget.services || []).map((item, idx) => (
                       <li key={idx} style={styles.budgetItem}>
-                        <span>{item.desc}</span>
-                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <span style={{ flex: 1 }}>{item.desc}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                          {/* Purchase Price Input */}
                           <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                            <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Q</span>
+                            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Compra: Q</span>
+                            <input
+                              type="number"
+                              value={item.purchasePrice !== undefined ? item.purchasePrice : ""}
+                              placeholder="0.00"
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setCurrentBudget(prev => {
+                                  const servicesCopy = [...prev.services];
+                                  servicesCopy[idx] = { ...servicesCopy[idx], purchasePrice: val === "" ? "" : parseFloat(val) };
+                                  return { ...prev, services: servicesCopy };
+                                });
+                              }}
+                              style={{
+                                width: "70px",
+                                height: "28px",
+                                padding: "2px 6px",
+                                fontSize: "0.85rem",
+                                backgroundColor: "rgba(0,0,0,0.3)",
+                                border: "1px solid rgba(255,255,255,0.15)",
+                                borderRadius: "6px",
+                                color: "#fff",
+                                textAlign: "right"
+                              }}
+                            />
+                          </div>
+                          {/* Sale Price Input */}
+                          <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Venta: Q</span>
                             <input
                               type="number"
                               value={item.price !== undefined ? item.price : ""}
@@ -3976,7 +4023,7 @@ export default function Taller({
                                 });
                               }}
                               style={{
-                                width: "80px",
+                                width: "70px",
                                 height: "28px",
                                 padding: "2px 6px",
                                 fontSize: "0.85rem",
@@ -4348,13 +4395,13 @@ export default function Taller({
             {/* Total / Actions */}
             <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: "15px", marginTop: "10px", display: "flex", flexDirection: "column", gap: "10px" }}>
               {(() => {
-                const discountPct = presupuestoFormalOrder.presupuesto?.discount || 0;
-                const totalLabor = presupuestoFormalOrder.presupuesto.labor?.reduce((sum, item) => sum + item.price, 0) || 0;
-                const totalParts = presupuestoFormalOrder.presupuesto.parts?.reduce((sum, item) => sum + (item.qty * item.salePrice), 0) || 0;
-                const totalInsumos = presupuestoFormalOrder.presupuesto.insumos?.reduce((sum, item) => sum + (item.qty * item.salePrice), 0) || 0;
-                const totalTools = presupuestoFormalOrder.presupuesto.tools?.reduce((sum, item) => sum + (item.qty * item.price), 0) || 0;
-                const totalServices = presupuestoFormalOrder.presupuesto.services?.reduce((sum, item) => sum + item.price, 0) || 0;
-                const subTotal = totalLabor + totalParts + totalInsumos + totalTools + totalServices;
+                const discountPct = Number(presupuestoFormalOrder.presupuesto?.discount || 0);
+                const totalLabor = presupuestoFormalOrder.presupuesto.labor?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
+                const totalParts = presupuestoFormalOrder.presupuesto.parts?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.salePrice || 0)), 0) || 0;
+                const totalInsumos = presupuestoFormalOrder.presupuesto.insumos?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.salePrice || 0)), 0) || 0;
+                const totalTools = presupuestoFormalOrder.presupuesto.tools?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.price || 0)), 0) || 0;
+                const totalServices = presupuestoFormalOrder.presupuesto.services?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
+                const subTotal = Number(totalLabor) + Number(totalParts) + Number(totalInsumos) + Number(totalTools) + Number(totalServices);
                 const discountAmount = subTotal * (discountPct / 100);
                 if (discountPct > 0) {
                   return (
@@ -4376,13 +4423,13 @@ export default function Taller({
                 <span>Total Estimado:</span>
                 <span style={{ color: "var(--color-primary)", fontSize: "1.2rem", fontWeight: "900" }}>
                   {(() => {
-                    const discountPct = presupuestoFormalOrder.presupuesto?.discount || 0;
-                    const totalLabor = presupuestoFormalOrder.presupuesto.labor?.reduce((sum, item) => sum + item.price, 0) || 0;
-                    const totalParts = presupuestoFormalOrder.presupuesto.parts?.reduce((sum, item) => sum + (item.qty * item.salePrice), 0) || 0;
-                    const totalInsumos = presupuestoFormalOrder.presupuesto.insumos?.reduce((sum, item) => sum + (item.qty * item.salePrice), 0) || 0;
-                    const totalTools = presupuestoFormalOrder.presupuesto.tools?.reduce((sum, item) => sum + (item.qty * item.price), 0) || 0;
-                    const totalServices = presupuestoFormalOrder.presupuesto.services?.reduce((sum, item) => sum + item.price, 0) || 0;
-                    const subTotal = totalLabor + totalParts + totalInsumos + totalTools + totalServices;
+                    const discountPct = Number(presupuestoFormalOrder.presupuesto?.discount || 0);
+                    const totalLabor = presupuestoFormalOrder.presupuesto.labor?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
+                    const totalParts = presupuestoFormalOrder.presupuesto.parts?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.salePrice || 0)), 0) || 0;
+                    const totalInsumos = presupuestoFormalOrder.presupuesto.insumos?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.salePrice || 0)), 0) || 0;
+                    const totalTools = presupuestoFormalOrder.presupuesto.tools?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.price || 0)), 0) || 0;
+                    const totalServices = presupuestoFormalOrder.presupuesto.services?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
+                    const subTotal = Number(totalLabor) + Number(totalParts) + Number(totalInsumos) + Number(totalTools) + Number(totalServices);
                     return formatMoney(subTotal - (subTotal * (discountPct / 100)));
                   })()}
                 </span>
@@ -4441,7 +4488,7 @@ export default function Taller({
                       onClick={() => exportarPresupuestoImagen(presupuestoFormalOrder)}
                       style={{ display: "flex", alignItems: "center", gap: "6px" }}
                     >
-                      📥 Descargar Imagen (PNG)
+                      📥 Descargar PDF
                     </button>
 
                     <button 
@@ -4486,12 +4533,12 @@ export default function Taller({
                           text += `\n`;
                         }
 
-                        const discountPct = presupuestoFormalOrder.presupuesto?.discount || 0;
+                        const discountPct = Number(presupuestoFormalOrder.presupuesto?.discount || 0);
                         if (discountPct > 0) {
-                          const totalLabor = presupuestoFormalOrder.presupuesto.labor?.reduce((sum, item) => sum + item.price, 0) || 0;
-                          const totalParts = presupuestoFormalOrder.presupuesto.parts?.reduce((sum, item) => sum + (item.qty * item.salePrice), 0) || 0;
-                          const totalServices = presupuestoFormalOrder.presupuesto.services?.reduce((sum, item) => sum + item.price, 0) || 0;
-                          const subTotal = totalLabor + totalParts + totalServices;
+                          const totalLabor = presupuestoFormalOrder.presupuesto.labor?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
+                          const totalParts = presupuestoFormalOrder.presupuesto.parts?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.salePrice || 0)), 0) || 0;
+                          const totalServices = presupuestoFormalOrder.presupuesto.services?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
+                          const subTotal = Number(totalLabor) + Number(totalParts) + Number(totalServices);
                           const discountAmount = subTotal * (discountPct / 100);
                           text += `Subtotal: Q${subTotal.toFixed(2)}\n`;
                           text += `Descuento ${discountPct}%: -Q${discountAmount.toFixed(2)}\n\n`;
@@ -4654,7 +4701,7 @@ export default function Taller({
                 onClick={() => exportarRecepcionImagen(recepcionFormalOrder)}
                 style={{ display: "flex", alignItems: "center", gap: "6px" }}
               >
-                📥 Descargar Imagen (PNG)
+                📥 Descargar PDF
               </button>
 
               <button 

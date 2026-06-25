@@ -111,9 +111,9 @@ export default function Tienda({
   const filteredCatalog = catalog.filter(item => {
     const matchesTab = activeTab === "all" || item.source === activeTab;
     const matchesSearch = 
-      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.brand.toLowerCase().includes(searchQuery.toLowerCase());
+      (item.name || "").toLowerCase().includes((searchQuery || "").toLowerCase()) ||
+      (item.code || "").toLowerCase().includes((searchQuery || "").toLowerCase()) ||
+      (item.brand || "").toLowerCase().includes((searchQuery || "").toLowerCase());
     return matchesTab && matchesSearch;
   });
 

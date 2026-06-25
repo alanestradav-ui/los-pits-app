@@ -19,6 +19,7 @@ import {
   Phone 
 } from "lucide-react";
 import { formatMoney } from "../utils/storage";
+import { jsPDF } from "jspdf";
 
 const warningLightsDef = [
   { id: "engine", label: "Check Engine", color: "#f59e0b", glow: "rgba(245, 158, 11, 0.4)", icon: "⚠️" },
@@ -353,12 +354,12 @@ export default function VehiculosVenta({
   };
 
   const filteredVehicles = vehiculosVenta.filter((v) => {
-    const query = searchQuery.toLowerCase().trim();
+    const query = (searchQuery || "").toLowerCase().trim();
     return (
-      v.placa.toLowerCase().includes(query) ||
-      v.marca.toLowerCase().includes(query) ||
-      v.linea.toLowerCase().includes(query) ||
-      v.cliente.toLowerCase().includes(query)
+      (v.placa || "").toLowerCase().includes(query) ||
+      (v.marca || "").toLowerCase().includes(query) ||
+      (v.linea || "").toLowerCase().includes(query) ||
+      (v.cliente || "").toLowerCase().includes(query)
     );
   });
 
@@ -847,12 +848,11 @@ export default function VehiculosVenta({
       });
     }
 
-    // Trigger PNG Download
-    const dataURL = canvas.toDataURL("image/png");
-    const link = document.createElement("a");
-    link.download = `recepcion_venta_${o.placa || "venta"}_${o.id}.png`;
-    link.href = dataURL;
-    link.click();
+    // Trigger PDF Download
+    const dataURL = canvas.toDataURL("image/jpeg", 0.95);
+    const pdf = new jsPDF("p", "px", [800, canvas.height]);
+    pdf.addImage(dataURL, "JPEG", 0, 0, 800, canvas.height);
+    pdf.save(`recepcion_venta_${o.placa || "venta"}_${o.id}.pdf`);
     alert("Hoja de recepción generada y descargada exitosamente.");
   };
 
