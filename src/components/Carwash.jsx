@@ -1218,7 +1218,7 @@ export default function Carwash({
 
       {/* RENDER WASH SERVICES TAB */}
       {activeSubTab === "servicios" && (
-        <div style={isManager ? styles.managerGrid : styles.workerGrid}>
+        <div className={isManager ? "responsive-carwash-grid" : ""} style={isManager ? undefined : styles.workerGrid}>
         
         {/* Left Column: Create Wash Job (Only for Admin/Cajero) */}
         {isManager && (
@@ -1896,7 +1896,7 @@ export default function Carwash({
           </div>
 
           {/* Grid CRUD */}
-          <div style={styles.managerGrid}>
+          <div className="responsive-carwash-grid">
             {/* Left Form: CRUD */}
             <div className="glass-panel" style={styles.formCard}>
               <div style={styles.formHeader}>
@@ -2347,12 +2347,12 @@ const styles = {
     width: "100%",
   },
   presetButtonsRow: {
-    display: "flex",
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
     gap: "10px",
     width: "100%",
   },
   presetBtnRow: {
-    flex: 1,
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
@@ -2363,6 +2363,7 @@ const styles = {
     cursor: "pointer",
     transition: "all 0.2s ease",
     border: "1px solid",
+    width: "100%",
   },
   submitBtn: {
     width: "100%",

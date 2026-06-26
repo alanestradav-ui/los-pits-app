@@ -257,6 +257,18 @@ p {
 }
 
 /* Responsive Grid Utilities to fix inline @media warnings */
+.responsive-carwash-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 2fr;
+  gap: 30px;
+  align-items: start;
+}
+@media (max-width: 1024px) {
+  .responsive-carwash-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .responsive-parking-grid {
   display: grid;
   grid-template-columns: 1.1fr 2fr;
