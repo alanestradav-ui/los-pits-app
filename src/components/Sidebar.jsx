@@ -14,7 +14,8 @@ import {
   History,
   Store,
   Receipt,
-  Users
+  Users,
+  Wallet
 } from "lucide-react";
 
 export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLogout, isOpen, setIsOpen, realtimeStatus }) {
@@ -74,6 +75,12 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
       id: "cuentas",
       label: "Cuentas por Pagar / Cobrar",
       icon: Receipt,
+      roles: ["admin", "cajero"]
+    },
+    {
+      id: "compras",
+      label: "Compras Generales",
+      icon: Wallet,
       roles: ["admin", "cajero"]
     },
     {

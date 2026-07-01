@@ -25,7 +25,9 @@ export default function Tienda({
   setTiendaSales,
   cuentasPorCobrar = [],
   setCuentasPorCobrar,
-  usuarioActual
+  usuarioActual,
+  clientes = [],
+  setClientes
 }) {
   // Navigation & POS states
   const [activeTab, setActiveTab] = useState("all"); // 'all', 'taller', 'cafeteria', 'carwash'
@@ -34,6 +36,7 @@ export default function Tienda({
   
   // Client info
   const [cliente, setCliente] = useState("Cliente General");
+  const [telefono, setTelefono] = useState("");
   const [nit, setNit] = useState("");
   const [nombreFacturacion, setNombreFacturacion] = useState("");
 
@@ -185,6 +188,7 @@ export default function Tienda({
     setCheckoutOrder({
       id: Date.now(),
       cliente: cliente.trim() || "Cliente General",
+      telefono: telefono.trim(),
       items: cart,
       total: cartTotal
     });
@@ -240,6 +244,7 @@ export default function Tienda({
         const newCuenta = {
           id: Date.now(),
           cliente: checkoutOrder.cliente || "Cliente General",
+          telefono: checkoutOrder.telefono || "",
           nit: checkoutNit.trim() || "C/F",
           concepto: `Tienda Ticket #${checkoutOrder.id}`,
           total: creditAmount,
@@ -250,6 +255,31 @@ export default function Tienda({
         };
         setCuentasPorCobrar([newCuenta, ...cuentasPorCobrar]);
       }
+    }
+
+    // Register or update client in global list
+    const tel = checkoutOrder.telefono?.trim();
+    if (tel && setClientes) {
+      setClientes(prev => {
+        const safePrev = Array.isArray(prev) ? prev : [];
+        const exists = safePrev.find(c => c.telefono === tel);
+        if (exists) {
+          return safePrev.map(c => c.telefono === tel ? {
+            ...c,
+            nombre: checkoutOrder.cliente.trim() !== "Cliente General" ? checkoutOrder.cliente.trim() : c.nombre,
+            nit: checkoutNit.trim() || c.nit,
+            nombreFacturacion: checkoutNombreFacturacion.trim() || c.nombreFacturacion
+          } : c);
+        } else {
+          return [...safePrev, {
+            telefono: tel,
+            nombre: checkoutOrder.cliente.trim(),
+            nit: checkoutNit.trim() || "C/F",
+            nombreFacturacion: checkoutNombreFacturacion.trim() || checkoutOrder.cliente.trim(),
+            fechaRegistro: new Date().toISOString()
+          }];
+        }
+      });
     }
 
     // Deduct stock from inventories based on item sources
@@ -279,6 +309,7 @@ export default function Tienda({
     const newTiendaSale = {
       id: checkoutOrder.id,
       cliente: checkoutOrder.cliente,
+      telefono: checkoutOrder.telefono || "",
       items: checkoutOrder.items.map(i => ({
         id: i.originalId,
         source: i.source,
@@ -300,6 +331,7 @@ export default function Tienda({
     setTiendaSales([newTiendaSale, ...tiendaSales]);
     setCart([]);
     setCliente("Cliente General");
+    setTelefono("");
     setNit("");
     setNombreFacturacion("");
     setCheckoutOrder(null);
@@ -465,15 +497,60 @@ export default function Tienda({
             <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: "18px", display: "flex", flexDirection: "column", gap: "12px" }}>
               <h3 style={{ fontSize: "0.95rem", fontWeight: "700" }}>Datos del Cliente</h3>
               
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Nombre de Cliente</label>
-                <input
-                  type="text"
-                  className="input-field"
-                  placeholder="Cliente General"
-                  value={cliente}
-                  onChange={(e) => setCliente(e.target.value)}
-                />
+              <div style={{ display: "flex", gap: "10px" }}>
+                <div style={{ ...styles.inputGroup, flex: 1.5 }}>
+                  <label style={styles.label}>Nombre de Cliente</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    placeholder="Cliente General"
+                    value={cliente}
+                    onChange={(e) => setCliente(e.target.value)}
+                    onBlur={(e) => {
+                      const nameVal = e.target.value.trim();
+                      if (nameVal && nameVal !== "Cliente General" && !telefono) {
+                        const match = (clientes || []).find(c => c.nombre?.toLowerCase().trim() === nameVal.toLowerCase());
+                        if (match) {
+                          const isSame = window.confirm(`Ya existe un cliente registrado con el nombre "${match.nombre}" (Tel: ${match.telefono}).\n\n¿Es la misma persona? (Si confirmas, se llenarán todos sus datos automáticamente)`);
+                          if (isSame) {
+                            setCliente(match.nombre || "");
+                            setTelefono(match.telefono || "");
+                            if (match.nit) setNit(match.nit);
+                            if (match.nombreFacturacion) setNombreFacturacion(match.nombreFacturacion);
+                          }
+                        }
+                      }
+                    }}
+                  />
+                </div>
+                <div style={{ ...styles.inputGroup, flex: 1 }}>
+                  <label style={styles.label}>Teléfono</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    placeholder="Ej. 5566-7788"
+                    value={telefono}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setTelefono(val);
+                      const exactMatch = (clientes || []).find(c => c.telefono === val.trim());
+                      if (exactMatch) {
+                        setCliente(exactMatch.nombre || "");
+                        if (exactMatch.nit) setNit(exactMatch.nit);
+                        if (exactMatch.nombreFacturacion) setNombreFacturacion(exactMatch.nombreFacturacion);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const val = e.target.value.trim();
+                      const exactMatch = (clientes || []).find(c => c.telefono === val);
+                      if (exactMatch) {
+                        setCliente(exactMatch.nombre || "");
+                        if (exactMatch.nit) setNit(exactMatch.nit);
+                        if (exactMatch.nombreFacturacion) setNombreFacturacion(exactMatch.nombreFacturacion);
+                      }
+                    }}
+                  />
+                </div>
               </div>
 
               <div style={{ display: "flex", gap: "10px" }}>

@@ -60,7 +60,11 @@ export default function Carwash({
   setCarwashConsumption,
   usuarios = [],
   cuentasPorCobrar,
-  setCuentasPorCobrar
+  setCuentasPorCobrar,
+  clientes = [],
+  setClientes,
+  vehiculos = [],
+  setVehiculos
 }) {
   const [activeSubTab, setActiveSubTab] = useState("servicios"); // 'servicios' or 'inventario'
 
@@ -234,6 +238,26 @@ export default function Carwash({
   // Extract unique vehicles historically registered
   const getUniqueVehicles = () => {
     const vehiclesMap = {};
+    
+    // Add from global vehicles state first
+    (vehiculos || []).forEach(v => {
+      if (v.placa) {
+        const p = v.placa.toUpperCase().trim();
+        const owner = (clientes || []).find(c => c.telefono === v.clienteTelefono);
+        vehiclesMap[p] = {
+          placa: p,
+          cliente: owner ? owner.nombre : "",
+          telefono: v.clienteTelefono || "",
+          marca: v.marca || "",
+          linea: v.linea || "",
+          color: v.color || "",
+          chasis: v.chasis || "",
+          anio: v.anio || ""
+        };
+      }
+    });
+
+    // Merge/override from local carwash entries just in case
     carwash.forEach(c => {
       if (c.vehiculo?.placa) {
         const p = c.vehiculo.placa.toUpperCase().trim();
@@ -243,7 +267,10 @@ export default function Carwash({
             cliente: c.cliente || "",
             telefono: c.telefono || "",
             marca: c.vehiculo.marca || "",
-            linea: c.vehiculo.linea || ""
+            linea: c.vehiculo.linea || "",
+            color: c.vehiculo.color || "",
+            chasis: c.chasis || "",
+            anio: c.anio || ""
           };
         }
       }
@@ -268,6 +295,17 @@ export default function Carwash({
     setTelefono(v.telefono);
     setMarca(v.marca);
     setLinea(v.linea);
+    if (v.color) setColor(v.color);
+    if (v.anio) setAnio(v.anio);
+    if (v.chasis) setChasis(v.chasis);
+    
+    // Look up NIT and Billing name from owner!
+    const owner = (clientes || []).find(c => c.telefono === v.telefono);
+    if (owner) {
+      if (owner.nit) setNit(owner.nit);
+      if (owner.nombreFacturacion) setNombreFacturacion(owner.nombreFacturacion);
+    }
+    
     setShowSuggestions(false);
   };
 
@@ -390,7 +428,68 @@ export default function Carwash({
       checklist
     };
 
+    const registrarClienteYVehiculo = (order) => {
+      const tel = order.telefono?.trim();
+      if (tel && setClientes) {
+        setClientes(prev => {
+          const safePrev = Array.isArray(prev) ? prev : [];
+          const exists = safePrev.find(c => c.telefono === tel);
+          if (exists) {
+            return safePrev.map(c => c.telefono === tel ? {
+              ...c,
+              nombre: order.cliente.trim(),
+              nit: order.nit || c.nit,
+              nombreFacturacion: order.nombreFacturacion || c.nombreFacturacion
+            } : c);
+          } else {
+            return [...safePrev, {
+              telefono: tel,
+              nombre: order.cliente.trim(),
+              nit: order.nit || "C/F",
+              nombreFacturacion: order.nombreFacturacion || order.cliente.trim(),
+              fechaRegistro: new Date().toISOString()
+            }];
+          }
+        });
+      }
+
+      const plc = order.vehiculo?.placa?.toUpperCase()?.trim();
+      const chs = order.chasis?.toUpperCase()?.trim();
+      if ((plc || chs) && setVehiculos) {
+        setVehiculos(prev => {
+          const safePrev = Array.isArray(prev) ? prev : [];
+          const matchIndex = safePrev.findIndex(v => 
+            (plc && v.placa === plc) || (chs && v.chasis === chs)
+          );
+          if (matchIndex > -1) {
+            return safePrev.map((v, idx) => idx === matchIndex ? {
+              ...v,
+              placa: plc || v.placa,
+              chasis: chs || v.chasis,
+              marca: order.vehiculo.marca.trim(),
+              linea: order.vehiculo.linea.trim(),
+              anio: order.anio || v.anio,
+              color: order.vehiculo.color || v.color,
+              clienteTelefono: tel || v.clienteTelefono
+            } : v);
+          } else {
+            return [...safePrev, {
+              placa: plc || "",
+              chasis: chs || "",
+              marca: order.vehiculo.marca.trim(),
+              linea: order.vehiculo.linea.trim(),
+              anio: order.anio || "",
+              color: order.vehiculo.color || "",
+              clienteTelefono: tel || "",
+              fechaRegistro: new Date().toISOString()
+            }];
+          }
+        });
+      }
+    };
+
     setCarwash([nuevo, ...carwash]);
+    registrarClienteYVehiculo(nuevo);
     setCliente("");
     setTelefono("");
     setPlaca("");
@@ -523,6 +622,7 @@ export default function Carwash({
         const newCuenta = {
           id: Date.now(),
           cliente: checkoutOrder.cliente,
+          telefono: checkoutOrder.telefono || "",
           nit: checkoutNit.trim() || "C/F",
           concepto: `Carwash Orden #${checkoutOrder.id} - ${checkoutOrder.tipo} (${checkoutOrder.vehiculo?.placa || "Auto"})`,
           total: creditAmount,
@@ -1274,6 +1374,32 @@ export default function Carwash({
                       className="input-field"
                       value={cliente}
                       onChange={(e) => setCliente(e.target.value)}
+                      onBlur={(e) => {
+                        const nameVal = e.target.value.trim();
+                        if (nameVal && !telefono) {
+                          const match = (clientes || []).find(c => c.nombre?.toLowerCase().trim() === nameVal.toLowerCase());
+                          if (match) {
+                            const isSame = window.confirm(`Ya existe un cliente registrado con el nombre "${match.nombre}" (Tel: ${match.telefono}).\n\n¿Es la misma persona? (Si confirmas, se llenarán todos sus datos automáticamente)`);
+                            if (isSame) {
+                              setCliente(match.nombre || "");
+                              setTelefono(match.telefono || "");
+                              if (match.nit) setNit(match.nit);
+                              if (match.nombreFacturacion) setNombreFacturacion(match.nombreFacturacion);
+                              
+                              // Find their vehicle if any
+                              const clientVehicle = (vehiculos || []).find(v => v.clienteTelefono === match.telefono);
+                              if (clientVehicle) {
+                                setPlaca(clientVehicle.placa || "");
+                                setMarca(clientVehicle.marca || "");
+                                setLinea(clientVehicle.linea || "");
+                                if (clientVehicle.color) setColor(clientVehicle.color);
+                                if (clientVehicle.anio) setAnio(clientVehicle.anio);
+                                if (clientVehicle.chasis) setChasis(clientVehicle.chasis);
+                              }
+                            }
+                          }
+                        }
+                      }}
                       style={styles.input}
                     />
                   </div>
@@ -1284,7 +1410,47 @@ export default function Carwash({
                     placeholder="Número de teléfono"
                     className="input-field"
                     value={telefono}
-                    onChange={(e) => setTelefono(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setTelefono(val);
+                      
+                      const exactMatch = (clientes || []).find(c => c.telefono === val.trim());
+                      if (exactMatch) {
+                        setCliente(exactMatch.nombre || "");
+                        if (exactMatch.nit) setNit(exactMatch.nit);
+                        if (exactMatch.nombreFacturacion) setNombreFacturacion(exactMatch.nombreFacturacion);
+                        
+                        // Find their vehicle
+                        const clientVehicle = (vehiculos || []).find(v => v.clienteTelefono === exactMatch.telefono);
+                        if (clientVehicle) {
+                          setPlaca(clientVehicle.placa || "");
+                          setMarca(clientVehicle.marca || "");
+                          setLinea(clientVehicle.linea || "");
+                          if (clientVehicle.color) setColor(clientVehicle.color);
+                          if (clientVehicle.anio) setAnio(clientVehicle.anio);
+                          if (clientVehicle.chasis) setChasis(clientVehicle.chasis);
+                        }
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const val = e.target.value.trim();
+                      const exactMatch = (clientes || []).find(c => c.telefono === val);
+                      if (exactMatch) {
+                        setCliente(exactMatch.nombre || "");
+                        if (exactMatch.nit) setNit(exactMatch.nit);
+                        if (exactMatch.nombreFacturacion) setNombreFacturacion(exactMatch.nombreFacturacion);
+                        
+                        const clientVehicle = (vehiculos || []).find(v => v.clienteTelefono === exactMatch.telefono);
+                        if (clientVehicle) {
+                          setPlaca(clientVehicle.placa || "");
+                          setMarca(clientVehicle.marca || "");
+                          setLinea(clientVehicle.linea || "");
+                          if (clientVehicle.color) setColor(clientVehicle.color);
+                          if (clientVehicle.anio) setAnio(clientVehicle.anio);
+                          if (clientVehicle.chasis) setChasis(clientVehicle.chasis);
+                        }
+                      }
+                    }}
                   />
                 </div>
               </div>

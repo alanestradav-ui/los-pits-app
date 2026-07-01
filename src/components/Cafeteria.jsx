@@ -22,13 +22,16 @@ export default function Cafeteria({
   setCafeteriaSales, 
   usuarioActual,
   cuentasPorCobrar,
-  setCuentasPorCobrar
+  setCuentasPorCobrar,
+  clientes = [],
+  setClientes
 }) {
   const [activeSubTab, setActiveSubTab] = useState("pos"); // 'pos' or 'inventory'
   
   // POS States
   const [cart, setCart] = useState([]);
   const [cliente, setCliente] = useState("Cliente General");
+  const [telefono, setTelefono] = useState("");
   const [posSearchQuery, setPosSearchQuery] = useState("");
   const [nit, setNit] = useState("");
   const [nombreFacturacion, setNombreFacturacion] = useState("");
@@ -129,6 +132,7 @@ export default function Cafeteria({
     setCheckoutOrder({
       id: Date.now(),
       cliente: cliente.trim() || "Cliente General",
+      telefono: telefono.trim(),
       items: cart,
       total: totalSale
     });
@@ -184,6 +188,7 @@ export default function Cafeteria({
         const newCuenta = {
           id: Date.now(),
           cliente: checkoutOrder.cliente || "Cliente General",
+          telefono: checkoutOrder.telefono || "",
           nit: checkoutNit.trim() || "C/F",
           concepto: `Cafetería Ticket #${checkoutOrder.id}`,
           total: creditAmount,
@@ -194,6 +199,31 @@ export default function Cafeteria({
         };
         setCuentasPorCobrar([newCuenta, ...cuentasPorCobrar]);
       }
+    }
+
+    // Register or update client in global list
+    const tel = checkoutOrder.telefono?.trim();
+    if (tel && setClientes) {
+      setClientes(prev => {
+        const safePrev = Array.isArray(prev) ? prev : [];
+        const exists = safePrev.find(c => c.telefono === tel);
+        if (exists) {
+          return safePrev.map(c => c.telefono === tel ? {
+            ...c,
+            nombre: checkoutOrder.cliente.trim() !== "Cliente General" ? checkoutOrder.cliente.trim() : c.nombre,
+            nit: checkoutNit.trim() || c.nit,
+            nombreFacturacion: checkoutNombreFacturacion.trim() || c.nombreFacturacion
+          } : c);
+        } else {
+          return [...safePrev, {
+            telefono: tel,
+            nombre: checkoutOrder.cliente.trim(),
+            nit: checkoutNit.trim() || "C/F",
+            nombreFacturacion: checkoutNombreFacturacion.trim() || checkoutOrder.cliente.trim(),
+            fechaRegistro: new Date().toISOString()
+          }];
+        }
+      });
     }
 
     // Deduct stock from inventory
@@ -211,6 +241,7 @@ export default function Cafeteria({
     const nuevaVenta = {
       id: checkoutOrder.id,
       cliente: checkoutOrder.cliente,
+      telefono: checkoutOrder.telefono || "",
       items: checkoutOrder.items.map(item => ({
         id: item.id,
         name: item.name,
@@ -231,6 +262,7 @@ export default function Cafeteria({
     setCafeteriaSales([nuevaVenta, ...cafeteriaSales]);
     setCart([]);
     setCliente("Cliente General");
+    setTelefono("");
     setNit("");
     setNombreFacturacion("");
     setCheckoutOrder(null);
@@ -457,16 +489,60 @@ export default function Cafeteria({
 
             <form onSubmit={registrarVenta} style={styles.cartForm}>
               <div style={{ display: "flex", gap: "10px", flexDirection: "column" }}>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Cliente / Mesa</label>
-                  <div style={styles.inputWrapper}>
-                    <User size={16} style={styles.inputIcon} />
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <div style={{ ...styles.inputGroup, flex: 1.5 }}>
+                    <label style={styles.label}>Cliente / Mesa</label>
+                    <div style={styles.inputWrapper}>
+                      <User size={16} style={styles.inputIcon} />
+                      <input
+                        placeholder="Ej. Mesa 3 / Nombre Cliente"
+                        className="input-field"
+                        value={cliente}
+                        onChange={(e) => setCliente(e.target.value)}
+                        onBlur={(e) => {
+                          const nameVal = e.target.value.trim();
+                          if (nameVal && nameVal !== "Cliente General" && !telefono) {
+                            const match = (clientes || []).find(c => c.nombre?.toLowerCase().trim() === nameVal.toLowerCase());
+                            if (match) {
+                              const isSame = window.confirm(`Ya existe un cliente registrado con el nombre "${match.nombre}" (Tel: ${match.telefono}).\n\n¿Es la misma persona? (Si confirmas, se llenarán todos sus datos automáticamente)`);
+                              if (isSame) {
+                                setCliente(match.nombre || "");
+                                setTelefono(match.telefono || "");
+                                if (match.nit) setNit(match.nit);
+                                if (match.nombreFacturacion) setNombreFacturacion(match.nombreFacturacion);
+                              }
+                            }
+                          }
+                        }}
+                        style={{ ...styles.input, paddingLeft: "42px" }}
+                      />
+                    </div>
+                  </div>
+                  <div style={{ ...styles.inputGroup, flex: 1 }}>
+                    <label style={styles.label}>Teléfono</label>
                     <input
-                      placeholder="Ej. Mesa 3 / Nombre Cliente"
+                      placeholder="Número de teléfono"
                       className="input-field"
-                      value={cliente}
-                      onChange={(e) => setCliente(e.target.value)}
-                      style={{ ...styles.input, paddingLeft: "42px" }}
+                      value={telefono}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setTelefono(val);
+                        const exactMatch = (clientes || []).find(c => c.telefono === val.trim());
+                        if (exactMatch) {
+                          setCliente(exactMatch.nombre || "");
+                          if (exactMatch.nit) setNit(exactMatch.nit);
+                          if (exactMatch.nombreFacturacion) setNombreFacturacion(exactMatch.nombreFacturacion);
+                        }
+                      }}
+                      onBlur={(e) => {
+                        const val = e.target.value.trim();
+                        const exactMatch = (clientes || []).find(c => c.telefono === val);
+                        if (exactMatch) {
+                          setCliente(exactMatch.nombre || "");
+                          if (exactMatch.nit) setNit(exactMatch.nit);
+                          if (exactMatch.nombreFacturacion) setNombreFacturacion(exactMatch.nombreFacturacion);
+                        }
+                      }}
                     />
                   </div>
                 </div>

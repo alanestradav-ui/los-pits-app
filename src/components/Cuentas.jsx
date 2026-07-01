@@ -19,7 +19,9 @@ export default function Cuentas({
   setCuentasPorCobrar,
   cuentasPorPagar = [],
   setCuentasPorPagar,
-  usuarioActual
+  usuarioActual,
+  clientes = [],
+  setClientes
 }) {
   const [activeSubTab, setActiveSubTab] = useState("cobrar"); // 'cobrar' or 'pagar'
   
@@ -31,6 +33,7 @@ export default function Cuentas({
   // Form states for manual additions
   // Accounts Receivable (Clientes)
   const [cCliente, setCCliente] = useState("");
+  const [cTelefono, setCTelefono] = useState("");
   const [cNit, setCNit] = useState("");
   const [cConcepto, setCConcepto] = useState("");
   const [cTotal, setCTotal] = useState("");
@@ -52,6 +55,7 @@ export default function Cuentas({
     const nuevaCuenta = {
       id: Date.now(),
       cliente: cCliente.trim(),
+      telefono: cTelefono.trim(),
       nit: cNit.trim() || "C/F",
       concepto: cConcepto.trim(),
       total: totalVal,
@@ -61,8 +65,33 @@ export default function Cuentas({
       pagos: []
     };
 
+    // Register or update client in global list
+    const tel = cTelefono.trim();
+    if (tel && setClientes) {
+      setClientes(prev => {
+        const safePrev = Array.isArray(prev) ? prev : [];
+        const exists = safePrev.find(c => c.telefono === tel);
+        if (exists) {
+          return safePrev.map(c => c.telefono === tel ? {
+            ...c,
+            nombre: cCliente.trim(),
+            nit: cNit.trim() || c.nit
+          } : c);
+        } else {
+          return [...safePrev, {
+            telefono: tel,
+            nombre: cCliente.trim(),
+            nit: cNit.trim() || "C/F",
+            nombreFacturacion: cCliente.trim(),
+            fechaRegistro: new Date().toISOString()
+          }];
+        }
+      });
+    }
+
     setCuentasPorCobrar([nuevaCuenta, ...cuentasPorCobrar]);
     setCCliente("");
+    setCTelefono("");
     setCNit("");
     setCConcepto("");
     setCTotal("");
@@ -247,6 +276,47 @@ export default function Cuentas({
                     placeholder="Cliente o Empresa"
                     value={cCliente}
                     onChange={(e) => setCCliente(e.target.value)}
+                    onBlur={(e) => {
+                      const nameVal = e.target.value.trim();
+                      if (nameVal && !cTelefono) {
+                        const match = (clientes || []).find(c => c.nombre?.toLowerCase().trim() === nameVal.toLowerCase());
+                        if (match) {
+                          const isSame = window.confirm(`Ya existe un cliente registrado con el nombre "${match.nombre}" (Tel: ${match.telefono}).\n\n¿Es la misma persona? (Si confirmas, se llenarán todos sus datos automáticamente)`);
+                          if (isSame) {
+                            setCCliente(match.nombre || "");
+                            setCTelefono(match.telefono || "");
+                            if (match.nit) setCNit(match.nit);
+                          }
+                        }
+                      }
+                    }}
+                  />
+                </div>
+
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Teléfono (Opcional)</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    placeholder="Ej. 5566-7788"
+                    value={cTelefono}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setCTelefono(val);
+                      const exactMatch = (clientes || []).find(c => c.telefono === val.trim());
+                      if (exactMatch) {
+                        setCCliente(exactMatch.nombre || "");
+                        if (exactMatch.nit) setCNit(exactMatch.nit);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const val = e.target.value.trim();
+                      const exactMatch = (clientes || []).find(c => c.telefono === val);
+                      if (exactMatch) {
+                        setCCliente(exactMatch.nombre || "");
+                        if (exactMatch.nit) setCNit(exactMatch.nit);
+                      }
+                    }}
                   />
                 </div>
 
@@ -324,7 +394,10 @@ export default function Cuentas({
                             <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>NIT: {c.nit}</div>
                           </td>
                           <td style={styles.td}>
-                            <div style={{ fontWeight: "700", color: "#fff" }}>{c.cliente}</div>
+                            <div style={{ fontWeight: "700", color: "#fff" }}>
+                              {c.cliente}
+                              {c.telefono && <span style={{ color: "var(--text-muted)", fontWeight: "500", fontSize: "0.8rem", marginLeft: "8px" }}>📞 {c.telefono}</span>}
+                            </div>
                             <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", maxWidth: "220px", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }} title={c.concepto}>
                               {c.concepto}
                             </div>

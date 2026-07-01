@@ -409,9 +409,9 @@ export default function SettingsComponent({
   const getDefaultPermissionsForRole = (role) => {
     switch (role) {
       case "admin":
-        return ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas"];
+        return ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "compras"];
       case "cajero":
-        return ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "configuracion", "historial", "tienda", "cuentas"];
+        return ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "configuracion", "historial", "tienda", "cuentas", "compras"];
       case "mecanico":
         return ["taller", "historial"];
       case "lavador":
@@ -701,9 +701,24 @@ export default function SettingsComponent({
       } catch (err) {
          console.error("Error uploading to cloud:", err);
          alert("Ocurrió un error al subir los datos: " + err.message);
-      } finally {
-        setIsUploadingToCloud(false);
-      }
+       } finally {
+         setIsUploadingToCloud(false);
+       }
+     }
+   };
+
+  const handleForceSyncFromCloud = () => {
+    if (window.confirm("¿Seguro que deseas borrar el caché local de este dispositivo y forzar la descarga de los datos desde la nube? Tu configuración de enlace de Supabase no se borrará.")) {
+      const keysToClear = [
+        "ordenes", "carwash", "parkingEntries", "parkingRate", "parkingHistory", 
+        "vehiculosVenta", "workshopInventory", "cafeteriaInventory", "cafeteriaSales", 
+        "comisionMecanico", "dashboardPeriod", "carwashPresets", "carwashInventory", 
+        "carwashConsumption", "tiendaSales", "cuentasPorCobrar", "cuentasPorPagar", 
+        "fixedCosts", "clientes", "vehiculos", "usuarios"
+      ];
+      keysToClear.forEach(key => localStorage.removeItem(key));
+      alert("Caché local limpiado con éxito. La página se recargará para descargar los datos actualizados desde Supabase.");
+      window.location.reload();
     }
   };
 
@@ -1936,6 +1951,7 @@ export default function SettingsComponent({
                         { id: "repuestosFaltantes", label: "🛒 Repuestos Faltantes" },
                         { id: "tienda", label: "🛒 Tienda POS" },
                         { id: "cuentas", label: "📋 Cuentas Pagar/Cobrar" },
+                        { id: "compras", label: "🛍️ Compras & Gastos" },
                         { id: "historial", label: "⏳ Historial Vehículos" },
                         { id: "finanzas", label: "📈 Finanzas" },
                         { id: "configuracion", label: "⚙️ Configuración" }
@@ -2229,21 +2245,38 @@ export default function SettingsComponent({
                 )}
 
                 {connectionStatus === "connected" && (
-                  <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "15px", marginTop: "15px" }}>
-                    <h4 style={{ ...styles.label, color: "#fff", marginBottom: "10px" }}>Cargar Datos de la PC a la Nube (Solo la primera vez)</h4>
-                    <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "12px" }}>
-                      Si ya tienes órdenes de taller, clientes e inventario en este navegador de PC, súbelos a Supabase para que los celulares y otras computadoras puedan cargarlos automáticamente al abrir el sistema.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={handleUploadLocalDataToCloud}
-                      disabled={isUploadingToCloud}
-                      className="btn btn-secondary"
-                      style={{ width: "100%", fontWeight: "700" }}
-                    >
-                      {isUploadingToCloud ? "Subiendo Información..." : "⬆️ Subir Datos de esta PC a la Nube"}
-                    </button>
-                  </div>
+                  <>
+                    <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "15px", marginTop: "15px" }}>
+                      <h4 style={{ ...styles.label, color: "#fff", marginBottom: "10px" }}>Cargar Datos de la PC a la Nube (Solo la primera vez)</h4>
+                      <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "12px" }}>
+                        Si ya tienes órdenes de taller, clientes e inventario en este navegador de PC, súbelos a Supabase para que los celulares y otras computadoras puedan cargarlos automáticamente al abrir el sistema.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleUploadLocalDataToCloud}
+                        disabled={isUploadingToCloud}
+                        className="btn btn-secondary"
+                        style={{ width: "100%", fontWeight: "700" }}
+                      >
+                        {isUploadingToCloud ? "Subiendo Información..." : "⬆️ Subir Datos de esta PC a la Nube"}
+                      </button>
+                    </div>
+
+                    <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "15px", marginTop: "15px" }}>
+                      <h4 style={{ ...styles.label, color: "#fff", marginBottom: "10px" }}>Descargar Datos de la Nube (Forzar Sincronización)</h4>
+                      <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "12px" }}>
+                        Si este dispositivo muestra datos antiguos o desfasados, limpia el caché local para forzar la descarga de la información más reciente desde Supabase.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleForceSyncFromCloud}
+                        className="btn btn-ghost"
+                        style={{ width: "100%", fontWeight: "700", borderColor: "var(--color-primary)", color: "var(--color-primary)", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", height: "38px" }}
+                      >
+                        🔄 Restablecer y Forzar Sincronización desde la Nube
+                      </button>
+                    </div>
+                  </>
                 )}
 
                 <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "15px", marginTop: "15px" }}>
@@ -2592,6 +2625,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.app_data;`}
                     { id: "repuestosFaltantes", label: "🛒 Repuestos Faltantes" },
                     { id: "tienda", label: "🛒 Tienda POS" },
                     { id: "cuentas", label: "📋 Cuentas Pagar/Cobrar" },
+                    { id: "compras", label: "🛍️ Compras & Gastos" },
                     { id: "historial", label: "⏳ Historial Vehículos" },
                     { id: "finanzas", label: "📈 Finanzas" },
                     { id: "configuracion", label: "⚙️ Configuración" }

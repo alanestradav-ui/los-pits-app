@@ -24,7 +24,10 @@ export default function ClientesVehiculos({
   setClientes,
   vehiculos: rawVehiculos = [],
   setVehiculos,
-  usuarioActual
+  usuarioActual,
+  setOrdenes,
+  setCarwash,
+  setCuentasPorCobrar
 }) {
   const clientes = rawClientes || [];
   const vehiculos = rawVehiculos || [];
@@ -111,13 +114,23 @@ export default function ClientesVehiculos({
         direccion: cDireccion.trim()
       } : c);
       
-      // Update vehicle owner links
+      // Update vehicle owner links, orders, carwash, and credits
       if (editingClient.telefono !== telClean) {
         const updatedVehicles = vehiculos.map(v => v.clienteTelefono === editingClient.telefono ? {
           ...v,
           clienteTelefono: telClean
         } : v);
         setVehiculos(updatedVehicles);
+
+        if (setOrdenes) {
+          setOrdenes(prev => (prev || []).map(o => o.telefono === editingClient.telefono ? { ...o, telefono: telClean } : o));
+        }
+        if (setCarwash) {
+          setCarwash(prev => (prev || []).map(c => c.telefono === editingClient.telefono ? { ...c, telefono: telClean } : c));
+        }
+        if (setCuentasPorCobrar) {
+          setCuentasPorCobrar(prev => (prev || []).map(cta => cta.telefono === editingClient.telefono ? { ...cta, telefono: telClean } : cta));
+        }
       }
       
       setClientes(updated);

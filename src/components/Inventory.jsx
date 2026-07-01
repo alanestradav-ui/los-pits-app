@@ -10,13 +10,16 @@ import {
   Search,
   ShoppingCart,
   ClipboardList,
-  CheckCircle
+  CheckCircle,
+  Wrench
 } from "lucide-react";
 import { formatMoney } from "../utils/storage";
 
 export default function Inventory({ 
   workshopInventory, 
   setWorkshopInventory, 
+  toolsInventory = [],
+  setToolsInventory,
   usuarioActual,
   ordenes = [],
   cuentasPorPagar = [],
@@ -35,6 +38,17 @@ export default function Inventory({
   const [searchQuery, setSearchQuery] = useState("");
   const [formaPago, setFormaPago] = useState("efectivo");
   const [proveedor, setProveedor] = useState("");
+
+  // Local states for Tools Inventory CRUD
+  const [toolCode, setToolCode] = useState("");
+  const [toolName, setToolName] = useState("");
+  const [toolBrand, setToolBrand] = useState("");
+  const [toolQuantity, setToolQuantity] = useState("");
+  const [toolPurchasePrice, setToolPurchasePrice] = useState("");
+  const [toolCondition, setToolCondition] = useState("Nueva");
+  const [toolLocation, setToolLocation] = useState("");
+  const [toolAssignedTo, setToolAssignedTo] = useState("");
+  const [editingToolId, setEditingToolId] = useState(null);
 
   const isAdmin = usuarioActual?.rol === "admin";
   const isCajero = usuarioActual?.rol === "cajero";
@@ -159,6 +173,103 @@ export default function Inventory({
     setPurchasePrice("");
     setSalePrice("");
     setMinStock("");
+  };
+
+  const handleToolSubmit = (e) => {
+    e.preventDefault();
+    if (!toolName.trim() || !toolQuantity || !toolPurchasePrice) {
+      alert("Completa todos los campos obligatorios.");
+      return;
+    }
+
+    const qty = parseInt(toolQuantity);
+    const purchase = parseFloat(toolPurchasePrice);
+
+    if (isNaN(qty) || qty < 0) {
+      alert("La cantidad debe ser un número entero mayor o igual a 0.");
+      return;
+    }
+    if (isNaN(purchase) || purchase < 0) {
+      alert("El precio de compra debe ser un número válido mayor o igual a 0.");
+      return;
+    }
+
+    if (editingToolId) {
+      // Edit
+      setToolsInventory(
+        (toolsInventory || []).map((t) => {
+          if (!t) return t;
+          return t.id === editingToolId
+            ? { 
+                ...t, 
+                code: toolCode.toUpperCase().trim(), 
+                name: toolName.trim(), 
+                brand: toolBrand.trim(), 
+                quantity: qty, 
+                purchasePrice: purchase, 
+                condition: toolCondition, 
+                location: toolLocation.trim(), 
+                assignedTo: toolAssignedTo.trim() 
+              }
+            : t;
+        })
+      );
+      setEditingToolId(null);
+    } else {
+      // Add
+      const nuevo = {
+        id: Date.now(),
+        code: toolCode.toUpperCase().trim() || `HERR-${Date.now().toString().slice(-4)}`,
+        name: toolName.trim(),
+        brand: toolBrand.trim(),
+        quantity: qty,
+        purchasePrice: purchase,
+        condition: toolCondition,
+        location: toolLocation.trim(),
+        assignedTo: toolAssignedTo.trim(),
+        fechaIngreso: new Date().toISOString()
+      };
+      setToolsInventory([nuevo, ...(toolsInventory || [])]);
+    }
+
+    setToolCode("");
+    setToolName("");
+    setToolBrand("");
+    setToolQuantity("");
+    setToolPurchasePrice("");
+    setToolCondition("Nueva");
+    setToolLocation("");
+    setToolAssignedTo("");
+  };
+
+  const iniciarEdicionTool = (tool) => {
+    setEditingToolId(tool.id);
+    setToolCode(tool.code || "");
+    setToolName(tool.name);
+    setToolBrand(tool.brand || "");
+    setToolQuantity(tool.quantity.toString());
+    setToolPurchasePrice(tool.purchasePrice.toString());
+    setToolCondition(tool.condition || "Nueva");
+    setToolLocation(tool.location || "");
+    setToolAssignedTo(tool.assignedTo || "");
+  };
+
+  const eliminarTool = (id) => {
+    if (window.confirm("¿Seguro que deseas eliminar esta herramienta del inventario?")) {
+      setToolsInventory((toolsInventory || []).filter((t) => t.id !== id));
+    }
+  };
+
+  const cancelarEdicionTool = () => {
+    setEditingToolId(null);
+    setToolCode("");
+    setToolName("");
+    setToolBrand("");
+    setToolQuantity("");
+    setToolPurchasePrice("");
+    setToolCondition("Nueva");
+    setToolLocation("");
+    setToolAssignedTo("");
   };
 
   // Calculations for Valuation Dashboard
@@ -295,6 +406,14 @@ export default function Inventory({
         >
           <Warehouse size={16} /> Inventario General
         </button>
+        {isManager && (
+          <button 
+            onClick={() => setActiveSubTab("herramientas")}
+            style={{ ...styles.subTabBtn, ...(activeSubTab === "herramientas" ? styles.subTabActive : {}) }}
+          >
+            <Wrench size={16} /> Inventario de Herramientas
+          </button>
+        )}
         {isManager && (
           <button 
             onClick={() => setActiveSubTab("adquirir")}
@@ -761,6 +880,303 @@ export default function Inventory({
                     </table>
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* RENDER INVENTARIO DE HERRAMIENTAS SUBTAB */}
+      {activeSubTab === "herramientas" && isManager && (
+        <>
+          {/* Tool Valuation Metrics */}
+          <div style={styles.metricsRow}>
+            <div className="glass-panel" style={styles.metricCard}>
+              <div style={{ ...styles.iconBg, backgroundColor: "var(--color-primary-glow)" }}>
+                <Wrench size={20} color="var(--color-primary)" />
+              </div>
+              <div style={styles.metricInfo}>
+                <span style={styles.metricLabel}>Herramientas Diferentes</span>
+                <span style={styles.metricValue}>{(toolsInventory || []).length}</span>
+              </div>
+            </div>
+
+            <div className="glass-panel" style={styles.metricCard}>
+              <div style={{ ...styles.iconBg, backgroundColor: "var(--color-warning-glow)" }}>
+                <ClipboardList size={20} color="var(--color-warning)" />
+              </div>
+              <div style={styles.metricInfo}>
+                <span style={styles.metricLabel}>Total Unidades</span>
+                <span style={{ ...styles.metricValue, color: "var(--color-warning)" }}>
+                  {(toolsInventory || []).reduce((sum, t) => sum + (t.quantity || 0), 0)} uds
+                </span>
+              </div>
+            </div>
+
+            <div className="glass-panel" style={styles.metricCard}>
+              <div style={{ ...styles.iconBg, backgroundColor: "var(--color-success-glow)" }}>
+                <Coins size={20} color="var(--color-success)" />
+              </div>
+              <div style={styles.metricInfo}>
+                <span style={styles.metricLabel}>Valorización Total Costo</span>
+                <span style={{ ...styles.metricValue, color: "var(--color-success)" }}>
+                  {formatMoney((toolsInventory || []).reduce((sum, t) => sum + ((t.quantity || 0) * (t.purchasePrice || 0)), 0))}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="responsive-inventory-grid">
+            {/* Form: Tools CRUD */}
+            <div className="glass-panel" style={styles.formCard}>
+              <div style={styles.formHeader}>
+                <Plus size={20} color="var(--color-primary)" />
+                <h3 style={styles.formTitle}>
+                  {editingToolId ? "Editar Herramienta" : "Registrar Herramienta"}
+                </h3>
+              </div>
+
+              <form onSubmit={handleToolSubmit} style={styles.form}>
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <div style={{ ...styles.inputGroup, flex: 1 }}>
+                    <label style={styles.label}>Código</label>
+                    <input
+                      placeholder="Ej. HER-01"
+                      className="input-field"
+                      value={toolCode}
+                      onChange={(e) => setToolCode(e.target.value)}
+                      style={{ textTransform: "uppercase" }}
+                    />
+                  </div>
+                  <div style={{ ...styles.inputGroup, flex: 1 }}>
+                    <label style={styles.label}>Marca</label>
+                    <input
+                      placeholder="Ej. DeWalt, Craftsman"
+                      className="input-field"
+                      value={toolBrand}
+                      onChange={(e) => setToolBrand(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Nombre de la Herramienta *</label>
+                  <input
+                    placeholder="Ej. Taladro Percutor 1/2"
+                    className="input-field"
+                    value={toolName}
+                    onChange={(e) => setToolName(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <div style={{ ...styles.inputGroup, flex: 1 }}>
+                    <label style={styles.label}>Cantidad *</label>
+                    <input
+                      type="number"
+                      placeholder="Cantidad"
+                      className="input-field"
+                      value={toolQuantity}
+                      onChange={(e) => setToolQuantity(e.target.value)}
+                      min="1"
+                      required
+                    />
+                  </div>
+                  <div style={{ ...styles.inputGroup, flex: 1 }}>
+                    <label style={styles.label}>Precio Compra / Costo (Q) *</label>
+                    <input
+                      type="number"
+                      placeholder="Costo unitario"
+                      className="input-field"
+                      value={toolPurchasePrice}
+                      onChange={(e) => setToolPurchasePrice(e.target.value)}
+                      min="0"
+                      step="any"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <div style={{ ...styles.inputGroup, flex: 1 }}>
+                    <label style={styles.label}>Estado / Condición</label>
+                    <select
+                      className="select-field"
+                      value={toolCondition}
+                      onChange={(e) => setToolCondition(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "12px 16px",
+                        background: "rgba(20, 24, 33, 0.8)",
+                        border: "1px solid rgba(255, 255, 255, 0.08)",
+                        borderRadius: "10px",
+                        color: "#fff"
+                      }}
+                    >
+                      <option value="Nueva">Nueva</option>
+                      <option value="Excelente">Excelente</option>
+                      <option value="Bueno">Bueno</option>
+                      <option value="Regular">Regular</option>
+                      <option value="Malo">Malo</option>
+                    </select>
+                  </div>
+                  <div style={{ ...styles.inputGroup, flex: 1.5 }}>
+                    <label style={styles.label}>Ubicación / Estante</label>
+                    <input
+                      placeholder="Ej. Estante A-2, Caja 1"
+                      className="input-field"
+                      value={toolLocation}
+                      onChange={(e) => setToolLocation(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Asignada a (Colaborador)</label>
+                  <input
+                    placeholder="Ej. General, Mecánico Carlos"
+                    className="input-field"
+                    value={toolAssignedTo}
+                    onChange={(e) => setToolAssignedTo(e.target.value)}
+                  />
+                </div>
+
+                <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
+                  {editingToolId && (
+                    <button type="button" className="btn btn-ghost" onClick={cancelarEdicionTool} style={{ flex: 1 }}>
+                      Cancelar
+                    </button>
+                  )}
+                  <button type="submit" className="btn btn-primary" style={{ flex: 2 }}>
+                    {editingToolId ? "Actualizar Herramienta" : "Registrar Herramienta"}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* List Table of Tools */}
+            <div style={styles.listColumn}>
+              {/* Search Box */}
+              <div className="glass-panel" style={styles.searchCard}>
+                <Search size={18} style={styles.searchIcon} />
+                <input
+                  type="text"
+                  placeholder="Buscar herramientas por nombre, código o asignado..."
+                  style={styles.searchInput}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+
+              {/* Table */}
+              <div className="glass-panel" style={{ padding: "20px", border: "1px solid rgba(255, 255, 255, 0.04)" }}>
+                {(() => {
+                  const filteredTools = (toolsInventory || []).filter(t => {
+                    if (!t) return false;
+                    const q = searchQuery.toLowerCase().trim();
+                    return (
+                      String(t.name || "").toLowerCase().includes(q) ||
+                      String(t.code || "").toLowerCase().includes(q) ||
+                      String(t.brand || "").toLowerCase().includes(q) ||
+                      String(t.assignedTo || "").toLowerCase().includes(q)
+                    );
+                  });
+
+                  if (filteredTools.length === 0) {
+                    return (
+                      <div style={styles.emptyState}>
+                        <Wrench size={48} color="var(--text-muted)" style={{ marginBottom: "16px", opacity: 0.4 }} />
+                        <h3>No hay herramientas registradas</h3>
+                        <p>Agrega herramientas en el formulario o búscalas arriba.</p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div style={styles.tableResponsive}>
+                      <table style={styles.table}>
+                        <thead>
+                          <tr>
+                            <th style={styles.th}>Código</th>
+                            <th style={styles.th}>Herramienta</th>
+                            <th style={styles.th}>Cantidad</th>
+                            <th style={styles.th}>Estado</th>
+                            <th style={styles.th}>Ubicación</th>
+                            <th style={styles.th}>Asignado A</th>
+                            <th style={styles.th}>Costo Unit.</th>
+                            <th style={{ ...styles.th, textAlign: "right" }}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredTools.map((tool) => (
+                            <tr key={tool.id} style={styles.tr}>
+                              <td style={{ ...styles.td, fontFamily: "var(--font-display)", fontWeight: "700", color: "#fff" }}>
+                                {tool.code || "S/C"}
+                              </td>
+                              <td style={styles.td}>
+                                <div style={{ display: "flex", flexDirection: "column" }}>
+                                  <span style={{ color: "#fff", fontWeight: "600" }}>{tool.name}</span>
+                                  {tool.brand && <span style={{ color: "var(--color-primary)", fontSize: "0.75rem", fontWeight: "bold" }}>🏷️ {tool.brand}</span>}
+                                </div>
+                              </td>
+                              <td style={{ ...styles.td, fontWeight: "700", color: "#fff" }}>
+                                {tool.quantity} uds
+                              </td>
+                              <td style={styles.td}>
+                                <span style={{
+                                  fontSize: "0.75rem",
+                                  padding: "2px 8px",
+                                  borderRadius: "6px",
+                                  fontWeight: "700",
+                                  backgroundColor: tool.condition === "Nueva" || tool.condition === "Excelente" 
+                                    ? "rgba(16, 185, 129, 0.1)" 
+                                    : tool.condition === "Bueno" 
+                                      ? "rgba(59, 130, 246, 0.1)" 
+                                      : "rgba(245, 158, 11, 0.1)",
+                                  color: tool.condition === "Nueva" || tool.condition === "Excelente" 
+                                    ? "var(--color-success)" 
+                                    : tool.condition === "Bueno" 
+                                      ? "var(--color-primary)" 
+                                      : "var(--color-warning)"
+                                }}>
+                                  {tool.condition}
+                                </span>
+                              </td>
+                              <td style={styles.td}>{tool.location || "-"}</td>
+                              <td style={styles.td}>
+                                <span style={{ color: "var(--color-secondary)", fontWeight: "600" }}>
+                                  👤 {tool.assignedTo || "General"}
+                                </span>
+                              </td>
+                              <td style={styles.td}>{formatMoney(tool.purchasePrice)}</td>
+                              <td style={styles.td}>
+                                <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+                                  <button
+                                    onClick={() => iniciarEdicionTool(tool)}
+                                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-primary)" }}
+                                    title="Editar"
+                                    type="button"
+                                  >
+                                    <Edit size={16} />
+                                  </button>
+                                  <button
+                                    onClick={() => eliminarTool(tool.id)}
+                                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-danger)" }}
+                                    title="Eliminar"
+                                    type="button"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>

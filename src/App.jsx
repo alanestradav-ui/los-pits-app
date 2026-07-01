@@ -15,6 +15,7 @@ import Tienda from "./components/Tienda";
 import Cuentas from "./components/Cuentas";
 import VehiculosVenta from "./components/VehiculosVenta";
 import ClientesVehiculos from "./components/ClientesVehiculos";
+import Compras from "./components/Compras";
 import { getLocalStorage, setLocalStorage } from "./utils/storage";
 import { getSupabaseClient, syncKeyToCloud } from "./utils/supabase";
 
@@ -47,6 +48,8 @@ const globalActiveSetters = {
   fixedCosts: null,
   clientes: null,
   vehiculos: null,
+  compras: null,
+  toolsInventory: null,
   setIsInitialPullDone: null,
   setRealtimeStatus: null
 };
@@ -69,60 +72,26 @@ const ARRAY_KEYS = [
   "cuentasPorPagar",
   "fixedCosts",
   "clientes",
-  "vehiculos"
+  "vehiculos",
+  "compras",
+  "toolsInventory"
 ];
 
 // Helper to merge local cached array data with cloud data to prevent silent data wipes on initial connection
 const mergeCollections = (key, localVal, cloudVal) => {
-  const isArrayKey = ARRAY_KEYS.includes(key);
-
-  if (isArrayKey) {
-    const safeLocal = Array.isArray(localVal) ? localVal : [];
-    const safeCloud = Array.isArray(cloudVal) ? cloudVal : [];
-    
-    // Define lookup key based on collection type
-    let identifier = "id";
-    if (key === "clientes") {
-      identifier = "telefono";
-    } else if (key === "vehiculos") {
-      identifier = "placa";
-    } else if (key === "usuarios") {
-      identifier = "user";
-    } else if (key === "carwashPresets") {
-      identifier = "tipo";
-    }
-
-    const map = new Map();
-
-    // Load local items first
-    safeLocal.forEach(item => {
-      if (item && item[identifier] !== undefined && item[identifier] !== null) {
-        const idVal = typeof item[identifier] === "string" ? item[identifier].trim().toLowerCase() : item[identifier];
-        map.set(idVal, item);
-      }
-    });
-
-    // Overwrite/add cloud items
-    safeCloud.forEach(item => {
-      if (item && item[identifier] !== undefined && item[identifier] !== null) {
-        const idVal = typeof item[identifier] === "string" ? item[identifier].trim().toLowerCase() : item[identifier];
-        map.set(idVal, item);
-      }
-    });
-
-    return Array.from(map.values());
-  } else {
-    // For primitives or non-arrays, cloud is the direct source of truth if not null/undefined, otherwise fall back to local
-    return (cloudVal !== null && cloudVal !== undefined) ? cloudVal : localVal;
+  // If cloud value is present, trust it as the absolute source of truth to support deletions/edits across devices
+  if (cloudVal !== null && cloudVal !== undefined) {
+    return cloudVal;
   }
+  return localVal;
 };
 
 export default function App() {
   // 🔐 USER DEFINITIONS
   const [usuarios, setUsuarios] = useState(() => {
     const defaultUsers = [
-      { user: "admin", pass: "1234", rol: "admin", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos"], salarioBase: 0, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 0 },
-      { user: "cajero", pass: "1234", rol: "cajero", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos"], salarioBase: 3000, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 0 },
+      { user: "admin", pass: "1234", rol: "admin", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras"], salarioBase: 0, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 0 },
+      { user: "cajero", pass: "1234", rol: "cajero", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras"], salarioBase: 3000, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 0 },
       { user: "mecanico", pass: "1234", rol: "mecanico", permissions: ["taller", "historial"], salarioBase: 2500, comisionTaller: 10, comisionCarwash: 0, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: false, comisionRepuestos: 0 },
       { user: "lavador", pass: "1234", rol: "lavador", permissions: ["carwash"], salarioBase: 2000, comisionTaller: 0, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 0 },
       { user: "jefe", pass: "1234", rol: "jefe de taller", permissions: ["dashboard", "taller", "repuestosFaltantes", "historial"], salarioBase: 4000, comisionTaller: 10, comisionCarwash: 0, comisionarLabor: true, comisionarRepuestos: true, comisionarCarwash: false, comisionRepuestos: 5 }
@@ -132,7 +101,7 @@ export default function App() {
     return loaded.map(u => {
       const perms = u.permissions || [];
       const updatedPerms = (u.rol === "admin" || u.rol === "cajero")
-        ? [...new Set([...perms, "finanzas", "configuracion", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos"])]
+        ? [...new Set([...perms, "finanzas", "configuracion", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras"])]
         : perms;
       
       const comisionarLabor = u.comisionarLabor !== undefined ? u.comisionarLabor : (u.rol?.toLowerCase() !== "lavador");
@@ -405,6 +374,16 @@ export default function App() {
     return Array.isArray(val) ? val : initialVehiculos;
   });
 
+  const [compras, setCompras] = useState(() => {
+    const val = getLocalStorage("compras", []);
+    return Array.isArray(val) ? val : [];
+  });
+
+  const [toolsInventory, setToolsInventory] = useState(() => {
+    const val = getLocalStorage("toolsInventory", []);
+    return Array.isArray(val) ? val : [];
+  });
+
   // 💾 PERSISTENCE EFFECT
   useEffect(() => {
     setLocalStorage("usuarioActual", usuarioActual);
@@ -449,6 +428,8 @@ export default function App() {
     globalActiveSetters.fixedCosts = setFixedCosts;
     globalActiveSetters.clientes = setClientes;
     globalActiveSetters.vehiculos = setVehiculos;
+    globalActiveSetters.compras = setCompras;
+    globalActiveSetters.toolsInventory = setToolsInventory;
     globalActiveSetters.setIsInitialPullDone = setIsInitialPullDone;
     globalActiveSetters.setRealtimeStatus = setRealtimeStatus;
 
@@ -485,7 +466,9 @@ export default function App() {
       cuentasPorPagar,
       fixedCosts,
       clientes,
-      vehiculos
+      vehiculos,
+      compras,
+      toolsInventory
     };
   }, [
     usuarios,
@@ -508,7 +491,9 @@ export default function App() {
     cuentasPorPagar,
     fixedCosts,
     clientes,
-    vehiculos
+    vehiculos,
+    compras,
+    toolsInventory
   ]);
 
   // Sync a key-value pair to cloud if it has actually changed
@@ -806,6 +791,16 @@ export default function App() {
     syncToCloud("cuentasPorPagar", cuentasPorPagar);
   }, [cuentasPorPagar]);
 
+  useEffect(() => {
+    setLocalStorage("compras", compras);
+    syncToCloud("compras", compras);
+  }, [compras]);
+
+  useEffect(() => {
+    setLocalStorage("toolsInventory", toolsInventory);
+    syncToCloud("toolsInventory", toolsInventory);
+  }, [toolsInventory]);
+
   const usuarioActivo = usuarios.find(u => (u.user || "").toLowerCase().trim() === (usuarioActual?.user || "").toLowerCase().trim()) || usuarioActual;
 
   const userHasPermission = (user, tabId) => {
@@ -818,7 +813,7 @@ export default function App() {
     }
     // Fallbacks
     if (activeRol === "cajero") {
-      return ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos"].includes(tabId);
+      return ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras"].includes(tabId);
     }
     if (activeRol === "mecanico") return ["taller", "historial"].includes(tabId);
     if (activeRol === "lavador") return tabId === "carwash";
@@ -927,6 +922,10 @@ export default function App() {
             usuarios={usuarios}
             cuentasPorCobrar={cuentasPorCobrar}
             setCuentasPorCobrar={setCuentasPorCobrar}
+            clientes={clientes}
+            setClientes={setClientes}
+            vehiculos={vehiculos}
+            setVehiculos={setVehiculos}
           />
         )}
 
@@ -941,6 +940,8 @@ export default function App() {
             usuarioActual={usuarioActivo}
             cuentasPorCobrar={cuentasPorCobrar}
             setCuentasPorCobrar={setCuentasPorCobrar}
+            clientes={clientes}
+            setClientes={setClientes}
           />
         )}
 
@@ -948,6 +949,8 @@ export default function App() {
           <Inventory 
             workshopInventory={workshopInventory}
             setWorkshopInventory={setWorkshopInventory}
+            toolsInventory={toolsInventory}
+            setToolsInventory={setToolsInventory}
             usuarioActual={usuarioActivo}
             ordenes={ordenes}
             cuentasPorPagar={cuentasPorPagar}
@@ -964,6 +967,8 @@ export default function App() {
             usuarioActual={usuarioActivo}
             cuentasPorCobrar={cuentasPorCobrar}
             setCuentasPorCobrar={setCuentasPorCobrar}
+            clientes={clientes}
+            setClientes={setClientes}
           />
         )}
 
@@ -980,6 +985,8 @@ export default function App() {
             cuentasPorCobrar={cuentasPorCobrar}
             setCuentasPorCobrar={setCuentasPorCobrar}
             usuarioActual={usuarioActivo}
+            clientes={clientes}
+            setClientes={setClientes}
           />
         )}
 
@@ -990,6 +997,8 @@ export default function App() {
             cuentasPorPagar={cuentasPorPagar}
             setCuentasPorPagar={setCuentasPorPagar}
             usuarioActual={usuarioActivo}
+            clientes={clientes}
+            setClientes={setClientes}
           />
         )}
 
@@ -1069,6 +1078,24 @@ export default function App() {
           />
         )}
 
+        {currentTab === "compras" && userHasPermission(usuarioActivo, "compras") && (
+          <Compras 
+            compras={compras}
+            setCompras={setCompras}
+            toolsInventory={toolsInventory}
+            setToolsInventory={setToolsInventory}
+            workshopInventory={workshopInventory}
+            setWorkshopInventory={setWorkshopInventory}
+            carwashInventory={carwashInventory}
+            setCarwashInventory={setCarwashInventory}
+            cafeteriaInventory={cafeteriaInventory}
+            setCafeteriaInventory={setCafeteriaInventory}
+            cuentasPorPagar={cuentasPorPagar}
+            setCuentasPorPagar={setCuentasPorPagar}
+            usuarioActual={usuarioActivo}
+          />
+        )}
+
         {currentTab === "vehiculosVenta" && userHasPermission(usuarioActivo, "vehiculosVenta") && (
           <VehiculosVenta 
             vehiculosVenta={vehiculosVenta}
@@ -1087,6 +1114,9 @@ export default function App() {
             vehiculos={vehiculos}
             setVehiculos={setVehiculos}
             usuarioActual={usuarioActivo}
+            setOrdenes={setOrdenes}
+            setCarwash={setCarwash}
+            setCuentasPorCobrar={setCuentasPorCobrar}
           />
         )}
       </main>

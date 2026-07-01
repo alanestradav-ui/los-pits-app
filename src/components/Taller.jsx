@@ -240,6 +240,14 @@ export default function Taller({
 
   // Detailed Budget Modal states
   const [budgetModalOrder, setBudgetModalOrder] = useState(null);
+  const [quickAddOrder, setQuickAddOrder] = useState(null);
+  const [quickType, setQuickType] = useState("part");
+  const [quickDesc, setQuickDesc] = useState("");
+  const [quickQty, setQuickQty] = useState("1");
+  const [quickCost, setQuickCost] = useState("");
+  const [quickPrice, setQuickPrice] = useState("");
+  const [quickSuggestions, setQuickSuggestions] = useState([]);
+  const [quickShowSuggestions, setQuickShowSuggestions] = useState(false);
   const [currentBudget, setCurrentBudget] = useState({ labor: [], parts: [], services: [], discount: 0 });
   const [inputDiscount, setInputDiscount] = useState("0");
   const [inputLaborDesc, setInputLaborDesc] = useState("");
@@ -353,6 +361,14 @@ export default function Taller({
       c.telefono?.includes(val) || 
       c.nombre?.toLowerCase().includes(val.toLowerCase())
     );
+
+    // If exact match on phone number, autofill client details
+    const exactMatch = (clientes || []).find(c => c.telefono === val.trim());
+    if (exactMatch) {
+      setCliente(exactMatch.nombre || "");
+      if (exactMatch.nit) setNit(exactMatch.nit);
+      if (exactMatch.nombreFacturacion) setNombreFacturacion(exactMatch.nombreFacturacion);
+    }
     
     setSuggestions(matches.slice(0, 5));
     setActiveFieldSuggestions("telefono");
@@ -765,6 +781,7 @@ export default function Taller({
         const newCuenta = {
           id: Date.now(),
           cliente: checkoutOrder.cliente,
+          telefono: checkoutOrder.telefono || "",
           nit: checkoutNit.trim() || "C/F",
           concepto: `Taller Orden #${checkoutOrder.id} - ${checkoutOrder.vehiculo}`,
           total: creditAmount,
@@ -1030,6 +1047,125 @@ export default function Taller({
 
     setBudgetModalOrder(null);
     setDiagnosticPhotos([]);
+  };
+
+  const handleQuickDescChange = (val) => {
+    setQuickDesc(val);
+    if (!val.trim() || quickType === "service") {
+      setQuickSuggestions([]);
+      setQuickShowSuggestions(false);
+      return;
+    }
+    const matches = (workshopInventory || []).filter(item => 
+      (item.name || "").toLowerCase().includes(val.toLowerCase()) ||
+      (item.code || "").toLowerCase().includes(val.toLowerCase())
+    );
+    setQuickSuggestions(matches.slice(0, 5));
+    setQuickShowSuggestions(true);
+  };
+
+  const selectQuickSuggestion = (item) => {
+    setQuickDesc(item.name || "");
+    setQuickCost(item.costPrice?.toString() || "");
+    setQuickPrice(item.salePrice?.toString() || "");
+    setQuickShowSuggestions(false);
+  };
+
+  const handleQuickAddSubmit = (e) => {
+    e.preventDefault();
+    if (!quickDesc.trim()) {
+      alert("La descripción es obligatoria.");
+      return;
+    }
+    const qty = quickType === "service" ? 1 : parseInt(quickQty);
+    if (isNaN(qty) || qty <= 0) {
+      alert("La cantidad debe ser un número entero mayor a 0.");
+      return;
+    }
+    const cost = parseFloat(quickCost) || 0;
+    const price = parseFloat(quickPrice) || 0;
+    if (price < 0 || cost < 0) {
+      alert("Los precios no pueden ser negativos.");
+      return;
+    }
+
+    const orderToUpdate = ordenes.find(o => o.id === quickAddOrder.id);
+    if (!orderToUpdate) return;
+
+    const currentBud = orderToUpdate.presupuesto || { labor: [], parts: [], services: [], discount: 0, insumos: [], tools: [] };
+    const updatedParts = [...(currentBud.parts || [])];
+    const updatedInsumos = [...(currentBud.insumos || [])];
+    const updatedServices = [...(currentBud.services || [])];
+
+    if (quickType === "part") {
+      const matchingInv = (workshopInventory || []).find(item => (item.name || "").toLowerCase().trim() === quickDesc.trim().toLowerCase());
+      const code = matchingInv ? matchingInv.code : "";
+      const brand = matchingInv ? matchingInv.brand : "";
+      const presentation = matchingInv ? matchingInv.presentation : "";
+      updatedParts.push({
+        desc: quickDesc.trim(),
+        qty,
+        purchasePrice: cost,
+        salePrice: price,
+        price,
+        code,
+        brand,
+        presentation
+      });
+    } else if (quickType === "insumo") {
+      updatedInsumos.push({
+        desc: quickDesc.trim(),
+        qty,
+        purchasePrice: cost,
+        salePrice: price
+      });
+    } else {
+      updatedServices.push({
+        desc: quickDesc.trim(),
+        purchasePrice: cost,
+        price
+      });
+    }
+
+    const nextBudget = {
+      ...currentBud,
+      parts: updatedParts,
+      insumos: updatedInsumos,
+      services: updatedServices
+    };
+
+    const discountPct = parseFloat(nextBudget.discount) || 0;
+    const totalLabor = (nextBudget.labor || []).reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
+    const totalParts = (nextBudget.parts || []).reduce((sum, item) => sum + (item.qty * (parseFloat(item.salePrice) || 0)), 0);
+    const totalInsumos = (nextBudget.insumos || []).reduce((sum, item) => sum + (item.qty * (parseFloat(item.salePrice) || 0)), 0);
+    const totalTools = (nextBudget.tools || []).reduce((sum, item) => sum + (item.qty * (parseFloat(item.price) || 0)), 0);
+    const totalServices = (nextBudget.services || []).reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
+    const subTotal = totalLabor + totalParts + totalInsumos + totalTools + totalServices;
+    const discountAmount = subTotal * (discountPct / 100);
+    const granTotal = subTotal - discountAmount;
+
+    setOrdenes(
+      ordenes.map(o => {
+        if (o.id === quickAddOrder.id) {
+          return {
+            ...o,
+            presupuesto: nextBudget,
+            total: granTotal,
+            comision: calculateOrderCommission({ ...o, presupuesto: nextBudget, total: granTotal })
+          };
+        }
+        return o;
+      })
+    );
+
+    setQuickAddOrder(null);
+    setQuickDesc("");
+    setQuickQty("1");
+    setQuickCost("");
+    setQuickPrice("");
+    setQuickSuggestions([]);
+    setQuickShowSuggestions(false);
+    alert("Elemento cargado inmediatamente.");
   };
 
   const avanzarOrden = (id) => {
@@ -2469,6 +2605,21 @@ export default function Taller({
                       className="input-field"
                       value={cliente}
                       onChange={(e) => setCliente(e.target.value)}
+                      onBlur={(e) => {
+                        const nameVal = e.target.value.trim();
+                        if (nameVal && !telefono) {
+                          const match = (clientes || []).find(c => c.nombre?.toLowerCase().trim() === nameVal.toLowerCase());
+                          if (match) {
+                            const isSame = window.confirm(`Ya existe un cliente registrado con el nombre "${match.nombre}" (Tel: ${match.telefono}).\n\n¿Es la misma persona? (Si confirmas, se llenarán todos sus datos automáticamente)`);
+                            if (isSame) {
+                              setCliente(match.nombre || "");
+                              setTelefono(match.telefono || "");
+                              if (match.nit) setNit(match.nit);
+                              if (match.nombreFacturacion) setNombreFacturacion(match.nombreFacturacion);
+                            }
+                          }
+                        }
+                      }}
                       style={styles.input}
                     />
                   </div>
@@ -2480,7 +2631,16 @@ export default function Taller({
                     className="input-field"
                     value={telefono}
                     onChange={(e) => handleTelefonoInput(e.target.value)}
-                    onBlur={() => setTimeout(() => setActiveFieldSuggestions(null), 200)}
+                    onBlur={(e) => {
+                      const val = e.target.value.trim();
+                      const match = (clientes || []).find(c => c.telefono === val);
+                      if (match) {
+                        setCliente(match.nombre || "");
+                        if (match.nit) setNit(match.nit);
+                        if (match.nombreFacturacion) setNombreFacturacion(match.nombreFacturacion);
+                      }
+                      setTimeout(() => setActiveFieldSuggestions(null), 200);
+                    }}
                   />
                   {activeFieldSuggestions === "telefono" && suggestions.length > 0 && (
                     <ul className="suggestions-list">
@@ -3472,6 +3632,41 @@ export default function Taller({
                             </button>
                           )}
                         </div>
+                        {o.estado !== "Entregado" && (
+                          <div style={{ display: "flex", gap: "8px", width: "100%" }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setQuickAddOrder(o);
+                                setQuickType("part");
+                                setQuickDesc("");
+                                setQuickQty("1");
+                                setQuickCost("");
+                                setQuickPrice("");
+                                setQuickSuggestions([]);
+                                setQuickShowSuggestions(false);
+                              }}
+                              className="btn btn-ghost"
+                              style={{ 
+                                flex: 1, 
+                                height: "34px", 
+                                fontSize: "0.8rem", 
+                                display: "flex", 
+                                alignItems: "center", 
+                                justifyContent: "center", 
+                                gap: "6px",
+                                border: "1px solid var(--color-primary)",
+                                color: "var(--color-primary)",
+                                borderRadius: "8px",
+                                cursor: "pointer",
+                                transition: "all 0.2s"
+                              }}
+                            >
+                              <Plus size={14} />
+                              <span>⚙️ Cargar Repuesto / Insumo / Servicio</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -4214,6 +4409,173 @@ export default function Taller({
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {quickAddOrder && (
+        <div style={styles.modalOverlay}>
+          <div className="glass-panel" style={{ ...styles.modalContent, maxWidth: "500px" }}>
+            <div style={{ ...styles.modalHeader, display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "15px" }}>
+              <div>
+                <h2 style={{ fontSize: "1.3rem", fontWeight: "800", color: "#fff" }}>
+                  ⚙️ Cargar Repuesto, Insumo o Trabajo Externo
+                </h2>
+                <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "2px" }}>
+                  Orden #{quickAddOrder.id} - Placa {quickAddOrder.placa} ({quickAddOrder.cliente})
+                </p>
+              </div>
+              <button 
+                onClick={() => {
+                  setQuickAddOrder(null);
+                  setQuickDesc("");
+                  setQuickQty("1");
+                  setQuickCost("");
+                  setQuickPrice("");
+                  setQuickSuggestions([]);
+                  setQuickShowSuggestions(false);
+                }} 
+                style={{ background: "none", border: "none", color: "#fff", fontSize: "1.5rem", cursor: "pointer", padding: 0 }}
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickAddSubmit} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Tipo de Carga *</label>
+                <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuickType("part");
+                      setQuickDesc("");
+                      setQuickSuggestions([]);
+                      setQuickShowSuggestions(false);
+                    }}
+                    className={`btn ${quickType === "part" ? "btn-primary" : "btn-ghost"}`}
+                    style={{ flex: 1, padding: "8px 0", fontSize: "0.85rem" }}
+                  >
+                    ⚙️ Repuesto
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuickType("insumo");
+                      setQuickDesc("");
+                      setQuickSuggestions([]);
+                      setQuickShowSuggestions(false);
+                    }}
+                    className={`btn ${quickType === "insumo" ? "btn-primary" : "btn-ghost"}`}
+                    style={{ flex: 1, padding: "8px 0", fontSize: "0.85rem" }}
+                  >
+                    🧪 Insumo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuickType("service");
+                      setQuickDesc("");
+                      setQuickSuggestions([]);
+                      setQuickShowSuggestions(false);
+                    }}
+                    className={`btn ${quickType === "service" ? "btn-primary" : "btn-ghost"}`}
+                    style={{ flex: 1, padding: "8px 0", fontSize: "0.85rem" }}
+                  >
+                    🛠️ Trabajo Externo
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ ...styles.inputGroup, position: "relative" }}>
+                <label style={styles.label}>Descripción / Nombre *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder={quickType === "part" ? "Ej. Pastillas de freno delanteras" : quickType === "insumo" ? "Ej. Silicona gris" : "Ej. Torno de culata"}
+                  className="input-field"
+                  value={quickDesc}
+                  onChange={(e) => handleQuickDescChange(e.target.value)}
+                  style={{ width: "100%", boxSizing: "border-box" }}
+                />
+                {quickShowSuggestions && quickSuggestions.length > 0 && (
+                  <ul className="suggestions-list" style={{ position: "absolute", zIndex: 10, width: "100%", backgroundColor: "var(--bg-surface)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", padding: "4px 0", listStyle: "none", margin: "4px 0 0 0" }}>
+                    {quickSuggestions.map((item, idx) => (
+                      <li 
+                        key={idx} 
+                        className="suggestion-item"
+                        onMouseDown={() => selectQuickSuggestion(item)}
+                        style={{ padding: "8px 12px", cursor: "pointer", color: "#fff" }}
+                      >
+                        <strong>{item.name}</strong> {item.brand ? `(${item.brand})` : ""} - Stock: {item.quantity} - Q{item.salePrice}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {quickType !== "service" && (
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Cantidad *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    className="input-field"
+                    value={quickQty}
+                    onChange={(e) => setQuickQty(e.target.value)}
+                    style={{ width: "100%", boxSizing: "border-box" }}
+                  />
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: "10px" }}>
+                <div style={{ ...styles.inputGroup, flex: 1 }}>
+                  <label style={styles.label}>Precio Costo (Compra)</label>
+                  <input
+                    type="text"
+                    placeholder="Q0.00"
+                    className="input-field"
+                    value={quickCost}
+                    onChange={(e) => setQuickCost(e.target.value)}
+                    style={{ width: "100%", boxSizing: "border-box" }}
+                  />
+                </div>
+                <div style={{ ...styles.inputGroup, flex: 1 }}>
+                  <label style={styles.label}>Precio Venta *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Q0.00"
+                    className="input-field"
+                    value={quickPrice}
+                    onChange={(e) => setQuickPrice(e.target.value)}
+                    style={{ width: "100%", boxSizing: "border-box" }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "10px" }}>
+                <button 
+                  type="button" 
+                  className="btn btn-ghost" 
+                  onClick={() => {
+                    setQuickAddOrder(null);
+                    setQuickDesc("");
+                    setQuickQty("1");
+                    setQuickCost("");
+                    setQuickPrice("");
+                    setQuickSuggestions([]);
+                    setQuickShowSuggestions(false);
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  ⚡ Cargar Inmediatamente
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
