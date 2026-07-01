@@ -67,13 +67,63 @@ export default function Finance({
   const totalCarwashRevenue = billedCarwash.reduce((sum, c) => sum + c.precio, 0);
   const totalParkingRevenue = parkingHistory.reduce((sum, p) => sum + p.total, 0);
   const totalCafeteriaRevenue = cafeteriaSales.reduce((sum, s) => sum + s.total, 0);
-  const totalGrandRevenue = totalTallerRevenue + totalCarwashRevenue + totalParkingRevenue + totalCafeteriaRevenue;
+  const totalTiendaRevenue = (tiendaSales || []).reduce((sum, t) => sum + t.total, 0);
+  const totalGrandRevenue = totalTallerRevenue + totalCarwashRevenue + totalParkingRevenue + totalCafeteriaRevenue + totalTiendaRevenue;
 
   const totalCafeteriaCost = cafeteriaSales.reduce((sum, sale) => {
     const saleCost = sale.items ? sale.items.reduce((itemSum, item) => itemSum + (item.qty * (item.purchasePrice || 0)), 0) : 0;
     return sum + saleCost;
   }, 0);
   const totalCafeteriaMargin = totalCafeteriaRevenue - totalCafeteriaCost;
+
+  // Split revenues: cash (efectivo) vs banks (tarjeta, transferencia, cheque)
+  let cashRevenueTotal = 0;
+  let bankRevenueTotal = 0;
+
+  billedTaller.forEach(o => {
+    if (o.formaPago) {
+      cashRevenueTotal += parseFloat(o.formaPago.efectivo || 0);
+      bankRevenueTotal += parseFloat(o.formaPago.tarjeta || 0) + parseFloat(o.formaPago.transferencia || 0) + parseFloat(o.formaPago.cheque || 0);
+    } else {
+      cashRevenueTotal += o.total;
+    }
+  });
+
+  billedCarwash.forEach(c => {
+    if (c.formaPago) {
+      cashRevenueTotal += parseFloat(c.formaPago.efectivo || 0);
+      bankRevenueTotal += parseFloat(c.formaPago.tarjeta || 0) + parseFloat(c.formaPago.transferencia || 0) + parseFloat(c.formaPago.cheque || 0);
+    } else {
+      cashRevenueTotal += c.precio;
+    }
+  });
+
+  parkingHistory.forEach(p => {
+    if (p.formaPago) {
+      cashRevenueTotal += parseFloat(p.formaPago.efectivo || 0);
+      bankRevenueTotal += parseFloat(p.formaPago.tarjeta || 0) + parseFloat(p.formaPago.transferencia || 0) + parseFloat(p.formaPago.cheque || 0);
+    } else {
+      cashRevenueTotal += p.total;
+    }
+  });
+
+  cafeteriaSales.forEach(s => {
+    if (s.formaPago) {
+      cashRevenueTotal += parseFloat(s.formaPago.efectivo || 0);
+      bankRevenueTotal += parseFloat(s.formaPago.tarjeta || 0) + parseFloat(s.formaPago.transferencia || 0) + parseFloat(s.formaPago.cheque || 0);
+    } else {
+      cashRevenueTotal += s.total;
+    }
+  });
+
+  (tiendaSales || []).forEach(t => {
+    if (t.formaPago) {
+      cashRevenueTotal += parseFloat(t.formaPago.efectivo || 0);
+      bankRevenueTotal += parseFloat(t.formaPago.tarjeta || 0) + parseFloat(t.formaPago.transferencia || 0) + parseFloat(t.formaPago.cheque || 0);
+    } else {
+      cashRevenueTotal += t.total;
+    }
+  });
 
   // Pending Billing Estimates (excluding "Entregado")
   const pendingTaller = ordenes.filter(o => o.estado !== "Entregado");
@@ -624,17 +674,30 @@ export default function Finance({
         <div style={styles.tabContent}>
           {/* Main revenue stats */}
           <div style={styles.revenueRow}>
-            {/* Box 1: Billed */}
+            {/* Box 1: Caja (Efectivo) */}
             <div className="glass-panel" style={{ ...styles.revenueCard, borderColor: "rgba(16, 185, 129, 0.2)" }}>
               <div style={styles.cardGlowGreen} />
               <div style={styles.revHeader}>
                 <Coins size={24} color="var(--color-success)" />
-                <span style={styles.revLabel}>Total Entregado (En Caja)</span>
+                <span style={styles.revLabel}>Recaudado en Caja (Efectivo)</span>
               </div>
               <span style={{ ...styles.revAmount, color: "var(--color-success)", fontFamily: "var(--font-display)" }}>
-                {formatMoney(totalGrandRevenue)}
+                {formatMoney(cashRevenueTotal)}
               </span>
-              <p style={styles.revSub}>Total acumulado de trabajos facturados y entregados.</p>
+              <p style={styles.revSub}>Total acumulado cobrado en efectivo físico.</p>
+            </div>
+
+            {/* Box 2: Bancos (Otros Métodos) */}
+            <div className="glass-panel" style={{ ...styles.revenueCard, borderColor: "rgba(59, 130, 246, 0.2)" }}>
+              <div style={styles.cardGlowBlue} />
+              <div style={styles.revHeader}>
+                <TrendingUp size={24} color="var(--color-primary)" />
+                <span style={styles.revLabel}>Recaudado en Bancos</span>
+              </div>
+              <span style={{ ...styles.revAmount, color: "var(--color-primary)", fontFamily: "var(--font-display)" }}>
+                {formatMoney(bankRevenueTotal)}
+              </span>
+              <p style={styles.revSub}>Tarjetas, transferencias y cheques depositados.</p>
             </div>
 
             {/* Box 2: Pending */}
@@ -749,6 +812,31 @@ export default function Finance({
                 <div style={styles.breakdownRow}>
                   <strong style={{ color: "#fff" }}>Total General:</strong>
                   <strong style={{ color: "#ec4899" }}>{formatMoney(totalCafeteriaRevenue)}</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Tienda POS card */}
+            <div className="glass-panel" style={styles.breakdownCard}>
+              <div style={styles.breakdownCardHeader}>
+                <div style={{ ...styles.iconBg, backgroundColor: "var(--color-secondary-glow)" }}>
+                  <Coins size={20} color="var(--color-secondary)" />
+                </div>
+                <h3>Tienda POS</h3>
+              </div>
+              <div style={styles.breakdownDetails}>
+                <div style={styles.breakdownRow}>
+                  <span>Total Entregado:</span>
+                  <span style={styles.breakdownVal}>{formatMoney(totalTiendaRevenue)}</span>
+                </div>
+                <div style={styles.breakdownRow}>
+                  <span>Margen (100%):</span>
+                  <span style={{ ...styles.breakdownVal, color: "var(--color-success)" }}>{formatMoney(totalTiendaRevenue)}</span>
+                </div>
+                <div style={styles.breakdownRowDivider} />
+                <div style={styles.breakdownRow}>
+                  <strong style={{ color: "#fff" }}>Total General:</strong>
+                  <strong style={{ color: "var(--color-secondary)" }}>{formatMoney(totalTiendaRevenue)}</strong>
                 </div>
               </div>
             </div>
@@ -1362,6 +1450,16 @@ const styles = {
     height: "100px",
     borderRadius: "50%",
     background: "radial-gradient(circle, rgba(245, 158, 11, 0.12) 0%, transparent 70%)",
+    filter: "blur(20px)",
+  },
+  cardGlowBlue: {
+    position: "absolute",
+    top: "-30px",
+    left: "-30px",
+    width: "100px",
+    height: "100px",
+    borderRadius: "50%",
+    background: "radial-gradient(circle, rgba(59, 130, 246, 0.12) 0%, transparent 70%)",
     filter: "blur(20px)",
   },
   revHeader: {

@@ -155,6 +155,55 @@ export default function Dashboard({
     filteredCafeteria.reduce((sum, cf) => sum + cf.total, 0) +
     filteredTienda.reduce((sum, t) => sum + t.total, 0);
 
+  // Split cash (efectivo) vs banks (tarjeta, transferencia, cheque)
+  let cashRevenue = 0;
+  let bankRevenue = 0;
+
+  filteredOrders.forEach(o => {
+    if (o.formaPago) {
+      cashRevenue += parseFloat(o.formaPago.efectivo || 0);
+      bankRevenue += parseFloat(o.formaPago.tarjeta || 0) + parseFloat(o.formaPago.transferencia || 0) + parseFloat(o.formaPago.cheque || 0);
+    } else {
+      cashRevenue += o.total;
+    }
+  });
+
+  filteredCarwash.forEach(c => {
+    if (c.formaPago) {
+      cashRevenue += parseFloat(c.formaPago.efectivo || 0);
+      bankRevenue += parseFloat(c.formaPago.tarjeta || 0) + parseFloat(c.formaPago.transferencia || 0) + parseFloat(c.formaPago.cheque || 0);
+    } else {
+      cashRevenue += c.precio;
+    }
+  });
+
+  filteredParking.forEach(p => {
+    if (p.formaPago) {
+      cashRevenue += parseFloat(p.formaPago.efectivo || 0);
+      bankRevenue += parseFloat(p.formaPago.tarjeta || 0) + parseFloat(p.formaPago.transferencia || 0) + parseFloat(p.formaPago.cheque || 0);
+    } else {
+      cashRevenue += p.total;
+    }
+  });
+
+  filteredCafeteria.forEach(cf => {
+    if (cf.formaPago) {
+      cashRevenue += parseFloat(cf.formaPago.efectivo || 0);
+      bankRevenue += parseFloat(cf.formaPago.tarjeta || 0) + parseFloat(cf.formaPago.transferencia || 0) + parseFloat(cf.formaPago.cheque || 0);
+    } else {
+      cashRevenue += cf.total;
+    }
+  });
+
+  filteredTienda.forEach(t => {
+    if (t.formaPago) {
+      cashRevenue += parseFloat(t.formaPago.efectivo || 0);
+      bankRevenue += parseFloat(t.formaPago.tarjeta || 0) + parseFloat(t.formaPago.transferencia || 0) + parseFloat(t.formaPago.cheque || 0);
+    } else {
+      cashRevenue += t.total;
+    }
+  });
+
   const pendingRevenueEstimate = 
     ordenes.reduce((sum, o) => sum + (o.estado !== "Entregado" ? o.total : 0), 0) +
     carwash.reduce((sum, c) => sum + (c.estado !== "Entregado" ? c.precio : 0), 0);
@@ -280,17 +329,31 @@ export default function Dashboard({
           </div>
         </div>
 
-        {/* Card 3 */}
+        {/* Card 3: Caja (Efectivo) */}
         <div className="glass-panel" style={styles.statCard}>
           <div style={{ ...styles.iconContainer, backgroundColor: "rgba(16, 185, 129, 0.15)" }}>
             <Coins size={24} color="#10b981" />
           </div>
           <div style={styles.statDetails}>
-            <span style={styles.statLabel}>Caja Recaudada ({currentPeriodLabel})</span>
+            <span style={styles.statLabel}>Caja (Efectivo) ({currentPeriodLabel})</span>
             <span style={{ ...styles.statVal, color: "#10b981", fontFamily: "var(--font-display)" }}>
-              {formatMoney(totalRevenue)}
+              {formatMoney(cashRevenue)}
             </span>
-            <span style={styles.statSubText}>Total facturado en el periodo</span>
+            <span style={styles.statSubText}>Total cobrado en efectivo</span>
+          </div>
+        </div>
+
+        {/* Card 3.5: Bancos */}
+        <div className="glass-panel" style={styles.statCard}>
+          <div style={{ ...styles.iconContainer, backgroundColor: "rgba(59, 130, 246, 0.15)" }}>
+            <TrendingUp size={24} color="var(--color-primary)" />
+          </div>
+          <div style={styles.statDetails}>
+            <span style={styles.statLabel}>Bancos ({currentPeriodLabel})</span>
+            <span style={{ ...styles.statVal, color: "var(--color-primary)", fontFamily: "var(--font-display)" }}>
+              {formatMoney(bankRevenue)}
+            </span>
+            <span style={styles.statSubText}>Tarjetas, transferencias, cheques</span>
           </div>
         </div>
 
