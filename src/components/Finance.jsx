@@ -24,7 +24,15 @@ export default function Finance({
   tiendaSales = [],
   usuarios = [],
   fixedCosts = [],
-  vehiculosVenta = []
+  vehiculosVenta = [],
+  cuentasPorCobrar = [],
+  cuentasPorPagar = [],
+  dashboardPeriod,
+  setDashboardPeriod,
+  customStartDate,
+  setCustomStartDate,
+  customEndDate,
+  setCustomEndDate
 }) {
   const [activeTab, setActiveTab] = useState("overview");
   const [breakevenPeriod, setBreakevenPeriod] = useState("mes");
@@ -59,18 +67,105 @@ export default function Finance({
     return dateStr >= commStart && dateStr <= commEnd;
   };
 
-  // Calculations for billing overview (only "Entregado")
-  const billedTaller = ordenes.filter(o => o.estado === "Entregado");
-  const billedCarwash = carwash.filter(c => c.estado === "Entregado");
+  const getItemDate = (item, dateField) => {
+    if (!item || !item[dateField]) return null;
+    const val = item[dateField];
+    if (typeof val === "number") return new Date(val);
+    const parsed = new Date(val);
+    if (!isNaN(parsed.getTime())) return parsed;
+    return null;
+  };
+
+  const getPeriodBoundaries = () => {
+    const now = new Date();
+    let start = new Date();
+    let end = new Date();
+
+    switch (dashboardPeriod) {
+      case "dia": {
+        start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        break;
+      }
+      case "semana": {
+        const dayOfWeek = now.getDay();
+        const distanceToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - distanceToMonday, 0, 0, 0, 0);
+        end = new Date(start);
+        end.setDate(start.getDate() + 6);
+        end.setHours(23, 59, 59, 999);
+        break;
+      }
+      case "mes": {
+        start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+        end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        break;
+      }
+      case "ano": {
+        start = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
+        end = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+        break;
+      }
+      case "personalizado": {
+        if (customStartDate) {
+          const [yr, mo, dy] = customStartDate.split("-").map(Number);
+          start = new Date(yr, mo - 1, dy, 0, 0, 0, 0);
+        } else {
+          start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        }
+        if (customEndDate) {
+          const [yr, mo, dy] = customEndDate.split("-").map(Number);
+          end = new Date(yr, mo - 1, dy, 23, 59, 59, 999);
+        } else {
+          end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        }
+        break;
+      }
+      default: {
+        start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+        end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        break;
+      }
+    }
+    return { start, end };
+  };
+
+  const filterByPeriod = (list, dateField = "fecha") => {
+    if (!list) return [];
+    const { start, end } = getPeriodBoundaries();
+    return list.filter(item => {
+      const itemDate = getItemDate(item, dateField);
+      if (!itemDate) return false;
+      return itemDate >= start && itemDate <= end;
+    });
+  };
+
+  const periodLabels = {
+    dia: "Día Actual",
+    semana: "Semana Actual",
+    mes: "Mes Actual",
+    ano: "Año Actual",
+    personalizado: "Personalizado"
+  };
+  const currentPeriodLabel = dashboardPeriod === "personalizado" 
+    ? `${customStartDate || "Hoy"} a ${customEndDate || "Hoy"}` 
+    : (periodLabels[dashboardPeriod] || "Mes");
+
+  // Calculations for billing overview (only "Entregado" and within period)
+  const billedTaller = filterByPeriod(ordenes.filter(o => o.estado === "Entregado"), "fecha");
+  const billedCarwash = filterByPeriod(carwash.filter(c => c.estado === "Entregado"), "fecha");
+  const filteredParking = filterByPeriod(parkingHistory, "horaSalida");
+  const filteredCafeteria = filterByPeriod(cafeteriaSales, "fecha");
+  const filteredTienda = filterByPeriod(tiendaSales, "fecha");
 
   const totalTallerRevenue = billedTaller.reduce((sum, o) => sum + o.total, 0);
   const totalCarwashRevenue = billedCarwash.reduce((sum, c) => sum + c.precio, 0);
-  const totalParkingRevenue = parkingHistory.reduce((sum, p) => sum + p.total, 0);
-  const totalCafeteriaRevenue = cafeteriaSales.reduce((sum, s) => sum + s.total, 0);
-  const totalTiendaRevenue = (tiendaSales || []).reduce((sum, t) => sum + t.total, 0);
+  const totalParkingRevenue = filteredParking.reduce((sum, p) => sum + p.total, 0);
+  const totalCafeteriaRevenue = filteredCafeteria.reduce((sum, s) => sum + s.total, 0);
+  const totalTiendaRevenue = (filteredTienda || []).reduce((sum, t) => sum + t.total, 0);
   const totalGrandRevenue = totalTallerRevenue + totalCarwashRevenue + totalParkingRevenue + totalCafeteriaRevenue + totalTiendaRevenue;
 
-  const totalCafeteriaCost = cafeteriaSales.reduce((sum, sale) => {
+  const totalCafeteriaCost = filteredCafeteria.reduce((sum, sale) => {
     const saleCost = sale.items ? sale.items.reduce((itemSum, item) => itemSum + (item.qty * (item.purchasePrice || 0)), 0) : 0;
     return sum + saleCost;
   }, 0);
@@ -98,7 +193,7 @@ export default function Finance({
     }
   });
 
-  parkingHistory.forEach(p => {
+  filteredParking.forEach(p => {
     if (p.formaPago) {
       cashRevenueTotal += parseFloat(p.formaPago.efectivo || 0);
       bankRevenueTotal += parseFloat(p.formaPago.tarjeta || 0) + parseFloat(p.formaPago.transferencia || 0) + parseFloat(p.formaPago.cheque || 0);
@@ -107,7 +202,7 @@ export default function Finance({
     }
   });
 
-  cafeteriaSales.forEach(s => {
+  filteredCafeteria.forEach(s => {
     if (s.formaPago) {
       cashRevenueTotal += parseFloat(s.formaPago.efectivo || 0);
       bankRevenueTotal += parseFloat(s.formaPago.tarjeta || 0) + parseFloat(s.formaPago.transferencia || 0) + parseFloat(s.formaPago.cheque || 0);
@@ -116,7 +211,7 @@ export default function Finance({
     }
   });
 
-  (tiendaSales || []).forEach(t => {
+  (filteredTienda || []).forEach(t => {
     if (t.formaPago) {
       cashRevenueTotal += parseFloat(t.formaPago.efectivo || 0);
       bankRevenueTotal += parseFloat(t.formaPago.tarjeta || 0) + parseFloat(t.formaPago.transferencia || 0) + parseFloat(t.formaPago.cheque || 0);
@@ -562,7 +657,7 @@ export default function Finance({
       total: c.precio,
       formaPagoDesc: c.formaPagoDesc
     })),
-    ...parkingHistory.map(p => ({
+    ...filteredParking.map(p => ({
       id: p.id,
       tipo: "Parqueo",
       titulo: `Placa ${p.placa}`,
@@ -573,7 +668,7 @@ export default function Finance({
       total: p.total,
       formaPagoDesc: p.formaPagoDesc
     })),
-    ...cafeteriaSales.map(s => ({
+    ...filteredCafeteria.map(s => ({
       id: s.id,
       tipo: "Cafeteria",
       titulo: s.cliente,
@@ -584,7 +679,7 @@ export default function Finance({
       total: s.total,
       formaPagoDesc: s.formaPagoDesc
     })),
-    ...(tiendaSales || []).map(t => ({
+    ...(filteredTienda || []).map(t => ({
       id: t.id,
       tipo: "Tienda",
       titulo: t.cliente || "Venta de Tienda",
@@ -665,6 +760,52 @@ export default function Finance({
         >
           <Coins size={16} /> Historial Facturado
         </button>
+      </div>
+
+      {/* Period Selector Controls (Shared with Dashboard) */}
+      <div style={styles.filterBarRow} className="hide-print">
+        <div style={styles.periodFilterBar}>
+          <div style={styles.inputGroupSelect}>
+            <label style={styles.filterLabel}>Rango del Reporte</label>
+            <select
+              value={dashboardPeriod}
+              onChange={(e) => setDashboardPeriod(e.target.value)}
+              style={styles.periodSelect}
+            >
+              <option value="dia">📅 Día Actual (Hoy)</option>
+              <option value="semana">📅 Semana Actual (Lun-Dom)</option>
+              <option value="mes">📅 Mes Actual (1-Fin)</option>
+              <option value="ano">📅 Año Actual (Ene-Dic)</option>
+              <option value="personalizado">🔍 Rango Personalizado</option>
+            </select>
+          </div>
+
+          {dashboardPeriod === "personalizado" && (
+            <>
+              <div style={styles.inputGroupDate}>
+                <label style={styles.filterLabel}>Desde</label>
+                <input
+                  type="date"
+                  value={customStartDate || ""}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  style={styles.datePicker}
+                />
+              </div>
+              <div style={styles.inputGroupDate}>
+                <label style={styles.filterLabel}>Hasta</label>
+                <input
+                  type="date"
+                  value={customEndDate || ""}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  style={styles.datePicker}
+                />
+              </div>
+            </>
+          )}
+        </div>
+        <div style={styles.selectedPeriodText}>
+          Mostrando ingresos de: <strong style={{ color: "var(--color-success)" }}>{currentPeriodLabel}</strong>
+        </div>
       </div>
 
       {/* RENDER ACTIVE TAB */}
@@ -1608,5 +1749,61 @@ const styles = {
     backgroundColor: "var(--color-primary)",
     color: "#fff",
     transition: "all 0.2s ease"
+  },
+  filterBarRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: "20px",
+    width: "100%",
+    backgroundColor: "rgba(255, 255, 255, 0.01)",
+    padding: "12px 18px",
+    borderRadius: "14px",
+    border: "1px solid rgba(255, 255, 255, 0.03)",
+    marginBottom: "15px",
+  },
+  periodFilterBar: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    flexWrap: "wrap",
+  },
+  inputGroupSelect: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: "4px",
+  },
+  inputGroupDate: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: "4px",
+  },
+  periodSelect: {
+    padding: "8px 12px",
+    background: "rgba(20, 24, 33, 0.8)",
+    border: "1px solid rgba(255, 255, 255, 0.08)",
+    borderRadius: "8px",
+    color: "#fff",
+    fontSize: "0.85rem",
+    fontWeight: "600",
+    cursor: "pointer",
+    outline: "none",
+  },
+  datePicker: {
+    padding: "8px 12px",
+    background: "rgba(20, 24, 33, 0.8)",
+    border: "1px solid rgba(255, 255, 255, 0.08)",
+    borderRadius: "8px",
+    color: "#fff",
+    fontSize: "0.85rem",
+    cursor: "pointer",
+    outline: "none",
+  },
+  selectedPeriodText: {
+    fontSize: "0.88rem",
+    color: "var(--text-muted)",
   }
 };

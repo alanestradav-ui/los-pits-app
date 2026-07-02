@@ -21,7 +21,12 @@ export default function Dashboard({
   cafeteriaInventory = [],
   carwashInventory = [],
   setCurrentTab, 
-  dashboardPeriod 
+  dashboardPeriod,
+  setDashboardPeriod,
+  customStartDate,
+  setCustomStartDate,
+  customEndDate,
+  setCustomEndDate
 }) {
   // Stat calculations
   const activeTaller = ordenes.filter(o => o.estado !== "Listo para entrega" && o.estado !== "Entregado").length;
@@ -77,68 +82,77 @@ export default function Dashboard({
     }
   });
 
+  const getItemDate = (item, dateField) => {
+    if (!item || !item[dateField]) return null;
+    const val = item[dateField];
+    if (typeof val === "number") return new Date(val);
+    const parsed = new Date(val);
+    if (!isNaN(parsed.getTime())) return parsed;
+    return null;
+  };
+
+  const getPeriodBoundaries = () => {
+    const now = new Date();
+    let start = new Date();
+    let end = new Date();
+
+    switch (dashboardPeriod) {
+      case "dia": {
+        start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        break;
+      }
+      case "semana": {
+        // Monday 00:00:00 to Sunday 23:59:59
+        const dayOfWeek = now.getDay();
+        const distanceToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - distanceToMonday, 0, 0, 0, 0);
+        end = new Date(start);
+        end.setDate(start.getDate() + 6);
+        end.setHours(23, 59, 59, 999);
+        break;
+      }
+      case "mes": {
+        start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+        end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        break;
+      }
+      case "ano": {
+        start = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
+        end = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+        break;
+      }
+      case "personalizado": {
+        if (customStartDate) {
+          const [yr, mo, dy] = customStartDate.split("-").map(Number);
+          start = new Date(yr, mo - 1, dy, 0, 0, 0, 0);
+        } else {
+          start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        }
+        if (customEndDate) {
+          const [yr, mo, dy] = customEndDate.split("-").map(Number);
+          end = new Date(yr, mo - 1, dy, 23, 59, 59, 999);
+        } else {
+          end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        }
+        break;
+      }
+      default: {
+        start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+        end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        break;
+      }
+    }
+    return { start, end };
+  };
+
   const filterByPeriod = (list, dateField = "fecha") => {
     if (!list) return [];
-    if (!dashboardPeriod) return list;
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
+    const { start, end } = getPeriodBoundaries();
     return list.filter(item => {
-      if (!item[dateField]) return false;
-      const d = new Date(item[dateField]);
-
-      switch (dashboardPeriod) {
-        case "dia": {
-          return d.getFullYear() === now.getFullYear() &&
-                 d.getMonth() === now.getMonth() &&
-                 d.getDate() === now.getDate();
-        }
-        case "semana": {
-          // Current week Mon-Sun
-          const dayOfWeek = now.getDay();
-          const distanceToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-          const monday = new Date(today);
-          monday.setDate(today.getDate() - distanceToMonday);
-          const sunday = new Date(monday);
-          sunday.setDate(monday.getDate() + 6);
-          sunday.setHours(23, 59, 59, 999);
-          
-          return d >= monday && d <= sunday;
-        }
-        case "quincena": {
-          // 1st-15th or 16th-end of month
-          const currentDay = now.getDate();
-          const startOfFirstQuincena = new Date(now.getFullYear(), now.getMonth(), 1);
-          const endOfFirstQuincena = new Date(now.getFullYear(), now.getMonth(), 15, 23, 59, 59, 999);
-          const startOfSecondQuincena = new Date(now.getFullYear(), now.getMonth(), 16);
-          const nextMonthFirst = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-          const endOfSecondQuincena = new Date(nextMonthFirst - 1);
-
-          if (currentDay <= 15) {
-            return d >= startOfFirstQuincena && d <= endOfFirstQuincena;
-          } else {
-            return d >= startOfSecondQuincena && d <= endOfSecondQuincena;
-          }
-        }
-        case "mes": {
-          return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-        }
-        case "trimestre": {
-          const currentQuarter = Math.floor(now.getMonth() / 3);
-          const itemQuarter = Math.floor(d.getMonth() / 3);
-          return d.getFullYear() === now.getFullYear() && currentQuarter === itemQuarter;
-        }
-        case "semestre": {
-          const currentSemester = now.getMonth() < 6 ? 0 : 1;
-          const itemSemester = d.getMonth() < 6 ? 0 : 1;
-          return d.getFullYear() === now.getFullYear() && currentSemester === itemSemester;
-        }
-        case "ano": {
-          return d.getFullYear() === now.getFullYear();
-        }
-        default:
-          return true;
-      }
+      const itemDate = getItemDate(item, dateField);
+      if (!itemDate) return false;
+      return itemDate >= start && itemDate <= end;
     });
   };
 
@@ -209,15 +223,15 @@ export default function Dashboard({
     carwash.reduce((sum, c) => sum + (c.estado !== "Entregado" ? c.precio : 0), 0);
 
   const periodLabels = {
-    dia: "Día",
-    semana: "Semana",
-    quincena: "Quincena",
-    mes: "Mes",
-    trimestre: "Trimestre",
-    semestre: "Semestre",
-    ano: "Año"
+    dia: "Día Actual",
+    semana: "Semana Actual",
+    mes: "Mes Actual",
+    ano: "Año Actual",
+    personalizado: "Personalizado"
   };
-  const currentPeriodLabel = periodLabels[dashboardPeriod] || "Mes";
+  const currentPeriodLabel = dashboardPeriod === "personalizado" 
+    ? `${customStartDate || "Hoy"} a ${customEndDate || "Hoy"}` 
+    : (periodLabels[dashboardPeriod] || "Mes");
 
   // Recent 5 activities
   const recentOrders = [...ordenes, ...carwash.map(c => ({...c, isWash: true}))]
@@ -227,11 +241,53 @@ export default function Dashboard({
   return (
     <div style={styles.container} className="animate-fade-in">
       {/* Page Header */}
-      <div style={styles.header}>
-        <div>
+      <div style={styles.headerRow}>
+        <div style={styles.headerLeft}>
           <h1 style={styles.title}>Panel General</h1>
-          <p>Bienvenido al centro de mando de Los Pits Auto Center.</p>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", margin: 0 }}>Bienvenido al centro de mando de Los Pits Auto Center.</p>
         </div>
+        
+        {/* Period Selector Controls */}
+        <div style={styles.periodFilterBar}>
+          <div style={styles.inputGroupSelect}>
+            <label style={styles.filterLabel}>Rango del Reporte</label>
+            <select
+              value={dashboardPeriod}
+              onChange={(e) => setDashboardPeriod(e.target.value)}
+              style={styles.periodSelect}
+            >
+              <option value="dia">📅 Día Actual (Hoy)</option>
+              <option value="semana">📅 Semana Actual (Lun-Dom)</option>
+              <option value="mes">📅 Mes Actual (1-Fin)</option>
+              <option value="ano">📅 Año Actual (Ene-Dic)</option>
+              <option value="personalizado">🔍 Rango Personalizado</option>
+            </select>
+          </div>
+
+          {dashboardPeriod === "personalizado" && (
+            <>
+              <div style={styles.inputGroupDate}>
+                <label style={styles.filterLabel}>Desde</label>
+                <input
+                  type="date"
+                  value={customStartDate || ""}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  style={styles.datePicker}
+                />
+              </div>
+              <div style={styles.inputGroupDate}>
+                <label style={styles.filterLabel}>Hasta</label>
+                <input
+                  type="date"
+                  value={customEndDate || ""}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  style={styles.datePicker}
+                />
+              </div>
+            </>
+          )}
+        </div>
+
         <div style={styles.timeBadge}>
           <div style={styles.pulseDot} />
           <span>Sistema en Línea</span>
@@ -796,5 +852,66 @@ const styles = {
     color: "var(--color-danger)",
     border: "1px solid rgba(239, 68, 68, 0.2)",
     textTransform: "uppercase",
+  },
+  headerRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: "20px",
+    width: "100%",
+  },
+  headerLeft: {
+    textAlign: "left",
+  },
+  periodFilterBar: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    flexWrap: "wrap",
+    backgroundColor: "rgba(255, 255, 255, 0.02)",
+    padding: "12px 18px",
+    borderRadius: "14px",
+    border: "1px solid rgba(255, 255, 255, 0.05)",
+  },
+  inputGroupSelect: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: "4px",
+  },
+  inputGroupDate: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: "4px",
+  },
+  filterLabel: {
+    fontSize: "0.75rem",
+    fontWeight: "700",
+    color: "var(--text-muted)",
+    textTransform: "uppercase",
+    letterSpacing: "0.5px",
+  },
+  periodSelect: {
+    padding: "8px 12px",
+    background: "rgba(20, 24, 33, 0.8)",
+    border: "1px solid rgba(255, 255, 255, 0.08)",
+    borderRadius: "8px",
+    color: "#fff",
+    fontSize: "0.85rem",
+    fontWeight: "600",
+    cursor: "pointer",
+    outline: "none",
+  },
+  datePicker: {
+    padding: "8px 12px",
+    background: "rgba(20, 24, 33, 0.8)",
+    border: "1px solid rgba(255, 255, 255, 0.08)",
+    borderRadius: "8px",
+    color: "#fff",
+    fontSize: "0.85rem",
+    cursor: "pointer",
+    outline: "none",
   }
 };

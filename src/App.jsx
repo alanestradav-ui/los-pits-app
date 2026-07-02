@@ -39,6 +39,8 @@ const globalActiveSetters = {
   cafeteriaSales: null,
   comisionMecanico: null,
   dashboardPeriod: null,
+  customStartDate: null,
+  customEndDate: null,
   carwashPresets: null,
   carwashInventory: null,
   carwashConsumption: null,
@@ -300,6 +302,14 @@ export default function App() {
     return getLocalStorage("dashboardPeriod", "mes");
   });
 
+  const [customStartDate, setCustomStartDate] = useState(() => {
+    return getLocalStorage("customStartDate", "");
+  });
+
+  const [customEndDate, setCustomEndDate] = useState(() => {
+    return getLocalStorage("customEndDate", "");
+  });
+
   const [carwashPresets, setCarwashPresets] = useState(() => {
     const defaultPresets = [
       { tipo: "Pequeño", precio: 70, comision: 5 },
@@ -419,6 +429,8 @@ export default function App() {
     globalActiveSetters.cafeteriaSales = setCafeteriaSales;
     globalActiveSetters.comisionMecanico = setComisionMecanico;
     globalActiveSetters.dashboardPeriod = setDashboardPeriod;
+    globalActiveSetters.customStartDate = setCustomStartDate;
+    globalActiveSetters.customEndDate = setCustomEndDate;
     globalActiveSetters.carwashPresets = setCarwashPresets;
     globalActiveSetters.carwashInventory = setCarwashInventory;
     globalActiveSetters.carwashConsumption = setCarwashConsumption;
@@ -458,6 +470,8 @@ export default function App() {
       cafeteriaSales,
       comisionMecanico,
       dashboardPeriod,
+      customStartDate,
+      customEndDate,
       carwashPresets,
       carwashInventory,
       carwashConsumption,
@@ -483,6 +497,8 @@ export default function App() {
     cafeteriaSales,
     comisionMecanico,
     dashboardPeriod,
+    customStartDate,
+    customEndDate,
     carwashPresets,
     carwashInventory,
     carwashConsumption,
@@ -742,6 +758,16 @@ export default function App() {
   }, [dashboardPeriod]);
 
   useEffect(() => {
+    setLocalStorage("customStartDate", customStartDate);
+    syncToCloud("customStartDate", customStartDate);
+  }, [customStartDate]);
+
+  useEffect(() => {
+    setLocalStorage("customEndDate", customEndDate);
+    syncToCloud("customEndDate", customEndDate);
+  }, [customEndDate]);
+
+  useEffect(() => {
     setLocalStorage("carwashPresets", carwashPresets);
     syncToCloud("carwashPresets", carwashPresets);
   }, [carwashPresets]);
@@ -881,6 +907,11 @@ export default function App() {
             carwashInventory={carwashInventory}
             setCurrentTab={setCurrentTab} 
             dashboardPeriod={dashboardPeriod}
+            setDashboardPeriod={setDashboardPeriod}
+            customStartDate={customStartDate}
+            setCustomStartDate={setCustomStartDate}
+            customEndDate={customEndDate}
+            setCustomEndDate={setCustomEndDate}
           />
         )}
 
@@ -1031,11 +1062,17 @@ export default function App() {
             parkingHistory={parkingHistory}
             cafeteriaSales={cafeteriaSales}
             tiendaSales={tiendaSales}
-            cuentasPorCobrar={cuentasPorCobrar}
-            cuentasPorPagar={cuentasPorPagar}
             usuarios={usuarios}
             fixedCosts={fixedCosts}
             vehiculosVenta={vehiculosVenta}
+            cuentasPorCobrar={cuentasPorCobrar}
+            cuentasPorPagar={cuentasPorPagar}
+            dashboardPeriod={dashboardPeriod}
+            setDashboardPeriod={setDashboardPeriod}
+            customStartDate={customStartDate}
+            setCustomStartDate={setCustomStartDate}
+            customEndDate={customEndDate}
+            setCustomEndDate={setCustomEndDate}
           />
         )}
 
