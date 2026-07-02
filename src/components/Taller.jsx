@@ -1038,7 +1038,7 @@ export default function Taller({
             cajeroComisionApplies: budgetCajeroComisionApplies,
             total: granTotal,
             comision: calculateOrderCommission({ ...o, presupuesto: updatedBudget, total: granTotal }),
-            diagnosticoAutorizado: false
+            diagnosticoAutorizado: o.diagnosticoAutorizado !== undefined ? o.diagnosticoAutorizado : false
           };
         }
         return o;
@@ -3356,7 +3356,7 @@ export default function Taller({
                             {o.total > 0 ? formatMoney(o.total) : "Pendiente de presupuesto"}
                           </span>
                           {/* Button to edit budget detailed items */}
-                          {(o.estado === "En proceso de diagnóstico y presupuesto" || o.estado === "En espera de autorización") && (isManager || isWorker) && (
+                          {o.estado !== "Entregado" && (isManager || isWorker) && (
                             <button
                               type="button"
                               onClick={() => {
