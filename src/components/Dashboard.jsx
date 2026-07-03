@@ -7,7 +7,8 @@ import {
   Hourglass, 
   TrendingUp, 
   ArrowUpRight,
-  AlertTriangle
+  AlertTriangle,
+  Wallet
 } from "lucide-react";
 import { formatMoney } from "../utils/storage";
 
@@ -410,6 +411,20 @@ export default function Dashboard({
               {formatMoney(bankRevenue)}
             </span>
             <span style={styles.statSubText}>Tarjetas, transferencias, cheques</span>
+          </div>
+        </div>
+
+        {/* Card 3.8: Total Recaudado (Efectivo + Bancos, sin flujo) */}
+        <div className="glass-panel" style={styles.statCard}>
+          <div style={{ ...styles.iconContainer, backgroundColor: "rgba(16, 185, 129, 0.15)" }}>
+            <Wallet size={24} color="#10b981" />
+          </div>
+          <div style={styles.statDetails}>
+            <span style={styles.statLabel}>Total Recaudado ({currentPeriodLabel})</span>
+            <span style={{ ...styles.statVal, color: "#10b981", fontFamily: "var(--font-display)" }}>
+              {formatMoney(totalRevenue)}
+            </span>
+            <span style={styles.statSubText}>Efectivo + Bancos (sin flujo pendiente)</span>
           </div>
         </div>
 
