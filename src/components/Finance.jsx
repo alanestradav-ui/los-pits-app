@@ -185,6 +185,7 @@ export default function Finance({
   });
 
   billedCarwash.forEach(c => {
+    if (c.tallerOrderId) return; // Exclude linked carwashes to avoid double-counting
     if (c.formaPago) {
       cashRevenueTotal += parseFloat(c.formaPago.efectivo || 0);
       bankRevenueTotal += parseFloat(c.formaPago.tarjeta || 0) + parseFloat(c.formaPago.transferencia || 0) + parseFloat(c.formaPago.cheque || 0);
@@ -650,12 +651,12 @@ export default function Finance({
       id: c.id,
       tipo: "Carwash",
       titulo: c.cliente || `Lavado ${c.tipo}`,
-      subtitulo: c.vehiculo ? `${c.vehiculo.marca} ${c.vehiculo.linea} (${c.vehiculo.placa})` : "",
+      subtitulo: c.vehiculo ? `${c.vehiculo.marca} ${c.vehiculo.linea} (${c.vehiculo.placa})${c.tallerOrderId ? " [Taller]" : ""}` : "",
       asignado: c.lavador,
       fecha: c.fecha,
       comision: c.comision,
-      total: c.precio,
-      formaPagoDesc: c.formaPagoDesc
+      total: c.tallerOrderId ? 0 : c.precio,
+      formaPagoDesc: c.tallerOrderId ? "Facturado en Taller" : c.formaPagoDesc
     })),
     ...filteredParking.map(p => ({
       id: p.id,
@@ -1192,7 +1193,7 @@ export default function Finance({
         const periodTienda = filterByBreakevenPeriod(tiendaSales, "fecha");
 
         const revTaller = periodTaller.reduce((sum, o) => sum + o.total, 0);
-        const revCarwash = periodCarwash.reduce((sum, c) => sum + c.precio, 0);
+        const revCarwash = periodCarwash.reduce((sum, c) => sum + (c.tallerOrderId ? 0 : c.precio), 0);
         const revParking = periodParking.reduce((sum, p) => sum + p.total, 0);
         const revCafeteria = periodCafeteria.reduce((sum, cf) => sum + cf.total, 0);
         const revTienda = periodTienda.reduce((sum, t) => sum + t.total, 0);

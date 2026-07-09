@@ -934,6 +934,7 @@ export default function App() {
             setClientes={setClientes}
             vehiculos={vehiculos}
             setVehiculos={setVehiculos}
+            carwashPresets={carwashPresets}
           />
         )}
 

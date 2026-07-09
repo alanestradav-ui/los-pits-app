@@ -165,7 +165,7 @@ export default function Dashboard({
 
   const totalRevenue = 
     filteredOrders.reduce((sum, o) => sum + o.total, 0) +
-    filteredCarwash.reduce((sum, c) => sum + c.precio, 0) +
+    filteredCarwash.reduce((sum, c) => sum + (c.tallerOrderId ? 0 : c.precio), 0) +
     filteredParking.reduce((sum, p) => sum + p.total, 0) +
     filteredCafeteria.reduce((sum, cf) => sum + cf.total, 0) +
     filteredTienda.reduce((sum, t) => sum + t.total, 0);
@@ -184,6 +184,7 @@ export default function Dashboard({
   });
 
   filteredCarwash.forEach(c => {
+    if (c.tallerOrderId) return; // Exclude linked carwashes to avoid double-counting
     if (c.formaPago) {
       cashRevenue += parseFloat(c.formaPago.efectivo || 0);
       bankRevenue += parseFloat(c.formaPago.tarjeta || 0) + parseFloat(c.formaPago.transferencia || 0) + parseFloat(c.formaPago.cheque || 0);

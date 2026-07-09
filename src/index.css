@@ -395,3 +395,14 @@ p {
 .mobile-fab-menu:active {
   transform: scale(0.95);
 }
+
+/* Centrado de modales desplazado en PC considerando el Sidebar persistente (280px) */
+.modal-overlay-centered {
+  padding-left: 280px;
+}
+@media (max-width: 768px) {
+  .modal-overlay-centered {
+    padding-left: 0 !important;
+  }
+}
+

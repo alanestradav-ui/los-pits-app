@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { 
   Wrench, 
   User, 
@@ -138,7 +139,8 @@ export default function Taller({
   clientes = [],
   setClientes,
   vehiculos = [],
-  setVehiculos
+  setVehiculos,
+  carwashPresets = []
 }) {
   const [cliente, setCliente] = useState("");
   const [telefono, setTelefono] = useState("");
@@ -701,25 +703,60 @@ export default function Taller({
         if (nuevoEstado === "En proceso de lavado") {
           const alreadyLinked = carwash.some(c => c.tallerOrderId === o.id);
           if (!alreadyLinked) {
-            const nuevoLavadoTaller = {
-              id: Date.now(),
-              tallerOrderId: o.id,
-              cliente: o.cliente,
-              telefono: o.telefono || "",
-              vehiculo: {
-                placa: o.placa || "",
-                marca: o.marca || "",
-                linea: o.linea || "",
-                color: o.color || ""
-              },
-              tipo: "Lavado de Taller",
-              precio: 0,
-              comision: 10.0, // Fixed Q10 commission for workshop washes
-              lavadores: [],
-              estado: "En proceso",
-              fecha: new Date().toISOString()
-            };
-            setCarwash([nuevoLavadoTaller, ...carwash]);
+            const carwashServices = o.presupuesto?.services?.filter(s => s.desc.startsWith("Carwash:")) || [];
+            
+            if (carwashServices.length > 0) {
+              const newWashes = carwashServices.map((s, idx) => {
+                const presetTipo = s.desc.replace("Carwash:", "").trim();
+                const preset = carwashPresets.find(p => p.tipo.toLowerCase().trim() === presetTipo.toLowerCase().trim());
+                
+                return {
+                  id: Date.now() + idx,
+                  tallerOrderId: o.id,
+                  cliente: o.cliente,
+                  telefono: o.telefono || "",
+                  vehiculo: {
+                    placa: o.placa || "",
+                    marca: o.marca || "",
+                    linea: o.linea || "",
+                    color: o.color || ""
+                  },
+                  tipo: presetTipo,
+                  precio: s.price || 0,
+                  precioBase: s.price || 0,
+                  trabajoAdicionalNombre: "",
+                  trabajoAdicionalPrecio: 0,
+                  comision: preset ? (preset.comision || 10.0) : 10.0,
+                  lavadores: [],
+                  estado: "En proceso",
+                  fecha: new Date().toISOString()
+                };
+              });
+              setCarwash([...newWashes, ...carwash]);
+            } else {
+              const nuevoLavadoTaller = {
+                id: Date.now(),
+                tallerOrderId: o.id,
+                cliente: o.cliente,
+                telefono: o.telefono || "",
+                vehiculo: {
+                  placa: o.placa || "",
+                  marca: o.marca || "",
+                  linea: o.linea || "",
+                  color: o.color || ""
+                },
+                tipo: "Lavado de Taller",
+                precio: 0,
+                precioBase: 0,
+                trabajoAdicionalNombre: "",
+                trabajoAdicionalPrecio: 0,
+                comision: 10.0, // Fixed Q10 commission for workshop washes
+                lavadores: [],
+                estado: "En proceso",
+                fecha: new Date().toISOString()
+              };
+              setCarwash([nuevoLavadoTaller, ...carwash]);
+            }
           }
         }
 
@@ -799,7 +836,14 @@ export default function Taller({
       if (o.id === checkoutOrder.id) {
         // Sync carwash
         setCarwash((prevCarwash) => 
-          prevCarwash.map(c => c.tallerOrderId === o.id ? { ...c, estado: "Entregado" } : c)
+          prevCarwash.map(c => c.tallerOrderId === o.id ? { 
+            ...c, 
+            estado: "Entregado",
+            fecha: new Date().toISOString(),
+            formaPago: breakdown,
+            formaPagoDesc: paymentMethodsSelected.map(m => `${m.toUpperCase()} (Q${breakdown[m].toFixed(2)})`).join(", "),
+            cajero: usuarioActual.user
+          } : c)
         );
 
         // Deduct inventory
@@ -832,7 +876,8 @@ export default function Taller({
           comision,
           total: checkoutOrder.total,
           cajero: usuarioActual.user,
-          cajeroComisionApplies: checkoutOrder.cajeroComisionApplies !== false
+          cajeroComisionApplies: checkoutOrder.cajeroComisionApplies !== false,
+          fecha: new Date().toISOString()
         };
       }
       return o;
@@ -3337,8 +3382,16 @@ export default function Taller({
 
                       {/* Real-time Taller Washers Sync */}
                       {(o.estado === "En proceso de lavado" || o.estado === "Listo para entrega" || o.estado === "Entregado") && (() => {
-                        const linkedWash = carwash.find(c => c.tallerOrderId === o.id);
-                        const assignedWashers = linkedWash ? (linkedWash.lavadores || (linkedWash.lavador ? [linkedWash.lavador] : [])) : [];
+                        const linkedWashes = carwash.filter(c => c.tallerOrderId === o.id);
+                        const assignedWashers = [];
+                        linkedWashes.forEach(w => {
+                          const washers = w.lavadores || (w.lavador ? w.lavador.split(", ").filter(Boolean) : []);
+                          washers.forEach(was => {
+                            if (!assignedWashers.includes(was)) {
+                              assignedWashers.push(was);
+                            }
+                          });
+                        });
                         return (
                           <div style={styles.infoRow}>
                             <span style={styles.infoLabel}>🧼 Lavador(es):</span>
@@ -3677,17 +3730,18 @@ export default function Taller({
         </div>
       </div>
 
-      {selectedFullPhoto && (
+      {selectedFullPhoto && createPortal(
         <div style={styles.lightbox} onClick={() => setSelectedFullPhoto(null)}>
           <div style={styles.lightboxContent} onClick={(e) => e.stopPropagation()}>
             <img src={selectedFullPhoto} alt="Vista Completa" style={styles.lightboxImage} />
             <button style={styles.lightboxCloseBtn} onClick={() => setSelectedFullPhoto(null)}>&times;</button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Detailed Budget Modal Overlay */}
-      {budgetModalOrder && (
+      {budgetModalOrder && createPortal(
         <div style={styles.modalOverlay}>
           <div className="glass-panel" style={styles.modalContent}>
             <div style={styles.modalHeader}>
@@ -4141,7 +4195,35 @@ export default function Taller({
               {!isWorker && (
                 <div style={styles.budgetSection}>
                   <h3 style={styles.budgetSecTitle}>💼 Servicios Externos / Otros</h3>
-                  <div style={styles.budgetInputRow} style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "10px" }}>
+                  {carwashPresets && carwashPresets.length > 0 && (
+                    <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "10px" }}>
+                      <select
+                        className="input-field"
+                        onChange={(e) => {
+                          const selectedVal = e.target.value;
+                          if (selectedVal) {
+                            const preset = carwashPresets.find(p => p.tipo === selectedVal);
+                            if (preset) {
+                              setInputServiceDesc(`Carwash: ${preset.tipo}`);
+                              setInputServicePurchasePrice("0");
+                              setInputServicePrice(preset.precio.toString());
+                            }
+                          }
+                          e.target.value = "";
+                        }}
+                        style={{ flex: 1 }}
+                        defaultValue=""
+                      >
+                        <option value="" disabled>-- Cargar Servicio de Carwash --</option>
+                        {carwashPresets.map((p, idx) => (
+                          <option key={idx} value={p.tipo}>
+                            🧼 {p.tipo} (Q{p.precio.toFixed(2)})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  <div className="budget-input-row-container" style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "10px" }}>
                     <input
                       placeholder="Servicio (ej. Torno culata / Grúa)"
                       className="input-field"
@@ -4410,10 +4492,11 @@ export default function Taller({
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {quickAddOrder && (
+      {quickAddOrder && createPortal(
         <div style={styles.modalOverlay}>
           <div className="glass-panel" style={{ ...styles.modalContent, maxWidth: "500px" }}>
             <div style={{ ...styles.modalHeader, display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "15px" }}>
@@ -4486,6 +4569,36 @@ export default function Taller({
                   </button>
                 </div>
               </div>
+
+              {quickType === "service" && carwashPresets && carwashPresets.length > 0 && (
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Cargar Servicio de Carwash</label>
+                  <select
+                    className="input-field"
+                    onChange={(e) => {
+                      const selectedVal = e.target.value;
+                      if (selectedVal) {
+                        const preset = carwashPresets.find(p => p.tipo === selectedVal);
+                        if (preset) {
+                          setQuickDesc(`Carwash: ${preset.tipo}`);
+                          setQuickCost("0");
+                          setQuickPrice(preset.precio.toString());
+                        }
+                      }
+                      e.target.value = "";
+                    }}
+                    style={{ width: "100%", boxSizing: "border-box" }}
+                    defaultValue=""
+                  >
+                    <option value="" disabled>-- Selecciona un Servicio de Carwash --</option>
+                    {carwashPresets.map((p, idx) => (
+                      <option key={idx} value={p.tipo}>
+                        🧼 {p.tipo} (Q{p.precio.toFixed(2)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div style={{ ...styles.inputGroup, position: "relative" }}>
                 <label style={styles.label}>Descripción / Nombre *</label>
@@ -4577,10 +4690,11 @@ export default function Taller({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {presupuestoFormalOrder && (
+      {presupuestoFormalOrder && createPortal(
         <div style={styles.modalOverlay}>
           <div className="glass-panel" style={{ ...styles.modalContent, maxWidth: "650px" }}>
             <div style={{ ...styles.modalHeader, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -4922,10 +5036,11 @@ export default function Taller({
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {recepcionFormalOrder && (
+      {recepcionFormalOrder && createPortal(
         <div style={styles.modalOverlay}>
           <div className="glass-panel" style={{ ...styles.modalContent, maxWidth: "700px" }}>
             <div style={{ ...styles.modalHeader, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -4946,7 +5061,6 @@ export default function Taller({
             </div>
 
             <div style={{ ...styles.modalBody, padding: "10px" }}>
-              {/* Logo / Header Membrete */}
               <div style={{ borderBottom: "1px dashed rgba(255,255,255,0.1)", paddingBottom: "15px", marginBottom: "15px" }}>
                 <h1 style={{ fontFamily: "var(--font-display)", fontSize: "1.5rem", color: "var(--color-primary)", margin: 0 }}>
                   LOS PITS AUTO CENTER
@@ -4956,7 +5070,6 @@ export default function Taller({
                 </p>
               </div>
 
-              {/* Metadata client */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px", fontSize: "0.85rem", backgroundColor: "rgba(255,255,255,0.02)", padding: "12px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.04)" }}>
                 <div>
                   <p style={{ color: "var(--text-muted)", fontWeight: "bold" }}>CLIENTE:</p>
@@ -4976,13 +5089,11 @@ export default function Taller({
                 </div>
               </div>
 
-              {/* Motivo de Ingreso */}
               <div style={{ marginTop: "15px", padding: "12px", backgroundColor: "rgba(255,255,255,0.01)", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.03)" }}>
                 <p style={{ color: "var(--color-primary)", fontWeight: "bold", fontSize: "0.85rem", marginBottom: "6px" }}>⚠️ MOTIVO DE INGRESO:</p>
                 <p style={{ color: "#fff", fontSize: "0.85rem", whiteSpace: "pre-line" }}>{recepcionFormalOrder.motivoIngreso || recepcionFormalOrder.trabajo}</p>
               </div>
 
-              {/* Warning Lights */}
               {recepcionFormalOrder.luces && recepcionFormalOrder.luces.length > 0 && (
                 <div style={{ marginTop: "15px" }}>
                   <p style={{ color: "var(--color-warning)", fontWeight: "bold", fontSize: "0.85rem", marginBottom: "6px" }}>🚨 TESTIGOS ACTIVOS AL INGRESO:</p>
@@ -4999,7 +5110,6 @@ export default function Taller({
                 </div>
               )}
 
-              {/* Checklist Table */}
               <div style={{ marginTop: "20px" }}>
                 <p style={{ color: "var(--color-secondary)", fontWeight: "bold", fontSize: "0.85rem", marginBottom: "8px" }}>📋 INVENTARIO Y CHECKLIST DE RECEPCIÓN:</p>
                 <div style={{ overflowX: "auto" }}>
@@ -5036,7 +5146,6 @@ export default function Taller({
                 </div>
               </div>
 
-              {/* Photos Grid */}
               {recepcionFormalOrder.fotos && recepcionFormalOrder.fotos.length > 0 && (
                 <div style={{ marginTop: "20px" }}>
                   <p style={{ color: "var(--color-info)", fontWeight: "bold", fontSize: "0.85rem", marginBottom: "8px" }}>📸 FOTOS DE ESTADO (RECEPCIÓN):</p>
@@ -5051,7 +5160,6 @@ export default function Taller({
               )}
             </div>
 
-            {/* Actions */}
             <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: "15px", marginTop: "15px", display: "flex", gap: "10px", justifyContent: "flex-end", flexWrap: "wrap" }}>
               <button type="button" className="btn btn-ghost" onClick={() => setRecepcionFormalOrder(null)}>
                 Cerrar
@@ -5116,12 +5224,12 @@ export default function Taller({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* 🔐 COBRO Y FACTURACIÓN: MODAL DE PAGO DIVIDIDO */}
-      {checkoutOrder && (
-        <div style={styles.modalOverlay}>
+      {checkoutOrder && createPortal(
+        <div style={styles.modalOverlay} className="modal-overlay-centered">
           <div className="glass-panel" style={{ ...styles.modalContent, maxWidth: "500px" }}>
             <div style={styles.modalHeader}>
               <h2 style={{ fontSize: "1.4rem", fontWeight: "800", color: "#fff", display: "flex", alignItems: "center", gap: "8px" }}>
@@ -5166,7 +5274,6 @@ export default function Taller({
                   <span style={{ color: "var(--color-primary)", fontSize: "1.2rem", fontWeight: "900" }}>{formatMoney(checkoutOrder.total)}</span>
                 </div>
                 
-                {/* Payment Methods Checkboxes */}
                 <label style={{ ...styles.label, marginBottom: "8px" }}>Seleccionar Método(s) de Pago:</label>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
                   {["efectivo", "transferencia", "cheque", "tarjeta", "credito"].map((method) => {
@@ -5205,7 +5312,6 @@ export default function Taller({
                 </div>
               </div>
 
-              {/* Detailed Payment Inputs if multiple methods selected */}
               {selectedPaymentMethods.length > 1 && (
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>Desglose de Montos:</label>
@@ -5230,7 +5336,6 @@ export default function Taller({
                 </div>
               )}
 
-              {/* Total validation and feedback */}
               {(() => {
                 let sumPaid = 0;
                 if (selectedPaymentMethods.length === 1) {
@@ -5278,7 +5383,8 @@ export default function Taller({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {editingEntryOrder && (
@@ -5444,7 +5550,8 @@ export default function Taller({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <style>{`

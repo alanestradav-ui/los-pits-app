@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import { 
   Coffee, 
   ShoppingCart, 
@@ -899,8 +900,8 @@ export default function Cafeteria({
         </div>
       )}
       {/* 🔐 COBRO Y FACTURACIÓN: MODAL DE PAGO DIVIDIDO */}
-      {checkoutOrder && (
-        <div style={styles.modalOverlay}>
+      {checkoutOrder && createPortal(
+        <div style={styles.modalOverlay} className="modal-overlay-centered">
           <div className="glass-panel" style={{ ...styles.modalContent, maxWidth: "500px" }}>
             <div style={styles.modalHeader}>
               <h2 style={{ fontSize: "1.4rem", fontWeight: "800", color: "#fff", display: "flex", alignItems: "center", gap: "8px" }}>
@@ -1057,7 +1058,8 @@ export default function Cafeteria({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

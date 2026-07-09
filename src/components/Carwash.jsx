@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import { 
   Car, 
   User, 
@@ -91,6 +92,9 @@ export default function Carwash({
   
   const [selectedLavadores, setSelectedLavadores] = useState([]);
   const [selectedPreset, setSelectedPreset] = useState(null);
+  const [precioLavado, setPrecioLavado] = useState("");
+  const [trabajoAdicionalNombre, setTrabajoAdicionalNombre] = useState("");
+  const [trabajoAdicionalPrecio, setTrabajoAdicionalPrecio] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedFullPhoto, setSelectedFullPhoto] = useState(null);
@@ -397,6 +401,10 @@ export default function Carwash({
       return;
     }
 
+    const pBase = parseFloat(precioLavado) || selectedPreset.precio;
+    const pAdd = parseFloat(trabajoAdicionalPrecio) || 0;
+    const totalPrecio = pBase + pAdd;
+
     const nuevo = {
       id: Date.now(),
       cliente: cliente.trim(),
@@ -410,7 +418,10 @@ export default function Carwash({
         color: color.trim()
       },
       tipo: selectedPreset.tipo,
-      precio: selectedPreset.precio,
+      precio: totalPrecio,
+      precioBase: pBase,
+      trabajoAdicionalNombre: trabajoAdicionalNombre.trim(),
+      trabajoAdicionalPrecio: pAdd,
       lavadores: selectedLavadores,
       lavador: selectedLavadores.join(", "),
       fotos: fotos,
@@ -499,6 +510,9 @@ export default function Carwash({
     setFotos([]);
     setSelectedLavadores([]);
     setSelectedPreset(null);
+    setPrecioLavado("");
+    setTrabajoAdicionalNombre("");
+    setTrabajoAdicionalPrecio("");
     setNit("");
     setNombreFacturacion("");
     setAnio("");
@@ -642,7 +656,7 @@ export default function Carwash({
         if (c.tallerOrderId) {
           setOrdenes((prevOrdenes) =>
             prevOrdenes.map((o) =>
-              o.id === c.tallerOrderId ? { ...o, estado: "Entregado" } : o
+              o.id === c.tallerOrderId ? { ...o, estado: "Entregado", fecha: new Date().toISOString() } : o
             )
           );
         }
@@ -653,7 +667,8 @@ export default function Carwash({
           nombreFacturacion: checkoutNombreFacturacion.trim() || c.cliente,
           formaPago: breakdown,
           formaPagoDesc: paymentMethodsSelected.map(m => `${m.toUpperCase()} (Q${breakdown[m].toFixed(2)})`).join(", "),
-          cajero: usuarioActual?.user || "Admin"
+          cajero: usuarioActual?.user || "Admin",
+          fecha: new Date().toISOString()
         };
       }
       return c;
@@ -715,7 +730,11 @@ export default function Carwash({
     const checklistCount = defaultChecklistItems.length;
     const rowHeight = 35;
 
-    const motString = `Servicio de Carwash: ${o.tipo}. Lavado y aspirado del vehículo.`;
+    const basePriceStr = o.precioBase !== undefined ? formatMoney(o.precioBase) : formatMoney(o.precio);
+    const addWorkStr = o.trabajoAdicionalNombre 
+      ? ` + Trabajo Adicional: ${o.trabajoAdicionalNombre} (${formatMoney(o.trabajoAdicionalPrecio || 0)})` 
+      : "";
+    const motString = `Servicio de Carwash: ${o.tipo} (${basePriceStr})${addWorkStr}. Lavado y aspirado del vehículo. Total: ${formatMoney(o.precio)}.`;
     const dummyCanvas = document.createElement("canvas");
     const dummyCtx = dummyCanvas.getContext("2d");
     dummyCtx.font = "13px 'Plus Jakarta Sans', sans-serif";
@@ -1829,7 +1848,10 @@ export default function Carwash({
                       <button
                         key={idx}
                         type="button"
-                        onClick={() => setSelectedPreset(p)}
+                        onClick={() => {
+                          setSelectedPreset(p);
+                          setPrecioLavado(p.precio.toString());
+                        }}
                         className={`btn btn-preset-wash ${isSelected ? 'active-preset' : ''}`}
                         style={{
                           ...styles.presetBtnRow,
@@ -1843,6 +1865,45 @@ export default function Carwash({
                       </button>
                     );
                   })}
+                </div>
+              </div>
+
+              <div style={{ ...styles.inputGroup, marginTop: "12px" }}>
+                <label style={styles.label}>Precio de Lavado Personalizado (Q) *</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  required
+                  placeholder="Ej. 75.00"
+                  className="input-field"
+                  value={precioLavado}
+                  onChange={(e) => setPrecioLavado(e.target.value)}
+                  style={{ width: "100%", boxSizing: "border-box" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: "10px", marginTop: "12px" }}>
+                <div style={{ ...styles.inputGroup, flex: 2 }}>
+                  <label style={styles.label}>Trabajo Adicional (Opcional)</label>
+                  <input
+                    placeholder="Ej. Pulido silvines / Lavado motor"
+                    className="input-field"
+                    value={trabajoAdicionalNombre}
+                    onChange={(e) => setTrabajoAdicionalNombre(e.target.value)}
+                  />
+                </div>
+                <div style={{ ...styles.inputGroup, flex: 1 }}>
+                  <label style={styles.label}>Costo Adicional (Q)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    className="input-field"
+                    value={trabajoAdicionalPrecio}
+                    onChange={(e) => setTrabajoAdicionalPrecio(e.target.value)}
+                  />
                 </div>
               </div>
 
@@ -1948,6 +2009,18 @@ export default function Carwash({
                         </div>
                       </div>
                       
+                      {c.precioBase !== undefined && c.precioBase !== c.precio && (
+                        <div style={styles.infoRow}>
+                          <span style={styles.infoLabel}>💰 Precio Base:</span>
+                          <span style={styles.infoVal}>{formatMoney(c.precioBase)}</span>
+                        </div>
+                      )}
+                      {c.trabajoAdicionalNombre && (
+                        <div style={styles.infoRow}>
+                          <span style={styles.infoLabel}>➕ {c.trabajoAdicionalNombre}:</span>
+                          <span style={styles.infoVal}>{formatMoney(c.trabajoAdicionalPrecio || 0)}</span>
+                        </div>
+                      )}
                       <div style={styles.infoRow}>
                         <span style={styles.infoLabel}>💰 Total Servicio:</span>
                         <span style={styles.infoValTotal}>{formatMoney(c.precio)}</span>
@@ -2251,8 +2324,8 @@ export default function Carwash({
       )}
 
       {/* 🔐 COBRO Y FACTURACIÓN: MODAL DE PAGO DIVIDIDO */}
-      {checkoutOrder && (
-        <div style={styles.modalOverlay}>
+      {checkoutOrder && createPortal(
+        <div style={styles.modalOverlay} className="modal-overlay-centered">
           <div className="glass-panel" style={{ ...styles.modalContent, maxWidth: "500px" }}>
             <div style={styles.modalHeader}>
               <h2 style={{ fontSize: "1.4rem", fontWeight: "800", color: "#fff", display: "flex", alignItems: "center", gap: "8px" }}>
@@ -2409,7 +2482,8 @@ export default function Carwash({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <style>{`
@@ -2472,7 +2546,7 @@ export default function Carwash({
           box-shadow: var(--shadow-neon-danger);
         }
       `}</style>
-      {selectedFullPhoto && (
+      {selectedFullPhoto && createPortal(
         <div style={styles.lightbox} onClick={() => setSelectedFullPhoto(null)}>
           <div style={styles.lightboxContent} onClick={(e) => e.stopPropagation()}>
             <img src={selectedFullPhoto} alt="Full Size" style={styles.lightboxImage} />
@@ -2480,7 +2554,8 @@ export default function Carwash({
               &times;
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -2914,5 +2989,40 @@ const styles = {
     fontWeight: "800",
     color: "#fff",
     marginTop: "2px",
+  },
+  modalOverlay: {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    width: "100vw",
+    height: "100vh",
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    backdropFilter: "blur(5px)",
+    zIndex: 999,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalContent: {
+    width: "90%",
+    maxWidth: "600px",
+    maxHeight: "90vh",
+    display: "flex",
+    flexDirection: "column",
+    padding: "24px",
+    border: "1px solid rgba(255, 255, 255, 0.1)",
+    boxShadow: "0 20px 40px rgba(0, 0, 0, 0.6)",
+    overflowY: "auto",
+  },
+  modalHeader: {
+    marginBottom: "20px",
+    textAlign: "left",
+    borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
+    paddingBottom: "12px",
+  },
+  form: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "18px",
   },
 };

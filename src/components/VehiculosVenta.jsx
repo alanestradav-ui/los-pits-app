@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import { 
   Car, 
   User, 
@@ -1532,17 +1533,18 @@ export default function VehiculosVenta({
       )}
 
       {/* Lightbox for previewing full photos */}
-      {selectedFullPhoto && (
+      {selectedFullPhoto && createPortal(
         <div style={styles.lightbox} onClick={() => setSelectedFullPhoto(null)}>
           <div style={styles.lightboxContent} onClick={(e) => e.stopPropagation()}>
             <img src={selectedFullPhoto} alt="Full view" style={styles.lightboxImage} />
             <button style={styles.lightboxCloseBtn} onClick={() => setSelectedFullPhoto(null)}>×</button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* 🔐 SELL CONFIRMATION MODAL */}
-      {selectedSellVehicle && (
+      {selectedSellVehicle && createPortal(
         <div style={styles.modalOverlay}>
           <div className="glass-panel" style={{ ...styles.modalContent, maxWidth: "450px" }}>
             <div style={styles.modalHeader}>
@@ -1682,7 +1684,8 @@ export default function VehiculosVenta({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -2087,5 +2090,35 @@ const styles = {
     color: "#fff",
     fontSize: "30px",
     cursor: "pointer",
-  }
+  },
+  modalOverlay: {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    width: "100vw",
+    height: "100vh",
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    backdropFilter: "blur(5px)",
+    zIndex: 999,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalContent: {
+    width: "90%",
+    maxWidth: "600px",
+    maxHeight: "90vh",
+    display: "flex",
+    flexDirection: "column",
+    padding: "24px",
+    border: "1px solid rgba(255, 255, 255, 0.1)",
+    boxShadow: "0 20px 40px rgba(0, 0, 0, 0.6)",
+    overflowY: "auto",
+  },
+  modalHeader: {
+    marginBottom: "20px",
+    textAlign: "left",
+    borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
+    paddingBottom: "12px",
+  },
 };
