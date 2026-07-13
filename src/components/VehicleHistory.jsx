@@ -38,96 +38,138 @@ export default function VehicleHistory({ ordenes = [], carwash = [] }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedPlaca, setSelectedPlaca] = useState(null);
   const [expandedOrders, setExpandedOrders] = useState({});
+  const [historyFilter, setHistoryFilter] = useState("Todos"); // "Todos" | "Taller" | "Carwash"
 
   // 1. Group and compile history by Plate (placa)
   const vehiclesMap = {};
 
-  // Process Workshop Orders
-  ordenes.forEach(o => {
-    const placaClean = (o.placa || "").toUpperCase().trim();
-    if (!placaClean || placaClean === "N/A" || placaClean === "SIN PLACA") return;
-    
-    if (!vehiclesMap[placaClean]) {
-      vehiclesMap[placaClean] = {
-        placa: placaClean,
-        marca: o.marca || "N/A",
-        linea: o.linea || "N/A",
-        anio: o.anio || "N/A",
-        chasis: o.chasis || "N/A",
-        cliente: o.cliente || "N/A",
-        telefono: o.telefono || "",
-        vehiculoDesc: o.vehiculo || `${o.marca || ""} ${o.linea || ""}`,
-        history: []
-      };
-    }
+  // Process Workshop Orders if filter matches Taller or Todos
+  if (historyFilter === "Todos" || historyFilter === "Taller") {
+    ordenes.forEach(o => {
+      // Direct placa extraction, falling back to vehiculo string matching if direct placa is missing (retroactive)
+      let placaClean = (o.placa || "").toUpperCase().trim();
+      if ((!placaClean || placaClean === "N/A" || placaClean === "SIN PLACA") && typeof o.vehiculo === "string") {
+        const match = o.vehiculo.match(/\(([^)]+)\)/);
+        if (match) {
+          placaClean = match[1].toUpperCase().trim();
+        }
+      }
+      
+      if (!placaClean || placaClean === "N/A" || placaClean === "SIN PLACA") return;
+      
+      // Clean plate from vehicle string description for better display
+      let vehDesc = o.vehiculo || `${o.marca || ""} ${o.linea || ""}`;
+      if (typeof vehDesc === "string") {
+        vehDesc = vehDesc.replace(/\s*\([^)]+\)/g, "").trim();
+      }
 
-    // Keep the most complete data
-    if (o.marca && o.marca !== "N/A") vehiclesMap[placaClean].marca = o.marca;
-    if (o.linea && o.linea !== "N/A") vehiclesMap[placaClean].linea = o.linea;
-    if (o.anio && o.anio !== "N/A") vehiclesMap[placaClean].anio = o.anio;
-    if (o.chasis && o.chasis !== "N/A") vehiclesMap[placaClean].chasis = o.chasis;
-    if (o.cliente && o.cliente !== "N/A") vehiclesMap[placaClean].cliente = o.cliente;
-    if (o.telefono) vehiclesMap[placaClean].telefono = o.telefono;
+      if (!vehiclesMap[placaClean]) {
+        vehiclesMap[placaClean] = {
+          placa: placaClean,
+          marca: o.marca || "N/A",
+          linea: o.linea || "N/A",
+          anio: o.anio || "N/A",
+          chasis: o.chasis || "N/A",
+          cliente: o.cliente || "N/A",
+          telefono: o.telefono || "",
+          vehiculoDesc: vehDesc,
+          history: []
+        };
+      }
 
-    vehiclesMap[placaClean].history.push({
-      id: o.id,
-      tipo: "Taller",
-      fecha: o.fecha,
-      estado: o.estado,
-      total: o.total,
-      mecanico: o.mecanico || "Sin asignar",
-      trabajo: o.trabajo || o.motivoIngreso || "Servicio general de taller",
-      kilometraje: o.kilometraje || "N/A",
-      combustible: o.combustible !== undefined ? o.combustible : 0,
-      luces: o.luces || [],
-      presupuesto: o.presupuesto || null,
-      fotos: o.fotos || [],
-      checklist: o.checklist || null
+      // Keep the most complete data
+      if (o.marca && o.marca !== "N/A") vehiclesMap[placaClean].marca = o.marca;
+      if (o.linea && o.linea !== "N/A") vehiclesMap[placaClean].linea = o.linea;
+      if (o.anio && o.anio !== "N/A") vehiclesMap[placaClean].anio = o.anio;
+      if (o.chasis && o.chasis !== "N/A") vehiclesMap[placaClean].chasis = o.chasis;
+      if (o.cliente && o.cliente !== "N/A") vehiclesMap[placaClean].cliente = o.cliente;
+      if (o.telefono) vehiclesMap[placaClean].telefono = o.telefono;
+
+      vehiclesMap[placaClean].history.push({
+        id: o.id,
+        tipo: "Taller",
+        fecha: o.fecha,
+        estado: o.estado,
+        total: o.total,
+        mecanico: o.mecanico || "Sin asignar",
+        trabajo: o.trabajo || o.motivoIngreso || "Servicio general de taller",
+        kilometraje: o.kilometraje || "N/A",
+        combustible: o.combustible !== undefined ? o.combustible : 0,
+        luces: o.luces || [],
+        presupuesto: o.presupuesto || null,
+        fotos: o.fotos || [],
+        checklist: o.checklist || null
+      });
     });
-  });
+  }
 
-  // Process Carwash entries
-  carwash.forEach(c => {
-    const placaClean = (c.vehiculo?.placa || "").toUpperCase().trim();
-    if (!placaClean || placaClean === "N/A") return;
+  // Process Carwash entries if filter matches Carwash or Todos
+  if (historyFilter === "Todos" || historyFilter === "Carwash") {
+    carwash.forEach(c => {
+      // Direct placa extraction, falling back to c.vehiculo string matching or c.placa (retroactive)
+      let placaClean = (c.vehiculo?.placa || "").toUpperCase().trim();
+      if ((!placaClean || placaClean === "N/A") && typeof c.vehiculo === "string") {
+        const match = c.vehiculo.match(/\(([^)]+)\)/);
+        if (match) {
+          placaClean = match[1].toUpperCase().trim();
+        }
+      }
+      if (!placaClean && c.placa) {
+        placaClean = c.placa.toUpperCase().trim();
+      }
+      
+      if (!placaClean || placaClean === "N/A" || placaClean === "SIN PLACA") return;
 
-    if (!vehiclesMap[placaClean]) {
-      vehiclesMap[placaClean] = {
-        placa: placaClean,
-        marca: c.vehiculo?.marca || "N/A",
-        linea: c.vehiculo?.linea || "N/A",
-        anio: "N/A",
-        chasis: "N/A",
-        cliente: c.cliente || "N/A",
-        telefono: c.telefono || "",
-        vehiculoDesc: `${c.vehiculo?.marca || ""} ${c.vehiculo?.linea || ""}`,
-        history: []
-      };
-    }
+      // Clean plate from vehicle string description for better display
+      let vehDesc = "";
+      if (typeof c.vehiculo === "string") {
+        vehDesc = c.vehiculo.replace(/\s*\([^)]+\)/g, "").trim();
+      } else {
+        vehDesc = `${c.vehiculo?.marca || ""} ${c.vehiculo?.linea || ""}`.trim();
+      }
+      if (!vehDesc) vehDesc = "N/A";
 
-    if (c.cliente && c.cliente !== "N/A") vehiclesMap[placaClean].cliente = c.cliente;
-    if (c.telefono) vehiclesMap[placaClean].telefono = c.telefono;
+      if (!vehiclesMap[placaClean]) {
+        vehiclesMap[placaClean] = {
+          placa: placaClean,
+          marca: c.vehiculo?.marca || "N/A",
+          linea: c.vehiculo?.linea || "N/A",
+          anio: "N/A",
+          chasis: "N/A",
+          cliente: c.cliente || "N/A",
+          telefono: c.telefono || "",
+          vehiculoDesc: vehDesc,
+          history: []
+        };
+      }
 
-    vehiclesMap[placaClean].history.push({
-      id: c.id,
-      tipo: "Carwash",
-      fecha: c.fecha,
-      estado: c.estado,
-      total: c.precio,
-      lavador: c.lavador || "Sin asignar",
-      tipoLavado: c.tipo,
-      fotos: c.fotos || []
+      if (c.cliente && c.cliente !== "N/A") vehiclesMap[placaClean].cliente = c.cliente;
+      if (c.telefono) vehiclesMap[placaClean].telefono = c.telefono;
+
+      vehiclesMap[placaClean].history.push({
+        id: c.id,
+        tipo: "Carwash",
+        fecha: c.fecha,
+        estado: c.estado,
+        total: c.precio,
+        lavador: c.lavador || "Sin asignar",
+        tipoLavado: c.tipo,
+        fotos: c.fotos || []
+      });
     });
-  });
+  }
 
-  // Convert map to array and sort history entries chronologically for each vehicle
-  const vehiclesList = Object.values(vehiclesMap).map(vehicle => {
-    vehicle.history.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-    // Determine the last service date
-    vehicle.lastServiceDate = vehicle.history[0]?.fecha || "";
-    vehicle.totalServices = vehicle.history.length;
-    return vehicle;
-  });
+  // Convert map to array, sort history entries chronologically for each vehicle
+  // and only include vehicles that have at least one history entry under the current filter
+  const vehiclesList = Object.values(vehiclesMap)
+    .filter(v => v.history.length > 0)
+    .map(vehicle => {
+      vehicle.history.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+      // Determine the last service date
+      vehicle.lastServiceDate = vehicle.history[0]?.fecha || "";
+      vehicle.totalServices = vehicle.history.length;
+      return vehicle;
+    });
 
   // 2. Filter list by query
   const filteredVehicles = vehiclesList.filter(v => {
@@ -142,7 +184,9 @@ export default function VehicleHistory({ ordenes = [], carwash = [] }) {
     );
   });
 
-  const selectedVehicle = selectedPlaca ? vehiclesMap[selectedPlaca] : null;
+  const selectedVehicle = selectedPlaca && vehiclesMap[selectedPlaca] && vehiclesMap[selectedPlaca].history.length > 0
+    ? vehiclesMap[selectedPlaca]
+    : null;
 
   const toggleOrderExpand = (orderId) => {
     setExpandedOrders(prev => ({
@@ -189,6 +233,40 @@ export default function VehicleHistory({ ordenes = [], carwash = [] }) {
         <div>
           <h1 style={styles.title}>Historial de Vehículos</h1>
           <p>Consulta el expediente completo y cronograma de servicios realizados a cada vehículo.</p>
+        </div>
+
+        {/* Filter Selector Tabs */}
+        <div style={styles.filterTabsContainer}>
+          <button 
+            style={{
+              ...styles.filterTabButton, 
+              ...(historyFilter === "Todos" ? styles.filterTabActiveAll : {})
+            }}
+            onClick={() => { setHistoryFilter("Todos"); setSelectedPlaca(null); }}
+            type="button"
+          >
+            <History size={16} /> Todos
+          </button>
+          <button 
+            style={{
+              ...styles.filterTabButton, 
+              ...(historyFilter === "Taller" ? styles.filterTabActiveTaller : {})
+            }}
+            onClick={() => { setHistoryFilter("Taller"); setSelectedPlaca(null); }}
+            type="button"
+          >
+            <Wrench size={16} /> Taller
+          </button>
+          <button 
+            style={{
+              ...styles.filterTabButton, 
+              ...(historyFilter === "Carwash" ? styles.filterTabActiveCarwash : {})
+            }}
+            onClick={() => { setHistoryFilter("Carwash"); setSelectedPlaca(null); }}
+            type="button"
+          >
+            <Car size={16} /> Carwash
+          </button>
         </div>
       </div>
 
@@ -564,7 +642,47 @@ const styles = {
     height: "100vh",
   },
   header: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: "16px",
     textAlign: "left",
+  },
+  filterTabsContainer: {
+    display: "flex",
+    backgroundColor: "rgba(255, 255, 255, 0.03)",
+    padding: "4px",
+    borderRadius: "10px",
+    border: "1px solid rgba(255, 255, 255, 0.05)",
+  },
+  filterTabButton: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "8px 16px",
+    fontSize: "0.85rem",
+    fontWeight: "700",
+    color: "var(--text-muted)",
+    background: "none",
+    border: "none",
+    borderRadius: "8px",
+    cursor: "pointer",
+    transition: "var(--transition-smooth)",
+  },
+  filterTabActiveAll: {
+    color: "#fff",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+  },
+  filterTabActiveTaller: {
+    color: "#fff",
+    backgroundColor: "rgba(59, 130, 246, 0.2)",
+    boxShadow: "0 0 10px rgba(59, 130, 246, 0.1)",
+  },
+  filterTabActiveCarwash: {
+    color: "#fff",
+    backgroundColor: "rgba(168, 85, 247, 0.2)",
+    boxShadow: "0 0 10px rgba(168, 85, 247, 0.1)",
   },
   title: {
     fontSize: "2.2rem",
