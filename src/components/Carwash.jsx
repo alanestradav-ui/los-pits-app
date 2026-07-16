@@ -57,6 +57,8 @@ export default function Carwash({
   carwashPresets,
   carwashInventory,
   setCarwashInventory,
+  accesoriosInventory = [],
+  setAccesoriosInventory,
   carwashConsumption,
   setCarwashConsumption,
   usuarios = [],
@@ -95,12 +97,64 @@ export default function Carwash({
   const [precioLavado, setPrecioLavado] = useState("");
   const [trabajoAdicionalNombre, setTrabajoAdicionalNombre] = useState("");
   const [trabajoAdicionalPrecio, setTrabajoAdicionalPrecio] = useState("");
+  const [selectedAccesorios, setSelectedAccesorios] = useState([]);
+  const [inputAccessoryDesc, setInputAccessoryDesc] = useState("");
+  const [inputAccessoryQty, setInputAccessoryQty] = useState("1");
+  const [showAccessorySuggestions, setShowAccessorySuggestions] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedFullPhoto, setSelectedFullPhoto] = useState(null);
 
   const [nit, setNit] = useState("");
   const [nombreFacturacion, setNombreFacturacion] = useState("");
+
+  const accessorySuggestions = inputAccessoryDesc.trim()
+    ? (accesoriosInventory || []).filter(item => 
+        (item.name || "").toLowerCase().includes(inputAccessoryDesc.toLowerCase()) || 
+        (item.code || "").toLowerCase().includes(inputAccessoryDesc.toLowerCase())
+      )
+    : [];
+
+  const handleAddAccessoryToOrder = (e) => {
+    e.preventDefault();
+    if (!inputAccessoryDesc.trim() || !inputAccessoryQty) return;
+    const qty = parseInt(inputAccessoryQty);
+    if (isNaN(qty) || qty <= 0) {
+      alert("La cantidad debe ser mayor a 0");
+      return;
+    }
+    const matchingAcc = (accesoriosInventory || []).find(item => (item.name || "").toLowerCase().trim() === inputAccessoryDesc.trim().toLowerCase());
+    if (!matchingAcc) {
+      alert("Selecciona un accesorio válido del inventario.");
+      return;
+    }
+    if (qty > matchingAcc.quantity) {
+      alert(`Stock insuficiente. Solo quedan ${matchingAcc.quantity} unidades.`);
+      return;
+    }
+
+    setSelectedAccesorios(prev => {
+      const exists = prev.find(item => item.id === matchingAcc.id);
+      if (exists) {
+        return prev.map(item => item.id === matchingAcc.id ? { ...item, qty: Math.min(matchingAcc.quantity, item.qty + qty) } : item);
+      }
+      return [...prev, {
+        id: matchingAcc.id,
+        code: matchingAcc.code,
+        name: matchingAcc.name,
+        qty: qty,
+        salePrice: matchingAcc.salePrice,
+        purchasePrice: matchingAcc.purchasePrice
+      }];
+    });
+
+    setInputAccessoryDesc("");
+    setInputAccessoryQty("1");
+  };
+
+  const handleRemoveAccessoryFromOrder = (idx) => {
+    setSelectedAccesorios(prev => prev.filter((_, i) => i !== idx));
+  };
 
   // Checkout split payment states
   const [checkoutOrder, setCheckoutOrder] = useState(null);
@@ -403,7 +457,8 @@ export default function Carwash({
 
     const pBase = parseFloat(precioLavado) || selectedPreset.precio;
     const pAdd = parseFloat(trabajoAdicionalPrecio) || 0;
-    const totalPrecio = pBase + pAdd;
+    const pAccesorios = selectedAccesorios.reduce((sum, item) => sum + (item.salePrice * item.qty), 0);
+    const totalPrecio = pBase + pAdd + pAccesorios;
 
     const nuevo = {
       id: Date.now(),
@@ -422,6 +477,7 @@ export default function Carwash({
       precioBase: pBase,
       trabajoAdicionalNombre: trabajoAdicionalNombre.trim(),
       trabajoAdicionalPrecio: pAdd,
+      accesoriosCargados: selectedAccesorios,
       lavadores: selectedLavadores,
       lavador: selectedLavadores.join(", "),
       fotos: fotos,
@@ -513,6 +569,7 @@ export default function Carwash({
     setPrecioLavado("");
     setTrabajoAdicionalNombre("");
     setTrabajoAdicionalPrecio("");
+    setSelectedAccesorios([]);
     setNit("");
     setNombreFacturacion("");
     setAnio("");
@@ -649,6 +706,20 @@ export default function Carwash({
       }
     }
     
+    // Deduct stock of loaded accessories
+    if (checkoutOrder.accesoriosCargados && checkoutOrder.accesoriosCargados.length > 0) {
+      setAccesoriosInventory((prevInventory) => {
+        const safeInventory = Array.isArray(prevInventory) ? prevInventory : [];
+        return safeInventory.map(invItem => {
+          const usedItem = checkoutOrder.accesoriosCargados.find(p => p.id === invItem.id);
+          if (usedItem) {
+            return { ...invItem, quantity: Math.max(0, invItem.quantity - usedItem.qty) };
+          }
+          return invItem;
+        });
+      });
+    }
+
     // Complete checkout & update carwash list
     const updatedCarwash = carwash.map(c => {
       if (c.id === checkoutOrder.id) {
@@ -734,7 +805,10 @@ export default function Carwash({
     const addWorkStr = o.trabajoAdicionalNombre 
       ? ` + Trabajo Adicional: ${o.trabajoAdicionalNombre} (${formatMoney(o.trabajoAdicionalPrecio || 0)})` 
       : "";
-    const motString = `Servicio de Carwash: ${o.tipo} (${basePriceStr})${addWorkStr}. Lavado y aspirado del vehículo. Total: ${formatMoney(o.precio)}.`;
+    const accListStr = o.accesoriosCargados && o.accesoriosCargados.length > 0
+      ? ` + Accesorios: ${o.accesoriosCargados.map(a => `${a.name} (x${a.qty})`).join(", ")}`
+      : "";
+    const motString = `Servicio de Carwash: ${o.tipo} (${basePriceStr})${addWorkStr}${accListStr}. Lavado y aspirado del vehículo. Total: ${formatMoney(o.precio)}.`;
     const dummyCanvas = document.createElement("canvas");
     const dummyCtx = dummyCanvas.getContext("2d");
     dummyCtx.font = "13px 'Plus Jakarta Sans', sans-serif";
@@ -1906,6 +1980,98 @@ export default function Carwash({
                   />
                 </div>
               </div>
+              {/* Accesorios cargados a la orden */}
+              <div style={{ marginTop: "16px", borderTop: "1px solid rgba(255, 255, 255, 0.05)", paddingTop: "14px", textAlign: "left" }}>
+                <label style={{ ...styles.label, marginBottom: "8px", display: "block" }}>Cargar Accesorios al Lavado (Opcional)</label>
+                <div style={{ display: "flex", gap: "10px", alignItems: "flex-end" }}>
+                  <div style={{ ...styles.inputGroup, flex: 3, position: "relative" }}>
+                    <label style={{ ...styles.label, fontSize: "0.78rem" }}>Buscar Accesorio</label>
+                    <input
+                      placeholder="Escribe el nombre o código del accesorio..."
+                      className="input-field"
+                      value={inputAccessoryDesc}
+                      onChange={(e) => {
+                        setInputAccessoryDesc(e.target.value);
+                        setShowAccessorySuggestions(true);
+                      }}
+                      onFocus={() => setShowAccessorySuggestions(true)}
+                      onBlur={() => setTimeout(() => setShowAccessorySuggestions(false), 250)}
+                    />
+                    {showAccessorySuggestions && accessorySuggestions.length > 0 && (
+                      <div style={styles.suggestionsContainer}>
+                        {accessorySuggestions.map((item, idx) => (
+                          <div 
+                            key={idx}
+                            style={styles.suggestionItem}
+                            onMouseDown={() => {
+                              setInputAccessoryDesc(item.name);
+                              setShowAccessorySuggestions(false);
+                            }}
+                          >
+                            <div style={{ fontWeight: "700", color: "#fff", fontSize: "0.85rem" }}>
+                              {item.code} - {item.name} {item.brand ? `(${item.brand})` : ""}
+                            </div>
+                            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                              Stock: {item.quantity} | Venta: {formatMoney(item.salePrice)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ ...styles.inputGroup, flex: 1 }}>
+                    <label style={{ ...styles.label, fontSize: "0.78rem" }}>Cant.</label>
+                    <input
+                      type="number"
+                      placeholder="1"
+                      className="input-field"
+                      value={inputAccessoryQty}
+                      onChange={(e) => setInputAccessoryQty(e.target.value)}
+                      min="1"
+                    />
+                  </div>
+                  <button
+                    onClick={handleAddAccessoryToOrder}
+                    type="button"
+                    className="btn"
+                    style={{
+                      height: "40px",
+                      padding: "0 16px",
+                      backgroundColor: "rgba(168, 85, 247, 0.15)",
+                      borderColor: "rgba(168, 85, 247, 0.3)",
+                      color: "var(--color-secondary)",
+                      fontWeight: "700",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: "pointer"
+                    }}
+                  >
+                    Agregar
+                  </button>
+                </div>
+
+                {/* Selected Accessories list */}
+                {selectedAccesorios.length > 0 && (
+                  <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                    {selectedAccesorios.map((item, idx) => (
+                      <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", backgroundColor: "rgba(255, 255, 255, 0.02)", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(255, 255, 255, 0.04)" }}>
+                        <div style={{ display: "flex", flexDirection: "column" }}>
+                          <span style={{ fontSize: "0.85rem", fontWeight: "600", color: "#fff" }}>{item.name}</span>
+                          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Código: {item.code} | Cantidad: {item.qty} uds | Subtotal: {formatMoney(item.salePrice * item.qty)}</span>
+                        </div>
+                        <button
+                          onClick={() => handleRemoveAccessoryFromOrder(idx)}
+                          type="button"
+                          style={{ background: "none", border: "none", color: "var(--color-danger)", cursor: "pointer", fontSize: "0.8rem", fontWeight: "700" }}
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               <button type="submit" className="btn btn-secondary" style={styles.submitBtn}>
                 <Car size={18} />
@@ -2019,6 +2185,17 @@ export default function Carwash({
                         <div style={styles.infoRow}>
                           <span style={styles.infoLabel}>➕ {c.trabajoAdicionalNombre}:</span>
                           <span style={styles.infoVal}>{formatMoney(c.trabajoAdicionalPrecio || 0)}</span>
+                        </div>
+                      )}
+                      {c.accesoriosCargados && c.accesoriosCargados.length > 0 && (
+                        <div style={{ marginTop: "6px", display: "flex", flexDirection: "column", gap: "2px", borderTop: "1px dashed rgba(255,255,255,0.05)", paddingTop: "6px", marginBottom: "6px" }}>
+                          <span style={{ fontSize: "0.72rem", fontWeight: "700", color: "var(--text-muted)", textTransform: "uppercase" }}>💎 Accesorios:</span>
+                          {c.accesoriosCargados.map((acc, idx) => (
+                            <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem" }}>
+                              <span style={{ color: "var(--text-muted)" }}>• {acc.name} x{acc.qty}</span>
+                              <span style={{ color: "#fff", fontWeight: "600" }}>{formatMoney(acc.salePrice * acc.qty)}</span>
+                            </div>
+                          ))}
                         </div>
                       )}
                       <div style={styles.infoRow}>

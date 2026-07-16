@@ -42,6 +42,8 @@ export default function SettingsComponent({
   carwash,
   cafeteriaSales,
   carwashConsumption,
+  accesoriosInventory,
+  setAccesoriosInventory,
   usuarios = [],
   setUsuarios,
   usuarioActual,
@@ -714,7 +716,7 @@ export default function SettingsComponent({
         "vehiculosVenta", "workshopInventory", "cafeteriaInventory", "cafeteriaSales", 
         "comisionMecanico", "dashboardPeriod", "carwashPresets", "carwashInventory", 
         "carwashConsumption", "tiendaSales", "cuentasPorCobrar", "cuentasPorPagar", 
-        "fixedCosts", "clientes", "vehiculos", "usuarios"
+        "fixedCosts", "clientes", "vehiculos", "usuarios", "accesoriosInventory"
       ];
       keysToClear.forEach(key => localStorage.removeItem(key));
       alert("Caché local limpiado con éxito. La página se recargará para descargar los datos actualizados desde Supabase.");
@@ -1953,6 +1955,7 @@ export default function SettingsComponent({
                         { id: "cuentas", label: "📋 Cuentas Pagar/Cobrar" },
                         { id: "compras", label: "🛍️ Compras & Gastos" },
                         { id: "historial", label: "⏳ Historial Vehículos" },
+                        { id: "accesorios", label: "💎 Accesorios" },
                         { id: "finanzas", label: "📈 Finanzas" },
                         { id: "configuracion", label: "⚙️ Configuración" }
                       ].map((perm) => {
@@ -2627,6 +2630,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.app_data;`}
                     { id: "cuentas", label: "📋 Cuentas Pagar/Cobrar" },
                     { id: "compras", label: "🛍️ Compras & Gastos" },
                     { id: "historial", label: "⏳ Historial Vehículos" },
+                    { id: "accesorios", label: "💎 Accesorios" },
                     { id: "finanzas", label: "📈 Finanzas" },
                     { id: "configuracion", label: "⚙️ Configuración" }
                   ].map((perm) => {

@@ -132,6 +132,8 @@ export default function Taller({
   lavadores, 
   workshopInventory, 
   setWorkshopInventory, 
+  accesoriosInventory = [],
+  setAccesoriosInventory,
   comisionMecanico, 
   usuarios = [],
   cuentasPorCobrar,
@@ -289,7 +291,10 @@ export default function Taller({
   const [searchQuery, setSearchQuery] = useState("");
 
   const partSuggestions = inputPartDesc.trim()
-    ? (workshopInventory || []).filter(item => 
+    ? [
+        ...(workshopInventory || []).map(item => ({ ...item, isAccessory: false })),
+        ...(accesoriosInventory || []).map(item => ({ ...item, isAccessory: true }))
+      ].filter(item => 
         (item.name || "").toLowerCase().includes(inputPartDesc.toLowerCase()) || 
         (item.code || "").toLowerCase().includes(inputPartDesc.toLowerCase())
       )
@@ -848,11 +853,37 @@ export default function Taller({
 
         // Deduct inventory
         if (o.presupuesto && o.presupuesto.parts && o.presupuesto.parts.length > 0) {
-          setWorkshopInventory((prevInventory) => {
-            return prevInventory.map(invItem => {
+          // 1. Deduct Accessories
+          setAccesoriosInventory((prevInventory) => {
+            const safeInventory = Array.isArray(prevInventory) ? prevInventory : [];
+            return safeInventory.map(invItem => {
               const usedPart = o.presupuesto.parts.find(p => 
-                (p.code && invItem.code && p.code === invItem.code) || 
-                (p.desc || "").toLowerCase().trim() === (invItem.name || "").toLowerCase().trim()
+                (p.isAccessory === true && (
+                  (p.code && invItem.code && p.code === invItem.code) || 
+                  (p.desc || "").toLowerCase().trim() === (invItem.name || "").toLowerCase().trim()
+                )) || 
+                (p.isAccessory !== false && !workshopInventory.some(wi => wi.code === invItem.code || wi.name === invItem.name) && (
+                  (p.code && invItem.code && p.code === invItem.code) || 
+                  (p.desc || "").toLowerCase().trim() === (invItem.name || "").toLowerCase().trim()
+                ))
+              );
+              if (usedPart) {
+                const newQty = Math.max(0, invItem.quantity - usedPart.qty);
+                return { ...invItem, quantity: newQty };
+              }
+              return invItem;
+            });
+          });
+
+          // 2. Deduct Workshop Parts
+          setWorkshopInventory((prevInventory) => {
+            const safeInventory = Array.isArray(prevInventory) ? prevInventory : [];
+            return safeInventory.map(invItem => {
+              const usedPart = o.presupuesto.parts.find(p => 
+                p.isAccessory !== true && (
+                  (p.code && invItem.code && p.code === invItem.code) || 
+                  (p.desc || "").toLowerCase().trim() === (invItem.name || "").toLowerCase().trim()
+                )
               );
               if (usedPart) {
                 const newQty = Math.max(0, invItem.quantity - usedPart.qty);
@@ -935,10 +966,14 @@ export default function Taller({
       return;
     }
 
-    const matchingInv = (workshopInventory || []).find(item => (item.name || "").toLowerCase().trim() === (inputPartDesc || "").trim().toLowerCase());
+    const matchingInv = [
+      ...(workshopInventory || []).map(item => ({ ...item, isAccessory: false })),
+      ...(accesoriosInventory || []).map(item => ({ ...item, isAccessory: true }))
+    ].find(item => (item.name || "").toLowerCase().trim() === (inputPartDesc || "").trim().toLowerCase());
     const code = matchingInv ? matchingInv.code : "";
     const brand = matchingInv ? matchingInv.brand : "";
     const presentation = matchingInv ? matchingInv.presentation : "";
+    const isAccessory = matchingInv ? matchingInv.isAccessory : false;
 
     setCurrentBudget((prev) => ({
       ...prev,
@@ -952,7 +987,8 @@ export default function Taller({
           price: sale, // retrocompatibility for display / older code
           code: code,
           brand: brand,
-          presentation: presentation
+          presentation: presentation,
+          isAccessory: isAccessory
         }
       ]
     }));
@@ -1101,7 +1137,10 @@ export default function Taller({
       setQuickShowSuggestions(false);
       return;
     }
-    const matches = (workshopInventory || []).filter(item => 
+    const matches = [
+      ...(workshopInventory || []).map(item => ({ ...item, isAccessory: false })),
+      ...(accesoriosInventory || []).map(item => ({ ...item, isAccessory: true }))
+    ].filter(item => 
       (item.name || "").toLowerCase().includes(val.toLowerCase()) ||
       (item.code || "").toLowerCase().includes(val.toLowerCase())
     );
@@ -1143,10 +1182,14 @@ export default function Taller({
     const updatedServices = [...(currentBud.services || [])];
 
     if (quickType === "part") {
-      const matchingInv = (workshopInventory || []).find(item => (item.name || "").toLowerCase().trim() === quickDesc.trim().toLowerCase());
+      const matchingInv = [
+        ...(workshopInventory || []).map(item => ({ ...item, isAccessory: false })),
+        ...(accesoriosInventory || []).map(item => ({ ...item, isAccessory: true }))
+      ].find(item => (item.name || "").toLowerCase().trim() === quickDesc.trim().toLowerCase());
       const code = matchingInv ? matchingInv.code : "";
       const brand = matchingInv ? matchingInv.brand : "";
       const presentation = matchingInv ? matchingInv.presentation : "";
+      const isAccessory = matchingInv ? matchingInv.isAccessory : false;
       updatedParts.push({
         desc: quickDesc.trim(),
         qty,
@@ -1155,7 +1198,8 @@ export default function Taller({
         price,
         code,
         brand,
-        presentation
+        presentation,
+        isAccessory
       });
     } else if (quickType === "insumo") {
       updatedInsumos.push({

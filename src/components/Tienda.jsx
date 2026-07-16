@@ -22,6 +22,8 @@ export default function Tienda({
   setCafeteriaInventory,
   carwashInventory = [],
   setCarwashInventory,
+  accesoriosInventory = [],
+  setAccesoriosInventory,
   tiendaSales = [],
   setTiendaSales,
   cuentasPorCobrar = [],
@@ -102,6 +104,22 @@ export default function Tienda({
         stock: item.quantity,
         purchasePrice: item.purchasePrice,
         salePrice: Math.round(item.purchasePrice * 1.25 * 100) / 100, // 25% margin
+        presentation: item.presentation || "Unidad"
+      });
+    });
+
+    // Accessories
+    accesoriosInventory.forEach(item => {
+      catalog.push({
+        id: `accesorios-${item.id}`,
+        originalId: item.id,
+        source: "accesorios",
+        code: item.code || "AC-N/A",
+        name: item.name,
+        brand: item.brand || "",
+        stock: item.quantity,
+        purchasePrice: item.purchasePrice,
+        salePrice: item.salePrice,
         presentation: item.presentation || "Unidad"
       });
     });
@@ -303,6 +321,12 @@ export default function Tienda({
             ? { ...invItem, quantity: Math.max(0, invItem.quantity - cartItem.qty) }
             : invItem
         ));
+      } else if (cartItem.source === "accesorios") {
+        setAccesoriosInventory(prev => prev.map(invItem => 
+          invItem.id === cartItem.originalId 
+            ? { ...invItem, quantity: Math.max(0, invItem.quantity - cartItem.qty) }
+            : invItem
+        ));
       }
     });
 
@@ -371,7 +395,8 @@ export default function Tienda({
                 { id: "all", label: "Todos" },
                 { id: "taller", label: "🔧 Repuestos Taller" },
                 { id: "cafeteria", label: "☕ Cafetería" },
-                { id: "carwash", label: "🧼 Insumos Carwash" }
+                { id: "carwash", label: "🧼 Insumos Carwash" },
+                { id: "accesorios", label: "💎 Accesorios" }
               ].map(t => (
                 <button
                   key={t.id}

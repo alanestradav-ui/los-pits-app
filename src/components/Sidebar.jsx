@@ -11,6 +11,7 @@ import {
   Coffee,
   Settings,
   ShoppingCart,
+  ShoppingBag,
   History,
   Store,
   Receipt,
@@ -93,6 +94,12 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
       id: "clientesVehiculos",
       label: "Clientes / Vehículos",
       icon: Users,
+      roles: ["admin", "cajero"]
+    },
+    {
+      id: "accesorios",
+      label: "Accesorios POS",
+      icon: ShoppingBag,
       roles: ["admin", "cajero"]
     },
     {

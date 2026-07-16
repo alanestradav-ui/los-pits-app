@@ -16,6 +16,7 @@ import Cuentas from "./components/Cuentas";
 import VehiculosVenta from "./components/VehiculosVenta";
 import ClientesVehiculos from "./components/ClientesVehiculos";
 import Compras from "./components/Compras";
+import Accesorios from "./components/Accesorios";
 import { getLocalStorage, setLocalStorage } from "./utils/storage";
 import { getSupabaseClient, syncKeyToCloud } from "./utils/supabase";
 
@@ -52,6 +53,7 @@ const globalActiveSetters = {
   vehiculos: null,
   compras: null,
   toolsInventory: null,
+  accesoriosInventory: null,
   setIsInitialPullDone: null,
   setRealtimeStatus: null
 };
@@ -76,7 +78,8 @@ const ARRAY_KEYS = [
   "clientes",
   "vehiculos",
   "compras",
-  "toolsInventory"
+  "toolsInventory",
+  "accesoriosInventory"
 ];
 
 // Helper to merge local cached array data with cloud data to prevent silent data wipes on initial connection
@@ -92,8 +95,8 @@ export default function App() {
   // 🔐 USER DEFINITIONS
   const [usuarios, setUsuarios] = useState(() => {
     const defaultUsers = [
-      { user: "admin", pass: "1234", rol: "admin", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras"], salarioBase: 0, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 0 },
-      { user: "cajero", pass: "1234", rol: "cajero", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras"], salarioBase: 3000, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 0 },
+      { user: "admin", pass: "1234", rol: "admin", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"], salarioBase: 0, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 0 },
+      { user: "cajero", pass: "1234", rol: "cajero", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"], salarioBase: 3000, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 0 },
       { user: "mecanico", pass: "1234", rol: "mecanico", permissions: ["taller", "historial"], salarioBase: 2500, comisionTaller: 10, comisionCarwash: 0, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: false, comisionRepuestos: 0 },
       { user: "lavador", pass: "1234", rol: "lavador", permissions: ["carwash"], salarioBase: 2000, comisionTaller: 0, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 0 },
       { user: "jefe", pass: "1234", rol: "jefe de taller", permissions: ["dashboard", "taller", "repuestosFaltantes", "historial"], salarioBase: 4000, comisionTaller: 10, comisionCarwash: 0, comisionarLabor: true, comisionarRepuestos: true, comisionarCarwash: false, comisionRepuestos: 5 }
@@ -103,7 +106,7 @@ export default function App() {
     return loaded.map(u => {
       const perms = u.permissions || [];
       const updatedPerms = (u.rol === "admin" || u.rol === "cajero")
-        ? [...new Set([...perms, "finanzas", "configuracion", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras"])]
+        ? [...new Set([...perms, "finanzas", "configuracion", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"])]
         : perms;
       
       const comisionarLabor = u.comisionarLabor !== undefined ? u.comisionarLabor : (u.rol?.toLowerCase() !== "lavador");
@@ -394,6 +397,11 @@ export default function App() {
     return Array.isArray(val) ? val : [];
   });
 
+  const [accesoriosInventory, setAccesoriosInventory] = useState(() => {
+    const val = getLocalStorage("accesoriosInventory", []);
+    return Array.isArray(val) ? val : [];
+  });
+
   // 💾 PERSISTENCE EFFECT
   useEffect(() => {
     setLocalStorage("usuarioActual", usuarioActual);
@@ -442,6 +450,7 @@ export default function App() {
     globalActiveSetters.vehiculos = setVehiculos;
     globalActiveSetters.compras = setCompras;
     globalActiveSetters.toolsInventory = setToolsInventory;
+    globalActiveSetters.accesoriosInventory = setAccesoriosInventory;
     globalActiveSetters.setIsInitialPullDone = setIsInitialPullDone;
     globalActiveSetters.setRealtimeStatus = setRealtimeStatus;
 
@@ -482,7 +491,8 @@ export default function App() {
       clientes,
       vehiculos,
       compras,
-      toolsInventory
+      toolsInventory,
+      accesoriosInventory
     };
   }, [
     usuarios,
@@ -509,7 +519,8 @@ export default function App() {
     clientes,
     vehiculos,
     compras,
-    toolsInventory
+    toolsInventory,
+    accesoriosInventory
   ]);
 
   // Sync a key-value pair to cloud if it has actually changed
@@ -827,6 +838,11 @@ export default function App() {
     syncToCloud("toolsInventory", toolsInventory);
   }, [toolsInventory]);
 
+  useEffect(() => {
+    setLocalStorage("accesoriosInventory", accesoriosInventory);
+    syncToCloud("accesoriosInventory", accesoriosInventory);
+  }, [accesoriosInventory]);
+
   const usuarioActivo = usuarios.find(u => (u.user || "").toLowerCase().trim() === (usuarioActual?.user || "").toLowerCase().trim()) || usuarioActual;
 
   const userHasPermission = (user, tabId) => {
@@ -839,7 +855,7 @@ export default function App() {
     }
     // Fallbacks
     if (activeRol === "cajero") {
-      return ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras"].includes(tabId);
+      return ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"].includes(tabId);
     }
     if (activeRol === "mecanico") return ["taller", "historial"].includes(tabId);
     if (activeRol === "lavador") return tabId === "carwash";
@@ -926,6 +942,8 @@ export default function App() {
             lavadores={lavadores}
             workshopInventory={workshopInventory}
             setWorkshopInventory={setWorkshopInventory}
+            accesoriosInventory={accesoriosInventory}
+            setAccesoriosInventory={setAccesoriosInventory}
             comisionMecanico={comisionMecanico}
             usuarios={usuarios}
             cuentasPorCobrar={cuentasPorCobrar}
@@ -949,6 +967,8 @@ export default function App() {
             carwashPresets={carwashPresets}
             carwashInventory={carwashInventory}
             setCarwashInventory={setCarwashInventory}
+            accesoriosInventory={accesoriosInventory}
+            setAccesoriosInventory={setAccesoriosInventory}
             carwashConsumption={carwashConsumption}
             setCarwashConsumption={setCarwashConsumption}
             usuarios={usuarios}
@@ -1012,6 +1032,8 @@ export default function App() {
             setCafeteriaInventory={setCafeteriaInventory}
             carwashInventory={carwashInventory}
             setCarwashInventory={setCarwashInventory}
+            accesoriosInventory={accesoriosInventory}
+            setAccesoriosInventory={setAccesoriosInventory}
             tiendaSales={tiendaSales}
             setTiendaSales={setTiendaSales}
             cuentasPorCobrar={cuentasPorCobrar}
@@ -1019,6 +1041,16 @@ export default function App() {
             usuarioActual={usuarioActivo}
             clientes={clientes}
             setClientes={setClientes}
+          />
+        )}
+
+        {currentTab === "accesorios" && userHasPermission(usuarioActivo, "accesorios") && (
+          <Accesorios 
+            accesoriosInventory={accesoriosInventory}
+            setAccesoriosInventory={setAccesoriosInventory}
+            usuarioActual={usuarioActivo}
+            cuentasPorPagar={cuentasPorPagar}
+            setCuentasPorPagar={setCuentasPorPagar}
           />
         )}
 
@@ -1093,6 +1125,8 @@ export default function App() {
             setCafeteriaInventory={setCafeteriaInventory}
             carwashInventory={carwashInventory}
             setCarwashInventory={setCarwashInventory}
+            accesoriosInventory={accesoriosInventory}
+            setAccesoriosInventory={setAccesoriosInventory}
             fixedCosts={fixedCosts}
             setFixedCosts={setFixedCosts}
             ordenes={ordenes}
