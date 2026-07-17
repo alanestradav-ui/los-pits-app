@@ -138,6 +138,8 @@ export default function Taller({
   usuarios = [],
   cuentasPorCobrar,
   setCuentasPorCobrar,
+  cuentasPorPagar = [],
+  setCuentasPorPagar,
   clientes = [],
   setClientes,
   vehiculos = [],
@@ -868,6 +870,23 @@ export default function Taller({
                 ))
               );
               if (usedPart) {
+                if (invItem.acquisitionMode === "consignacion" && setCuentasPorPagar) {
+                  const qtySold = usedPart.qty;
+                  const totalCost = qtySold * (invItem.purchasePrice || 0);
+                  if (totalCost > 0) {
+                    const nuevaCuenta = {
+                      id: Date.now() + Math.random(),
+                      proveedor: invItem.proveedor || invItem.brand || "Proveedor de Consignación",
+                      concepto: `Consignación - Taller Orden #${o.id} - Venta de accesorio: ${invItem.name} (${qtySold} uds) - Código: ${invItem.code}`,
+                      total: totalCost,
+                      saldo: totalCost,
+                      fecha: new Date().toISOString(),
+                      estado: "Pendiente",
+                      pagos: []
+                    };
+                    setCuentasPorPagar(prevCuentas => [nuevaCuenta, ...(prevCuentas || [])]);
+                  }
+                }
                 const newQty = Math.max(0, invItem.quantity - usedPart.qty);
                 return { ...invItem, quantity: newQty };
               }

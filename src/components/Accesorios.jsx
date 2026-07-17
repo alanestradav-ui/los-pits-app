@@ -93,7 +93,9 @@ export default function Accesorios({
         quantity: qty,
         purchasePrice: purchase,
         salePrice: sale,
-        minStock: minS
+        minStock: minS,
+        acquisitionMode: formaPago,
+        proveedor: (formaPago === "credito" || formaPago === "consignacion") ? proveedor.trim() : ""
       };
       setAccesoriosInventory([nuevo, ...accesoriosInventory]);
 
@@ -351,9 +353,10 @@ export default function Accesorios({
                     >
                       <option value="efectivo">Efectivo / Caja</option>
                       <option value="credito">Crédito (Cuenta por Pagar)</option>
+                      <option value="consignacion">Consignación</option>
                     </select>
                   </div>
-                  {formaPago === "credito" && (
+                  {(formaPago === "credito" || formaPago === "consignacion") && (
                     <div style={{ ...styles.inputGroup, flex: 1.5 }}>
                       <label style={styles.label}>Proveedor *</label>
                       <input
@@ -440,7 +443,19 @@ export default function Accesorios({
                           </td>
                           <td style={styles.td}>
                             <div style={{ display: "flex", flexDirection: "column" }}>
-                              <span style={{ fontWeight: "600", color: "#fff" }}>{item.name}</span>
+                              <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                                <span style={{ fontWeight: "600", color: "#fff" }}>{item.name}</span>
+                                {item.acquisitionMode === "consignacion" && (
+                                  <span style={{ fontSize: "0.65rem", padding: "2px 6px", borderRadius: "4px", backgroundColor: "rgba(168, 85, 247, 0.15)", color: "var(--color-secondary)", border: "1px solid rgba(168, 85, 247, 0.2)", fontWeight: "bold" }}>
+                                    Consignación
+                                  </span>
+                                )}
+                                {item.acquisitionMode === "credito" && (
+                                  <span style={{ fontSize: "0.65rem", padding: "2px 6px", borderRadius: "4px", backgroundColor: "rgba(234, 179, 8, 0.12)", color: "var(--color-warning)", border: "1px solid rgba(234, 179, 8, 0.2)", fontWeight: "bold" }}>
+                                    Crédito
+                                  </span>
+                                )}
+                              </div>
                               {isLowStock && (
                                 <span style={{
                                   fontSize: "0.68rem",

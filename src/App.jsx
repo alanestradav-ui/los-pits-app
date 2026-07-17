@@ -948,6 +948,8 @@ export default function App() {
             usuarios={usuarios}
             cuentasPorCobrar={cuentasPorCobrar}
             setCuentasPorCobrar={setCuentasPorCobrar}
+            cuentasPorPagar={cuentasPorPagar}
+            setCuentasPorPagar={setCuentasPorPagar}
             clientes={clientes}
             setClientes={setClientes}
             vehiculos={vehiculos}
@@ -974,6 +976,8 @@ export default function App() {
             usuarios={usuarios}
             cuentasPorCobrar={cuentasPorCobrar}
             setCuentasPorCobrar={setCuentasPorCobrar}
+            cuentasPorPagar={cuentasPorPagar}
+            setCuentasPorPagar={setCuentasPorPagar}
             clientes={clientes}
             setClientes={setClientes}
             vehiculos={vehiculos}
@@ -1038,6 +1042,8 @@ export default function App() {
             setTiendaSales={setTiendaSales}
             cuentasPorCobrar={cuentasPorCobrar}
             setCuentasPorCobrar={setCuentasPorCobrar}
+            cuentasPorPagar={cuentasPorPagar}
+            setCuentasPorPagar={setCuentasPorPagar}
             usuarioActual={usuarioActivo}
             clientes={clientes}
             setClientes={setClientes}

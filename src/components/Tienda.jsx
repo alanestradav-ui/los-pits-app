@@ -28,6 +28,8 @@ export default function Tienda({
   setTiendaSales,
   cuentasPorCobrar = [],
   setCuentasPorCobrar,
+  cuentasPorPagar = [],
+  setCuentasPorPagar,
   usuarioActual,
   clientes = [],
   setClientes
@@ -322,11 +324,32 @@ export default function Tienda({
             : invItem
         ));
       } else if (cartItem.source === "accesorios") {
-        setAccesoriosInventory(prev => prev.map(invItem => 
-          invItem.id === cartItem.originalId 
-            ? { ...invItem, quantity: Math.max(0, invItem.quantity - cartItem.qty) }
-            : invItem
-        ));
+        setAccesoriosInventory(prev => {
+          const safePrev = Array.isArray(prev) ? prev : [];
+          return safePrev.map(invItem => {
+            if (invItem.id === cartItem.originalId) {
+              if (invItem.acquisitionMode === "consignacion" && setCuentasPorPagar) {
+                const qtySold = cartItem.qty;
+                const totalCost = qtySold * (invItem.purchasePrice || 0);
+                if (totalCost > 0) {
+                  const nuevaCuenta = {
+                    id: Date.now() + Math.random(),
+                    proveedor: invItem.proveedor || invItem.brand || "Proveedor de Consignación",
+                    concepto: `Consignación - POS Venta de accesorio: ${invItem.name} (${qtySold} uds) - Código: ${invItem.code}`,
+                    total: totalCost,
+                    saldo: totalCost,
+                    fecha: new Date().toISOString(),
+                    estado: "Pendiente",
+                    pagos: []
+                  };
+                  setCuentasPorPagar(prevCuentas => [nuevaCuenta, ...(prevCuentas || [])]);
+                }
+              }
+              return { ...invItem, quantity: Math.max(0, invItem.quantity - cartItem.qty) };
+            }
+            return invItem;
+          });
+        });
       }
     });
 

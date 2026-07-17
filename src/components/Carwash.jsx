@@ -64,6 +64,8 @@ export default function Carwash({
   usuarios = [],
   cuentasPorCobrar,
   setCuentasPorCobrar,
+  cuentasPorPagar = [],
+  setCuentasPorPagar,
   clientes = [],
   setClientes,
   vehiculos = [],
@@ -713,6 +715,23 @@ export default function Carwash({
         return safeInventory.map(invItem => {
           const usedItem = checkoutOrder.accesoriosCargados.find(p => p.id === invItem.id);
           if (usedItem) {
+            if (invItem.acquisitionMode === "consignacion" && setCuentasPorPagar) {
+              const qtySold = usedItem.qty;
+              const totalCost = qtySold * (invItem.purchasePrice || 0);
+              if (totalCost > 0) {
+                const nuevaCuenta = {
+                  id: Date.now() + Math.random(),
+                  proveedor: invItem.proveedor || invItem.brand || "Proveedor de Consignación",
+                  concepto: `Consignación - Carwash Orden #${checkoutOrder.id} - Venta de accesorio: ${invItem.name} (${qtySold} uds) - Código: ${invItem.code}`,
+                  total: totalCost,
+                  saldo: totalCost,
+                  fecha: new Date().toISOString(),
+                  estado: "Pendiente",
+                  pagos: []
+                };
+                setCuentasPorPagar(prevCuentas => [nuevaCuenta, ...(prevCuentas || [])]);
+              }
+            }
             return { ...invItem, quantity: Math.max(0, invItem.quantity - usedItem.qty) };
           }
           return invItem;
