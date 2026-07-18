@@ -97,6 +97,7 @@ export default function Carwash({
   const [selectedLavadores, setSelectedLavadores] = useState([]);
   const [selectedPreset, setSelectedPreset] = useState(null);
   const [precioLavado, setPrecioLavado] = useState("");
+  const [customPriceEnabled, setCustomPriceEnabled] = useState(false);
   const [trabajoAdicionalNombre, setTrabajoAdicionalNombre] = useState("");
   const [trabajoAdicionalPrecio, setTrabajoAdicionalPrecio] = useState("");
   const [selectedAccesorios, setSelectedAccesorios] = useState([]);
@@ -457,7 +458,7 @@ export default function Carwash({
       return;
     }
 
-    const pBase = parseFloat(precioLavado) || selectedPreset.precio;
+    const pBase = customPriceEnabled ? (parseFloat(precioLavado) || selectedPreset.precio) : selectedPreset.precio;
     const pAdd = parseFloat(trabajoAdicionalPrecio) || 0;
     const pAccesorios = selectedAccesorios.reduce((sum, item) => sum + (item.salePrice * item.qty), 0);
     const totalPrecio = pBase + pAdd + pAccesorios;
@@ -569,6 +570,7 @@ export default function Carwash({
     setSelectedLavadores([]);
     setSelectedPreset(null);
     setPrecioLavado("");
+    setCustomPriceEnabled(false);
     setTrabajoAdicionalNombre("");
     setTrabajoAdicionalPrecio("");
     setSelectedAccesorios([]);
@@ -1944,6 +1946,7 @@ export default function Carwash({
                         onClick={() => {
                           setSelectedPreset(p);
                           setPrecioLavado(p.precio.toString());
+                          setCustomPriceEnabled(false);
                         }}
                         className={`btn btn-preset-wash ${isSelected ? 'active-preset' : ''}`}
                         style={{
@@ -1961,20 +1964,54 @@ export default function Carwash({
                 </div>
               </div>
 
-              <div style={{ ...styles.inputGroup, marginTop: "12px" }}>
-                <label style={styles.label}>Precio de Lavado Personalizado (Q) *</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  required
-                  placeholder="Ej. 75.00"
-                  className="input-field"
-                  value={precioLavado}
-                  onChange={(e) => setPrecioLavado(e.target.value)}
-                  style={{ width: "100%", boxSizing: "border-box" }}
-                />
-              </div>
+              {selectedPreset && (
+                <div style={{
+                  marginTop: "12px",
+                  padding: "12px",
+                  borderRadius: "8px",
+                  border: "1px solid rgba(168, 85, 247, 0.15)",
+                  backgroundColor: "rgba(168, 85, 247, 0.03)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "10px"
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: "0.9rem", color: "#fff" }}>
+                      Precio establecido: <strong style={{ color: "var(--color-secondary)" }}>{formatMoney(selectedPreset.precio)}</strong>
+                    </span>
+                    <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                      <input
+                        type="checkbox"
+                        checked={customPriceEnabled}
+                        onChange={(e) => {
+                          setCustomPriceEnabled(e.target.checked);
+                          if (!e.target.checked) {
+                            setPrecioLavado(selectedPreset.precio.toString());
+                          }
+                        }}
+                        style={{ accentColor: "var(--color-secondary)", cursor: "pointer" }}
+                      />
+                      Ingresar otro valor
+                    </label>
+                  </div>
+                  {customPriceEnabled && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                      <label style={styles.label}>Nuevo precio del lavado (Q) *</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        required
+                        placeholder="Ej. 75.00"
+                        className="input-field"
+                        value={precioLavado}
+                        onChange={(e) => setPrecioLavado(e.target.value)}
+                        style={{ width: "100%", boxSizing: "border-box" }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div style={{ display: "flex", gap: "10px", marginTop: "12px" }}>
                 <div style={{ ...styles.inputGroup, flex: 2 }}>
