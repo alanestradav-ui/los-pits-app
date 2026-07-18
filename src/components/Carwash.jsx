@@ -98,6 +98,9 @@ export default function Carwash({
   const [selectedPreset, setSelectedPreset] = useState(null);
   const [precioLavado, setPrecioLavado] = useState("");
   const [customPriceEnabled, setCustomPriceEnabled] = useState(false);
+  const [editingCardId, setEditingCardId] = useState(null);
+  const [editCardPrecioBase, setEditCardPrecioBase] = useState("");
+  const [editCardComision, setEditCardComision] = useState("");
   const [trabajoAdicionalNombre, setTrabajoAdicionalNombre] = useState("");
   const [trabajoAdicionalPrecio, setTrabajoAdicionalPrecio] = useState("");
   const [selectedAccesorios, setSelectedAccesorios] = useState([]);
@@ -2231,37 +2234,105 @@ export default function Carwash({
                         </div>
                       </div>
                       
-                      {c.precioBase !== undefined && c.precioBase !== c.precio && (
-                        <div style={styles.infoRow}>
-                          <span style={styles.infoLabel}>💰 Precio Base:</span>
-                          <span style={styles.infoVal}>{formatMoney(c.precioBase)}</span>
-                        </div>
-                      )}
-                      {c.trabajoAdicionalNombre && (
-                        <div style={styles.infoRow}>
-                          <span style={styles.infoLabel}>➕ {c.trabajoAdicionalNombre}:</span>
-                          <span style={styles.infoVal}>{formatMoney(c.trabajoAdicionalPrecio || 0)}</span>
-                        </div>
-                      )}
-                      {c.accesoriosCargados && c.accesoriosCargados.length > 0 && (
-                        <div style={{ marginTop: "6px", display: "flex", flexDirection: "column", gap: "2px", borderTop: "1px dashed rgba(255,255,255,0.05)", paddingTop: "6px", marginBottom: "6px" }}>
-                          <span style={{ fontSize: "0.72rem", fontWeight: "700", color: "var(--text-muted)", textTransform: "uppercase" }}>💎 Accesorios:</span>
-                          {c.accesoriosCargados.map((acc, idx) => (
-                            <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem" }}>
-                              <span style={{ color: "var(--text-muted)" }}>• {acc.name} x{acc.qty}</span>
-                              <span style={{ color: "#fff", fontWeight: "600" }}>{formatMoney(acc.salePrice * acc.qty)}</span>
+                      {editingCardId === c.id ? (
+                        <div style={{ ...styles.infoRow, backgroundColor: "rgba(168, 85, 247, 0.05)", padding: "8px", borderRadius: "6px", margin: "6px 0", border: "1px dashed rgba(168, 85, 247, 0.2)", display: "block" }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "6px", width: "100%" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <span style={{ fontSize: "0.8rem", color: "#fff", fontWeight: "600" }}>Editar Montos:</span>
                             </div>
-                          ))}
+                            <div style={{ display: "flex", gap: "8px" }}>
+                              <div style={{ flex: 1 }}>
+                                <label style={{ fontSize: "0.7rem", color: "var(--text-muted)", display: "block", marginBottom: "2px" }}>Precio Base (Q):</label>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  className="input-field"
+                                  value={editCardPrecioBase}
+                                  onChange={(e) => setEditCardPrecioBase(e.target.value)}
+                                  style={{ width: "100%", padding: "4px 8px", fontSize: "0.8rem", height: "26px", backgroundColor: "rgba(0,0,0,0.3)" }}
+                                />
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <label style={{ fontSize: "0.7rem", color: "var(--text-muted)", display: "block", marginBottom: "2px" }}>Comisión (Q):</label>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  className="input-field"
+                                  value={editCardComision}
+                                  onChange={(e) => setEditCardComision(e.target.value)}
+                                  style={{ width: "100%", padding: "4px 8px", fontSize: "0.8rem", height: "26px", backgroundColor: "rgba(0,0,0,0.3)" }}
+                                />
+                              </div>
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "4px" }}>
+                              <button
+                                type="button"
+                                onClick={() => setEditingCardId(null)}
+                                className="btn btn-ghost"
+                                style={{ padding: "2px 8px", fontSize: "0.75rem", height: "24px" }}
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newBase = parseFloat(editCardPrecioBase) || 0;
+                                  const newCom = parseFloat(editCardComision) || 0;
+                                  const pAdd = c.trabajoAdicionalPrecio || 0;
+                                  const pAccesorios = (c.accesoriosCargados || []).reduce((sum, item) => sum + (item.salePrice * item.qty), 0);
+                                  const newTotal = newBase + pAdd + pAccesorios;
+
+                                  setCarwash(prev => prev.map(item => item.id === c.id ? {
+                                    ...item,
+                                    precioBase: newBase,
+                                    precio: newTotal,
+                                    comision: newCom
+                                  } : item));
+                                  setEditingCardId(null);
+                                }}
+                                className="btn btn-secondary"
+                                style={{ padding: "2px 8px", fontSize: "0.75rem", height: "24px", color: "#fff" }}
+                              >
+                                Guardar
+                              </button>
+                            </div>
+                          </div>
                         </div>
+                      ) : (
+                        <>
+                          {c.precioBase !== undefined && c.precioBase !== c.precio && (
+                            <div style={styles.infoRow}>
+                              <span style={styles.infoLabel}>💰 Precio Base:</span>
+                              <span style={styles.infoVal}>{formatMoney(c.precioBase)}</span>
+                            </div>
+                          )}
+                          {c.trabajoAdicionalNombre && (
+                            <div style={styles.infoRow}>
+                              <span style={styles.infoLabel}>➕ {c.trabajoAdicionalNombre}:</span>
+                              <span style={styles.infoVal}>{formatMoney(c.trabajoAdicionalPrecio || 0)}</span>
+                            </div>
+                          )}
+                          {c.accesoriosCargados && c.accesoriosCargados.length > 0 && (
+                            <div style={{ marginTop: "6px", display: "flex", flexDirection: "column", gap: "2px", borderTop: "1px dashed rgba(255,255,255,0.05)", paddingTop: "6px", marginBottom: "6px" }}>
+                              <span style={{ fontSize: "0.72rem", fontWeight: "700", color: "var(--text-muted)", textTransform: "uppercase" }}>💎 Accesorios:</span>
+                              {c.accesoriosCargados.map((acc, idx) => (
+                                <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem" }}>
+                                  <span style={{ color: "var(--text-muted)" }}>• {acc.name} x{acc.qty}</span>
+                                  <span style={{ color: "#fff", fontWeight: "600" }}>{formatMoney(acc.salePrice * acc.qty)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <div style={styles.infoRow}>
+                            <span style={styles.infoLabel}>💰 Total Servicio:</span>
+                            <span style={styles.infoValTotal}>{formatMoney(c.precio)}</span>
+                          </div>
+                          <div style={styles.infoRow}>
+                            <span style={styles.infoLabel}>🪙 Comisión Lavador:</span>
+                            <span style={styles.infoValCom}>{formatMoney(c.comision)}</span>
+                          </div>
+                        </>
                       )}
-                      <div style={styles.infoRow}>
-                        <span style={styles.infoLabel}>💰 Total Servicio:</span>
-                        <span style={styles.infoValTotal}>{formatMoney(c.precio)}</span>
-                      </div>
-                      <div style={styles.infoRow}>
-                        <span style={styles.infoLabel}>🪙 Comisión Lavador:</span>
-                        <span style={styles.infoValCom}>{formatMoney(c.comision)}</span>
-                      </div>
                       
                       {c.fotos && c.fotos.length > 0 && (
                         <div style={styles.cardPhotosGrid}>
@@ -2288,6 +2359,22 @@ export default function Carwash({
                       >
                         📋 Ver Hoja
                       </button>
+
+                      {isManager && c.estado !== "Entregado" && editingCardId !== c.id && (
+                        <button
+                          onClick={() => {
+                            setEditingCardId(c.id);
+                            setEditCardPrecioBase(c.precioBase !== undefined ? c.precioBase.toString() : c.precio.toString());
+                            setEditCardComision(c.comision.toString());
+                          }}
+                          className="btn btn-ghost"
+                          style={{ padding: "10px 8px", fontSize: "0.82rem", display: "flex", alignItems: "center", gap: "4px", color: "var(--color-secondary)" }}
+                          title="Editar Precios y Comisiones"
+                        >
+                          <Edit size={16} />
+                          Editar
+                        </button>
+                      )}
 
                       {/* Advance State */}
                       {c.estado !== "Entregado" && (c.estado === "En proceso" || !c.tallerOrderId) && (
