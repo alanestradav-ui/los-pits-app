@@ -19,6 +19,18 @@ import {
   Layers
 } from "lucide-react";
 
+const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
+
+const parsePlate = (plateStr) => {
+  if (!plateStr) return { prefix: "P", number: "" };
+  for (const pref of prefixesList) {
+    if (plateStr.startsWith(`${pref}-`)) {
+      return { prefix: pref, number: plateStr.slice(pref.length + 1) };
+    }
+  }
+  return { prefix: "Extranjera", number: plateStr };
+};
+
 export default function ClientesVehiculos({
   clientes: rawClientes = [],
   setClientes,
@@ -188,7 +200,10 @@ export default function ClientesVehiculos({
   
   const handleSaveVehicle = (e) => {
     e.preventDefault();
-    const plcClean = String(vPlaca || '').toUpperCase().trim();
+    let plcClean = String(vPlaca || '').toUpperCase().trim();
+    if (parsePlate(plcClean).number.trim() === "") {
+      plcClean = "";
+    }
     const chsClean = String(vChasis || '').toUpperCase().trim();
     const marcaClean = String(vMarca || '').trim();
     const lineaClean = String(vLinea || '').trim();
@@ -628,16 +643,49 @@ export default function ClientesVehiculos({
               <div style={styles.formRow}>
                 <div style={{...styles.inputGroup, flex: 1}}>
                   <label style={styles.label}>Placa (Si aplica)</label>
-                  <div style={styles.inputWrapper}>
-                    <Hash size={16} style={styles.modalInputIcon} />
-                    <input
-                      type="text"
-                      placeholder="Ej. P-123XYZ"
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <select
                       className="input-field"
-                      value={vPlaca}
-                      onChange={(e) => setVPlaca(e.target.value)}
-                      style={{ ...styles.modalInput, textTransform: "uppercase" }}
-                    />
+                      value={parsePlate(vPlaca).prefix}
+                      onChange={(e) => {
+                        const newPrefix = e.target.value;
+                        const currentNumber = parsePlate(vPlaca).number;
+                        if (newPrefix === "Extranjera") {
+                          setVPlaca(currentNumber);
+                        } else {
+                          setVPlaca(`${newPrefix}-${currentNumber}`);
+                        }
+                      }}
+                      style={{ width: "120px", padding: "4px 8px", cursor: "pointer", backgroundColor: "rgba(0,0,0,0.2)" }}
+                    >
+                      <option value="P">P</option>
+                      <option value="A">A</option>
+                      <option value="MI">MI</option>
+                      <option value="CD">CD</option>
+                      <option value="C">C</option>
+                      <option value="M">M</option>
+                      <option value="DIS">DIS</option>
+                      <option value="Extranjera">Extranjera</option>
+                    </select>
+                    <div style={{ ...styles.inputWrapper, flex: 1 }}>
+                      <Hash size={16} style={styles.modalInputIcon} />
+                      <input
+                        type="text"
+                        placeholder="123XYZ"
+                        className="input-field"
+                        value={parsePlate(vPlaca).number}
+                        onChange={(e) => {
+                          const newNumber = e.target.value.toUpperCase();
+                          const currentPrefix = parsePlate(vPlaca).prefix;
+                          if (currentPrefix === "Extranjera") {
+                            setVPlaca(newNumber);
+                          } else {
+                            setVPlaca(`${currentPrefix}-${newNumber}`);
+                          }
+                        }}
+                        style={{ ...styles.modalInput, textTransform: "uppercase" }}
+                      />
+                    </div>
                   </div>
                 </div>
                 <div style={{...styles.inputGroup, flex: 1}}>

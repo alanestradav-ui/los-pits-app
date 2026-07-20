@@ -20,6 +20,18 @@ import {
 import { formatMoney, getLocalStorage, setLocalStorage } from "../utils/storage";
 import { jsPDF } from "jspdf";
 
+const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
+
+const parsePlate = (plateStr) => {
+  if (!plateStr) return { prefix: "P", number: "" };
+  for (const pref of prefixesList) {
+    if (plateStr.startsWith(`${pref}-`)) {
+      return { prefix: pref, number: plateStr.slice(pref.length + 1) };
+    }
+  }
+  return { prefix: "Extranjera", number: plateStr };
+};
+
 const TALLER_STATUSES = [
   "En recepción",
   "En proceso de diagnóstico y presupuesto",
@@ -508,7 +520,7 @@ export default function Taller({
     e.preventDefault();
     if (!editingEntryOrder) return;
     
-    if (!editingEntryOrder.cliente?.trim() || !editingEntryOrder.placa?.trim() || !editingEntryOrder.marca?.trim() || !editingEntryOrder.linea?.trim() || !editingEntryOrder.motivoIngreso?.trim()) {
+    if (!editingEntryOrder.cliente?.trim() || !editingEntryOrder.placa?.trim() || !parsePlate(editingEntryOrder.placa).number.trim() || !editingEntryOrder.marca?.trim() || !editingEntryOrder.linea?.trim() || !editingEntryOrder.motivoIngreso?.trim()) {
       alert("Completa los campos obligatorios (Placa, Marca, Línea, Cliente y Motivo de ingreso).");
       return;
     }
@@ -555,7 +567,7 @@ export default function Taller({
 
   const crearOrden = (e) => {
     e.preventDefault();
-    if (!cliente.trim() || !placa.trim() || !marca.trim() || !linea.trim() || motivosIngreso.length === 0) {
+    if (!cliente.trim() || !placa.trim() || !parsePlate(placa).number.trim() || !marca.trim() || !linea.trim() || motivosIngreso.length === 0) {
       alert("Completa los campos obligatorios (Placa, Marca, Línea, Cliente y al menos un Motivo de ingreso).");
       return;
     }
@@ -2791,16 +2803,53 @@ export default function Taller({
               <div style={{ display: "flex", gap: "10px" }}>
                 <div style={{ ...styles.inputGroup, flex: 1, position: "relative" }}>
                   <label style={styles.label}>Placa *</label>
-                  <div style={styles.inputWrapper}>
-                    <Car size={18} style={styles.inputIcon} />
-                    <input
-                      placeholder="P-123XYZ"
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <select
                       className="input-field"
-                      value={placa}
-                      onChange={(e) => handlePlacaInput(e.target.value)}
-                      onBlur={() => setTimeout(() => setActiveFieldSuggestions(null), 200)}
-                      style={styles.input}
-                    />
+                      value={parsePlate(placa).prefix}
+                      onChange={(e) => {
+                        const newPrefix = e.target.value;
+                        const currentNumber = parsePlate(placa).number;
+                        if (newPrefix === "Extranjera") {
+                          setPlaca(currentNumber);
+                          handlePlacaInput(currentNumber);
+                        } else {
+                          setPlaca(`${newPrefix}-${currentNumber}`);
+                          handlePlacaInput(`${newPrefix}-${currentNumber}`);
+                        }
+                      }}
+                      style={{ width: "120px", padding: "4px 8px", cursor: "pointer" }}
+                    >
+                      <option value="P">P</option>
+                      <option value="A">A</option>
+                      <option value="MI">MI</option>
+                      <option value="CD">CD</option>
+                      <option value="C">C</option>
+                      <option value="M">M</option>
+                      <option value="DIS">DIS</option>
+                      <option value="Extranjera">Extranjera</option>
+                    </select>
+                    <div style={{ ...styles.inputWrapper, flex: 1 }}>
+                      <Car size={18} style={styles.inputIcon} />
+                      <input
+                        placeholder="123XYZ"
+                        className="input-field"
+                        value={parsePlate(placa).number}
+                        onChange={(e) => {
+                          const newNumber = e.target.value.toUpperCase();
+                          const currentPrefix = parsePlate(placa).prefix;
+                          if (currentPrefix === "Extranjera") {
+                            setPlaca(newNumber);
+                            handlePlacaInput(newNumber);
+                          } else {
+                            setPlaca(`${currentPrefix}-${newNumber}`);
+                            handlePlacaInput(`${currentPrefix}-${newNumber}`);
+                          }
+                        }}
+                        onBlur={() => setTimeout(() => setActiveFieldSuggestions(null), 200)}
+                        style={{ ...styles.input, textTransform: "uppercase" }}
+                      />
+                    </div>
                   </div>
                   {activeFieldSuggestions === "placa" && suggestions.length > 0 && (
                     <ul className="suggestions-list">
@@ -5507,13 +5556,48 @@ export default function Taller({
               <div style={{ display: "flex", gap: "12px" }}>
                 <div style={{ ...styles.inputGroup, flex: 1 }}>
                   <label style={styles.label}>Placa *</label>
-                  <input
-                    type="text"
-                    required
-                    className="input-field"
-                    value={editingEntryOrder.placa || ""}
-                    onChange={(e) => setEditingEntryOrder({ ...editingEntryOrder, placa: e.target.value.toUpperCase() })}
-                  />
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <select
+                      className="input-field"
+                      value={parsePlate(editingEntryOrder.placa || "").prefix}
+                      onChange={(e) => {
+                        const newPrefix = e.target.value;
+                        const currentNumber = parsePlate(editingEntryOrder.placa || "").number;
+                        if (newPrefix === "Extranjera") {
+                          setEditingEntryOrder({ ...editingEntryOrder, placa: currentNumber });
+                        } else {
+                          setEditingEntryOrder({ ...editingEntryOrder, placa: `${newPrefix}-${currentNumber}` });
+                        }
+                      }}
+                      style={{ width: "120px", padding: "4px 8px", cursor: "pointer" }}
+                    >
+                      <option value="P">P</option>
+                      <option value="A">A</option>
+                      <option value="MI">MI</option>
+                      <option value="CD">CD</option>
+                      <option value="C">C</option>
+                      <option value="M">M</option>
+                      <option value="DIS">DIS</option>
+                      <option value="Extranjera">Extranjera</option>
+                    </select>
+                    <input
+                      type="text"
+                      required
+                      className="input-field"
+                      placeholder="123XYZ"
+                      value={parsePlate(editingEntryOrder.placa || "").number}
+                      onChange={(e) => {
+                        const newNumber = e.target.value.toUpperCase();
+                        const currentPrefix = parsePlate(editingEntryOrder.placa || "").prefix;
+                        if (currentPrefix === "Extranjera") {
+                          setEditingEntryOrder({ ...editingEntryOrder, placa: newNumber });
+                        } else {
+                          setEditingEntryOrder({ ...editingEntryOrder, placa: `${currentPrefix}-${newNumber}` });
+                        }
+                      }}
+                      style={{ flex: 1, textTransform: "uppercase" }}
+                    />
+                  </div>
                 </div>
                 <div style={{ ...styles.inputGroup, flex: 1 }}>
                   <label style={styles.label}>Chasis / VIN</label>

@@ -22,6 +22,18 @@ import {
 import { formatMoney } from "../utils/storage";
 import { jsPDF } from "jspdf";
 
+const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
+
+const parsePlate = (plateStr) => {
+  if (!plateStr) return { prefix: "P", number: "" };
+  for (const pref of prefixesList) {
+    if (plateStr.startsWith(`${pref}-`)) {
+      return { prefix: pref, number: plateStr.slice(pref.length + 1) };
+    }
+  }
+  return { prefix: "Extranjera", number: plateStr };
+};
+
 const warningLightsDef = [
   { id: "engine", label: "Check Engine", color: "#f59e0b", glow: "rgba(245, 158, 11, 0.4)", icon: "⚠️" },
   { id: "oil", label: "Presión Aceite", color: "#ef4444", glow: "rgba(239, 68, 68, 0.4)", icon: "🛢️" },
@@ -197,7 +209,7 @@ export default function VehiculosVenta({
 
   const registrarVehiculo = (e) => {
     e.preventDefault();
-    if (!placa.trim()) {
+    if (!placa.trim() || !parsePlate(placa).number.trim()) {
       alert("La placa es obligatoria.");
       return;
     }
@@ -1153,13 +1165,47 @@ export default function VehiculosVenta({
               <div style={styles.formRow}>
                 <div style={{ ...styles.inputGroup, flex: 1 }}>
                   <label style={styles.label}>Placa del Vehículo *</label>
-                  <input
-                    required
-                    placeholder="Ej. P-984FLB"
-                    className="input-field"
-                    value={placa}
-                    onChange={(e) => setPlaca(e.target.value)}
-                  />
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <select
+                      className="input-field"
+                      value={parsePlate(placa).prefix}
+                      onChange={(e) => {
+                        const newPrefix = e.target.value;
+                        const currentNumber = parsePlate(placa).number;
+                        if (newPrefix === "Extranjera") {
+                          setPlaca(currentNumber);
+                        } else {
+                          setPlaca(`${newPrefix}-${currentNumber}`);
+                        }
+                      }}
+                      style={{ width: "120px", padding: "4px 8px", cursor: "pointer" }}
+                    >
+                      <option value="P">P</option>
+                      <option value="A">A</option>
+                      <option value="MI">MI</option>
+                      <option value="CD">CD</option>
+                      <option value="C">C</option>
+                      <option value="M">M</option>
+                      <option value="DIS">DIS</option>
+                      <option value="Extranjera">Extranjera</option>
+                    </select>
+                    <input
+                      required
+                      placeholder="123XYZ"
+                      className="input-field"
+                      value={parsePlate(placa).number}
+                      onChange={(e) => {
+                        const newNumber = e.target.value.toUpperCase();
+                        const currentPrefix = parsePlate(placa).prefix;
+                        if (currentPrefix === "Extranjera") {
+                          setPlaca(newNumber);
+                        } else {
+                          setPlaca(`${currentPrefix}-${newNumber}`);
+                        }
+                      }}
+                      style={{ flex: 1, textTransform: "uppercase" }}
+                    />
+                  </div>
                 </div>
                 <div style={{ ...styles.inputGroup, flex: 1.2 }}>
                   <label style={styles.label}>Chasis / VIN</label>

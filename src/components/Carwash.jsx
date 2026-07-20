@@ -17,6 +17,18 @@ import {
 import { formatMoney } from "../utils/storage";
 import { jsPDF } from "jspdf";
 
+const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
+
+const parsePlate = (plateStr) => {
+  if (!plateStr) return { prefix: "P", number: "" };
+  for (const pref of prefixesList) {
+    if (plateStr.startsWith(`${pref}-`)) {
+      return { prefix: pref, number: plateStr.slice(pref.length + 1) };
+    }
+  }
+  return { prefix: "Extranjera", number: plateStr };
+};
+
 const warningLightsDef = [
   { id: "engine", label: "Check Engine", color: "#f59e0b", glow: "rgba(245, 158, 11, 0.4)", icon: "⚠️" },
   { id: "oil", label: "Presión Aceite", color: "#ef4444", glow: "rgba(239, 68, 68, 0.4)", icon: "🛢️" },
@@ -456,7 +468,7 @@ export default function Carwash({
 
   const registrarLavado = (e) => {
     e.preventDefault();
-    if (!cliente.trim() || !telefono.trim() || !placa.trim() || !marca.trim() || !linea.trim() || !selectedPreset) {
+    if (!cliente.trim() || !telefono.trim() || !placa.trim() || !parsePlate(placa).number.trim() || !marca.trim() || !linea.trim() || !selectedPreset) {
       alert("Completa todos los campos obligatorios (Placa, Cliente, Teléfono, Marca, Línea y tipo de lavado).");
       return;
     }
@@ -1449,17 +1461,51 @@ export default function Carwash({
               <div style={styles.inputGroup}>
                 <label style={styles.label}>Placa del Vehículo</label>
                 <div style={{ position: "relative" }}>
-                  <div style={styles.inputWrapper}>
-                    <Car size={18} style={styles.inputIcon} />
-                    <input
-                      placeholder="Ej. P-123XYZ"
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <select
                       className="input-field"
-                      value={placa}
-                      onChange={handlePlacaChange}
-                      onFocus={() => setShowSuggestions(true)}
-                      onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                      style={styles.input}
-                    />
+                      value={parsePlate(placa).prefix}
+                      onChange={(e) => {
+                        const newPrefix = e.target.value;
+                        const currentNumber = parsePlate(placa).number;
+                        if (newPrefix === "Extranjera") {
+                          setPlaca(currentNumber);
+                        } else {
+                          setPlaca(`${newPrefix}-${currentNumber}`);
+                        }
+                      }}
+                      style={{ width: "120px", padding: "4px 8px", cursor: "pointer" }}
+                    >
+                      <option value="P">P</option>
+                      <option value="A">A</option>
+                      <option value="MI">MI</option>
+                      <option value="CD">CD</option>
+                      <option value="C">C</option>
+                      <option value="M">M</option>
+                      <option value="DIS">DIS</option>
+                      <option value="Extranjera">Extranjera</option>
+                    </select>
+                    <div style={{ ...styles.inputWrapper, flex: 1 }}>
+                      <Car size={18} style={styles.inputIcon} />
+                      <input
+                        placeholder="123XYZ"
+                        className="input-field"
+                        value={parsePlate(placa).number}
+                        onChange={(e) => {
+                          const newNumber = e.target.value.toUpperCase();
+                          const currentPrefix = parsePlate(placa).prefix;
+                          if (currentPrefix === "Extranjera") {
+                            setPlaca(newNumber);
+                          } else {
+                            setPlaca(`${currentPrefix}-${newNumber}`);
+                          }
+                          setShowSuggestions(true);
+                        }}
+                        onFocus={() => setShowSuggestions(true)}
+                        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                        style={{ ...styles.input, textTransform: "uppercase" }}
+                      />
+                    </div>
                   </div>
                   {showSuggestions && suggestions.length > 0 && (
                     <div style={styles.suggestionsContainer}>
