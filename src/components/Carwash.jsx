@@ -87,7 +87,8 @@ export default function Carwash({
 
   const [cliente, setCliente] = useState("");
   const [telefono, setTelefono] = useState("");
-  const [placa, setPlaca] = useState("");
+  const [platePrefix, setPlatePrefix] = useState("P");
+  const [plateNumber, setPlateNumber] = useState("");
   const [marca, setMarca] = useState("");
   const [linea, setLinea] = useState("");
   const [color, setColor] = useState("");
@@ -355,8 +356,8 @@ export default function Carwash({
   };
 
   const allVehicles = getUniqueVehicles();
-  const suggestions = placa.trim()
-    ? allVehicles.filter(v => v.placa.toLowerCase().includes(placa.toLowerCase()))
+  const suggestions = plateNumber.trim()
+    ? allVehicles.filter(v => v.placa.toLowerCase().includes(plateNumber.toLowerCase()) || v.placa.toLowerCase().includes(`${platePrefix}-${plateNumber}`.toLowerCase()))
     : [];
 
   const handlePlacaChange = (e) => {
@@ -366,7 +367,14 @@ export default function Carwash({
   };
 
   const selectVehicle = (v) => {
-    setPlaca(v.placa);
+    if (v.placa) {
+      const parsed = parsePlate(v.placa);
+      setPlatePrefix(parsed.prefix);
+      setPlateNumber(parsed.number);
+    } else {
+      setPlatePrefix("P");
+      setPlateNumber("");
+    }
     setCliente(v.cliente);
     setTelefono(v.telefono);
     setMarca(v.marca);
@@ -468,10 +476,12 @@ export default function Carwash({
 
   const registrarLavado = (e) => {
     e.preventDefault();
-    if (!cliente.trim() || !telefono.trim() || !placa.trim() || !parsePlate(placa).number.trim() || !marca.trim() || !linea.trim() || !selectedPreset) {
+    const cleanNum = plateNumber.trim().toUpperCase();
+    if (!cliente.trim() || !telefono.trim() || !cleanNum || !marca.trim() || !linea.trim() || !selectedPreset) {
       alert("Completa todos los campos obligatorios (Placa, Cliente, Teléfono, Marca, Línea y tipo de lavado).");
       return;
     }
+    const fullPlaca = platePrefix === "Extranjera" ? cleanNum : `${platePrefix}-${cleanNum}`;
 
     const pBase = customPriceEnabled ? (parseFloat(precioLavado) || selectedPreset.precio) : selectedPreset.precio;
     const pAdd = parseFloat(trabajoAdicionalPrecio) || 0;
@@ -485,7 +495,7 @@ export default function Carwash({
       nit: nit.trim() || "C/F",
       nombreFacturacion: nombreFacturacion.trim() || cliente.trim(),
       vehiculo: {
-        placa: placa.toUpperCase().trim(),
+        placa: fullPlaca,
         marca: marca.trim(),
         linea: linea.trim(),
         color: color.trim()
@@ -577,7 +587,8 @@ export default function Carwash({
     registrarClienteYVehiculo(nuevo);
     setCliente("");
     setTelefono("");
-    setPlaca("");
+    setPlatePrefix("P");
+    setPlateNumber("");
     setMarca("");
     setLinea("");
     setColor("");
@@ -1464,17 +1475,9 @@ export default function Carwash({
                   <div style={{ display: "flex", gap: "8px" }}>
                     <select
                       className="input-field"
-                      value={parsePlate(placa).prefix}
-                      onChange={(e) => {
-                        const newPrefix = e.target.value;
-                        const currentNumber = parsePlate(placa).number;
-                        if (newPrefix === "Extranjera") {
-                          setPlaca(currentNumber);
-                        } else {
-                          setPlaca(`${newPrefix}-${currentNumber}`);
-                        }
-                      }}
-                      style={{ width: "120px", padding: "4px 8px", cursor: "pointer" }}
+                      value={platePrefix}
+                      onChange={(e) => setPlatePrefix(e.target.value)}
+                      style={{ width: "110px", padding: "4px 8px", cursor: "pointer" }}
                     >
                       <option value="P">P</option>
                       <option value="A">A</option>
@@ -1485,27 +1488,18 @@ export default function Carwash({
                       <option value="DIS">DIS</option>
                       <option value="Extranjera">Extranjera</option>
                     </select>
-                    <div style={{ ...styles.inputWrapper, flex: 1 }}>
-                      <Car size={18} style={styles.inputIcon} />
-                      <input
-                        placeholder="123XYZ"
-                        className="input-field"
-                        value={parsePlate(placa).number}
-                        onChange={(e) => {
-                          const newNumber = e.target.value.toUpperCase();
-                          const currentPrefix = parsePlate(placa).prefix;
-                          if (currentPrefix === "Extranjera") {
-                            setPlaca(newNumber);
-                          } else {
-                            setPlaca(`${currentPrefix}-${newNumber}`);
-                          }
-                          setShowSuggestions(true);
-                        }}
-                        onFocus={() => setShowSuggestions(true)}
-                        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                        style={{ ...styles.input, textTransform: "uppercase" }}
-                      />
-                    </div>
+                    <input
+                      placeholder="123XYZ"
+                      className="input-field"
+                      value={plateNumber}
+                      onChange={(e) => {
+                        setPlateNumber(e.target.value.toUpperCase());
+                        setShowSuggestions(true);
+                      }}
+                      onFocus={() => setShowSuggestions(true)}
+                      onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                      style={{ flex: 1, textTransform: "uppercase" }}
+                    />
                   </div>
                   {showSuggestions && suggestions.length > 0 && (
                     <div style={styles.suggestionsContainer}>
@@ -1551,8 +1545,10 @@ export default function Carwash({
                               
                               // Find their vehicle if any
                               const clientVehicle = (vehiculos || []).find(v => v.clienteTelefono === match.telefono);
-                              if (clientVehicle) {
-                                setPlaca(clientVehicle.placa || "");
+                              if (clientVehicle && clientVehicle.placa) {
+                                const p = parsePlate(clientVehicle.placa);
+                                setPlatePrefix(p.prefix);
+                                setPlateNumber(p.number);
                                 setMarca(clientVehicle.marca || "");
                                 setLinea(clientVehicle.linea || "");
                                 if (clientVehicle.color) setColor(clientVehicle.color);
@@ -1585,8 +1581,10 @@ export default function Carwash({
                         
                         // Find their vehicle
                         const clientVehicle = (vehiculos || []).find(v => v.clienteTelefono === exactMatch.telefono);
-                        if (clientVehicle) {
-                          setPlaca(clientVehicle.placa || "");
+                        if (clientVehicle && clientVehicle.placa) {
+                          const p = parsePlate(clientVehicle.placa);
+                          setPlatePrefix(p.prefix);
+                          setPlateNumber(p.number);
                           setMarca(clientVehicle.marca || "");
                           setLinea(clientVehicle.linea || "");
                           if (clientVehicle.color) setColor(clientVehicle.color);
@@ -1604,8 +1602,10 @@ export default function Carwash({
                         if (exactMatch.nombreFacturacion) setNombreFacturacion(exactMatch.nombreFacturacion);
                         
                         const clientVehicle = (vehiculos || []).find(v => v.clienteTelefono === exactMatch.telefono);
-                        if (clientVehicle) {
-                          setPlaca(clientVehicle.placa || "");
+                        if (clientVehicle && clientVehicle.placa) {
+                          const p = parsePlate(clientVehicle.placa);
+                          setPlatePrefix(p.prefix);
+                          setPlateNumber(p.number);
                           setMarca(clientVehicle.marca || "");
                           setLinea(clientVehicle.linea || "");
                           if (clientVehicle.color) setColor(clientVehicle.color);

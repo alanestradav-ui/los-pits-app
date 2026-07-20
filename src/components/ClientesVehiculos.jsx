@@ -64,7 +64,8 @@ export default function ClientesVehiculos({
   const [showVehicleModal, setShowVehicleModal] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState(null);
   
-  const [vPlaca, setVPlaca] = useState("");
+  const [vPlatePrefix, setVPlatePrefix] = useState("P");
+  const [vPlateNumber, setVPlateNumber] = useState("");
   const [vChasis, setVChasis] = useState("");
   const [vMarca, setVMarca] = useState("");
   const [vLinea, setVLinea] = useState("");
@@ -178,7 +179,14 @@ export default function ClientesVehiculos({
   const handleOpenVehicleModal = (vehicle = null) => {
     if (vehicle) {
       setEditingVehicle(vehicle);
-      setVPlaca(vehicle.placa || "");
+      if (vehicle.placa) {
+        const p = parsePlate(vehicle.placa);
+        setVPlatePrefix(p.prefix);
+        setVPlateNumber(p.number);
+      } else {
+        setVPlatePrefix("P");
+        setVPlateNumber("");
+      }
       setVChasis(vehicle.chasis || "");
       setVMarca(vehicle.marca || "");
       setVLinea(vehicle.linea || "");
@@ -187,7 +195,8 @@ export default function ClientesVehiculos({
       setVClienteTelefono(vehicle.clienteTelefono || "");
     } else {
       setEditingVehicle(null);
-      setVPlaca("");
+      setVPlatePrefix("P");
+      setVPlateNumber("");
       setVChasis("");
       setVMarca("");
       setVLinea("");
@@ -200,10 +209,8 @@ export default function ClientesVehiculos({
   
   const handleSaveVehicle = (e) => {
     e.preventDefault();
-    let plcClean = String(vPlaca || '').toUpperCase().trim();
-    if (parsePlate(plcClean).number.trim() === "") {
-      plcClean = "";
-    }
+    const cleanNum = String(vPlateNumber || '').toUpperCase().trim();
+    const plcClean = cleanNum ? (vPlatePrefix === "Extranjera" ? cleanNum : `${vPlatePrefix}-${cleanNum}`) : "";
     const chsClean = String(vChasis || '').toUpperCase().trim();
     const marcaClean = String(vMarca || '').trim();
     const lineaClean = String(vLinea || '').trim();
@@ -646,17 +653,9 @@ export default function ClientesVehiculos({
                   <div style={{ display: "flex", gap: "8px" }}>
                     <select
                       className="input-field"
-                      value={parsePlate(vPlaca).prefix}
-                      onChange={(e) => {
-                        const newPrefix = e.target.value;
-                        const currentNumber = parsePlate(vPlaca).number;
-                        if (newPrefix === "Extranjera") {
-                          setVPlaca(currentNumber);
-                        } else {
-                          setVPlaca(`${newPrefix}-${currentNumber}`);
-                        }
-                      }}
-                      style={{ width: "120px", padding: "4px 8px", cursor: "pointer", backgroundColor: "rgba(0,0,0,0.2)" }}
+                      value={vPlatePrefix}
+                      onChange={(e) => setVPlatePrefix(e.target.value)}
+                      style={{ width: "110px", padding: "4px 8px", cursor: "pointer", backgroundColor: "rgba(0,0,0,0.2)" }}
                     >
                       <option value="P">P</option>
                       <option value="A">A</option>
@@ -667,25 +666,14 @@ export default function ClientesVehiculos({
                       <option value="DIS">DIS</option>
                       <option value="Extranjera">Extranjera</option>
                     </select>
-                    <div style={{ ...styles.inputWrapper, flex: 1 }}>
-                      <Hash size={16} style={styles.modalInputIcon} />
-                      <input
-                        type="text"
-                        placeholder="123XYZ"
-                        className="input-field"
-                        value={parsePlate(vPlaca).number}
-                        onChange={(e) => {
-                          const newNumber = e.target.value.toUpperCase();
-                          const currentPrefix = parsePlate(vPlaca).prefix;
-                          if (currentPrefix === "Extranjera") {
-                            setVPlaca(newNumber);
-                          } else {
-                            setVPlaca(`${currentPrefix}-${newNumber}`);
-                          }
-                        }}
-                        style={{ ...styles.modalInput, textTransform: "uppercase" }}
-                      />
-                    </div>
+                    <input
+                      type="text"
+                      placeholder="123XYZ"
+                      className="input-field"
+                      value={vPlateNumber}
+                      onChange={(e) => setVPlateNumber(e.target.value.toUpperCase())}
+                      style={{ flex: 1, textTransform: "uppercase" }}
+                    />
                   </div>
                 </div>
                 <div style={{...styles.inputGroup, flex: 1}}>

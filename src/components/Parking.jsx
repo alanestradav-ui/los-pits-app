@@ -73,7 +73,8 @@ export default function Parking({
   clientes = [],
   setClientes
 }) {
-  const [placa, setPlaca] = useState("");
+  const [platePrefix, setPlatePrefix] = useState("P");
+  const [plateNumber, setPlateNumber] = useState("");
   const [marca, setMarca] = useState("");
   const [linea, setLinea] = useState("");
   const [cliente, setCliente] = useState("");
@@ -165,13 +166,15 @@ export default function Parking({
 
   const ingresarVehiculo = (e) => {
     e.preventDefault();
-    if (!placa.trim() || !parsePlate(placa).number.trim()) {
+    const cleanNum = plateNumber.trim().toUpperCase();
+    if (!cleanNum) {
       alert("La placa es obligatoria");
       return;
     }
+    const fullPlaca = platePrefix === "Extranjera" ? cleanNum : `${platePrefix}-${cleanNum}`;
 
     // Check if vehicle already in parking
-    const exists = parkingEntries.some(p => p.placa.toUpperCase().trim() === placa.toUpperCase().trim());
+    const exists = parkingEntries.some(p => p.placa.toUpperCase().trim() === fullPlaca);
     if (exists) {
       alert("El vehículo con esta placa ya se encuentra en el parqueo.");
       return;
@@ -179,7 +182,7 @@ export default function Parking({
 
     const nuevo = {
       id: Date.now(),
-      placa: placa.toUpperCase().trim(),
+      placa: fullPlaca,
       marca: marca.trim(),
       linea: linea.trim(),
       cliente: cliente.trim() || "Cliente General",
@@ -218,7 +221,8 @@ export default function Parking({
     }
 
     setParkingEntries([nuevo, ...parkingEntries]);
-    setPlaca("");
+    setPlatePrefix("P");
+    setPlateNumber("");
     setMarca("");
     setLinea("");
     setCliente("");
@@ -1130,17 +1134,9 @@ export default function Parking({
                 <div style={{ display: "flex", gap: "8px" }}>
                   <select
                     className="input-field"
-                    value={parsePlate(placa).prefix}
-                    onChange={(e) => {
-                      const newPrefix = e.target.value;
-                      const currentNumber = parsePlate(placa).number;
-                      if (newPrefix === "Extranjera") {
-                        setPlaca(currentNumber);
-                      } else {
-                        setPlaca(`${newPrefix}-${currentNumber}`);
-                      }
-                    }}
-                    style={{ width: "120px", padding: "4px 8px", cursor: "pointer" }}
+                    value={platePrefix}
+                    onChange={(e) => setPlatePrefix(e.target.value)}
+                    style={{ width: "110px", padding: "4px 8px", cursor: "pointer" }}
                   >
                     <option value="P">P</option>
                     <option value="A">A</option>
@@ -1151,25 +1147,14 @@ export default function Parking({
                     <option value="DIS">DIS</option>
                     <option value="Extranjera">Extranjera</option>
                   </select>
-                  <div style={{ ...styles.inputWrapper, flex: 1 }}>
-                    <Car size={18} style={styles.inputIcon} />
-                    <input
-                      placeholder="123XYZ"
-                      className="input-field"
-                      value={parsePlate(placa).number}
-                      onChange={(e) => {
-                        const newNumber = e.target.value.toUpperCase();
-                        const currentPrefix = parsePlate(placa).prefix;
-                        if (currentPrefix === "Extranjera") {
-                          setPlaca(newNumber);
-                        } else {
-                          setPlaca(`${currentPrefix}-${newNumber}`);
-                        }
-                      }}
-                      style={{ ...styles.input, textTransform: "uppercase" }}
-                      required
-                    />
-                  </div>
+                  <input
+                    placeholder="123XYZ"
+                    className="input-field"
+                    value={plateNumber}
+                    onChange={(e) => setPlateNumber(e.target.value.toUpperCase())}
+                    style={{ flex: 1, minWidth: 0, textTransform: "uppercase" }}
+                    required
+                  />
                 </div>
               </div>
             </div>

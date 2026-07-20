@@ -160,7 +160,8 @@ export default function Taller({
 }) {
   const [cliente, setCliente] = useState("");
   const [telefono, setTelefono] = useState("");
-  const [placa, setPlaca] = useState("");
+  const [platePrefix, setPlatePrefix] = useState("P");
+  const [plateNumber, setPlateNumber] = useState("");
   const [marca, setMarca] = useState("");
   const [linea, setLinea] = useState("");
   const [anio, setAnio] = useState("");
@@ -404,7 +405,8 @@ export default function Taller({
   };
 
   const handlePlacaInput = (val) => {
-    setPlaca(val.toUpperCase());
+    setPlateNumber(val.toUpperCase());
+    const fullPlc = platePrefix === "Extranjera" ? val : `${platePrefix}-${val}`;
     if (!val.trim()) {
       setSuggestions([]);
       setActiveFieldSuggestions(null);
@@ -412,7 +414,7 @@ export default function Taller({
     }
     
     const matches = (vehiculos || []).filter(v => 
-      v.placa?.toLowerCase().includes(val.toLowerCase())
+      v.placa?.toLowerCase().includes(fullPlc.toLowerCase()) || v.placa?.toLowerCase().includes(val.toLowerCase())
     );
     
     setSuggestions(matches.slice(0, 5));
@@ -436,7 +438,14 @@ export default function Taller({
   };
 
   const selectVehiculoSuggestion = (v) => {
-    setPlaca(v.placa || "");
+    if (v.placa) {
+      const parsed = parsePlate(v.placa);
+      setPlatePrefix(parsed.prefix);
+      setPlateNumber(parsed.number);
+    } else {
+      setPlatePrefix("P");
+      setPlateNumber("");
+    }
     setChasis(v.chasis || "");
     setMarca(v.marca || "");
     setLinea(v.linea || "");
@@ -567,10 +576,12 @@ export default function Taller({
 
   const crearOrden = (e) => {
     e.preventDefault();
-    if (!cliente.trim() || !placa.trim() || !parsePlate(placa).number.trim() || !marca.trim() || !linea.trim() || motivosIngreso.length === 0) {
+    const cleanNum = plateNumber.trim().toUpperCase();
+    if (!cliente.trim() || !cleanNum || !marca.trim() || !linea.trim() || motivosIngreso.length === 0) {
       alert("Completa los campos obligatorios (Placa, Marca, Línea, Cliente y al menos un Motivo de ingreso).");
       return;
     }
+    const fullPlaca = platePrefix === "Extranjera" ? cleanNum : `${platePrefix}-${cleanNum}`;
 
     let valorPrecio = 0;
     if (precio) {
@@ -589,7 +600,7 @@ export default function Taller({
       id: Date.now(),
       cliente: cliente.trim(),
       telefono: telefono.trim(),
-      placa: placa.toUpperCase().trim(),
+      placa: fullPlaca,
       marca: marca.trim(),
       linea: linea.trim(),
       anio: anio.trim(),
@@ -601,7 +612,7 @@ export default function Taller({
       motivosIngreso,
       motivoIngreso: motivosString,
       trabajo: motivosString, // Retrocompatibilidad
-      vehiculo: `${marca.trim()} ${linea.trim()} (${placa.toUpperCase().trim()})`, // Retrocompatibilidad
+      vehiculo: `${marca.trim()} ${linea.trim()} (${fullPlaca})`, // Retrocompatibilidad
       mecanico,
       fotos: fotos,
       estado: "En recepción",
@@ -619,7 +630,8 @@ export default function Taller({
     registrarClienteYVehiculo(nueva);
     setCliente("");
     setTelefono("");
-    setPlaca("");
+    setPlatePrefix("P");
+    setPlateNumber("");
     setMarca("");
     setLinea("");
     setAnio("");
@@ -2806,19 +2818,9 @@ export default function Taller({
                   <div style={{ display: "flex", gap: "8px" }}>
                     <select
                       className="input-field"
-                      value={parsePlate(placa).prefix}
-                      onChange={(e) => {
-                        const newPrefix = e.target.value;
-                        const currentNumber = parsePlate(placa).number;
-                        if (newPrefix === "Extranjera") {
-                          setPlaca(currentNumber);
-                          handlePlacaInput(currentNumber);
-                        } else {
-                          setPlaca(`${newPrefix}-${currentNumber}`);
-                          handlePlacaInput(`${newPrefix}-${currentNumber}`);
-                        }
-                      }}
-                      style={{ width: "120px", padding: "4px 8px", cursor: "pointer" }}
+                      value={platePrefix}
+                      onChange={(e) => setPlatePrefix(e.target.value)}
+                      style={{ width: "110px", padding: "4px 8px", cursor: "pointer" }}
                     >
                       <option value="P">P</option>
                       <option value="A">A</option>
@@ -2829,27 +2831,14 @@ export default function Taller({
                       <option value="DIS">DIS</option>
                       <option value="Extranjera">Extranjera</option>
                     </select>
-                    <div style={{ ...styles.inputWrapper, flex: 1 }}>
-                      <Car size={18} style={styles.inputIcon} />
-                      <input
-                        placeholder="123XYZ"
-                        className="input-field"
-                        value={parsePlate(placa).number}
-                        onChange={(e) => {
-                          const newNumber = e.target.value.toUpperCase();
-                          const currentPrefix = parsePlate(placa).prefix;
-                          if (currentPrefix === "Extranjera") {
-                            setPlaca(newNumber);
-                            handlePlacaInput(newNumber);
-                          } else {
-                            setPlaca(`${currentPrefix}-${newNumber}`);
-                            handlePlacaInput(`${currentPrefix}-${newNumber}`);
-                          }
-                        }}
-                        onBlur={() => setTimeout(() => setActiveFieldSuggestions(null), 200)}
-                        style={{ ...styles.input, textTransform: "uppercase" }}
-                      />
-                    </div>
+                    <input
+                      placeholder="123XYZ"
+                      className="input-field"
+                      value={plateNumber}
+                      onChange={(e) => handlePlacaInput(e.target.value.toUpperCase())}
+                      onBlur={() => setTimeout(() => setActiveFieldSuggestions(null), 200)}
+                      style={{ flex: 1, minWidth: 0, textTransform: "uppercase" }}
+                    />
                   </div>
                   {activeFieldSuggestions === "placa" && suggestions.length > 0 && (
                     <ul className="suggestions-list">
@@ -5569,7 +5558,7 @@ export default function Taller({
                           setEditingEntryOrder({ ...editingEntryOrder, placa: `${newPrefix}-${currentNumber}` });
                         }
                       }}
-                      style={{ width: "120px", padding: "4px 8px", cursor: "pointer" }}
+                      style={{ width: "110px", padding: "4px 8px", cursor: "pointer" }}
                     >
                       <option value="P">P</option>
                       <option value="A">A</option>
@@ -5595,7 +5584,7 @@ export default function Taller({
                           setEditingEntryOrder({ ...editingEntryOrder, placa: `${currentPrefix}-${newNumber}` });
                         }
                       }}
-                      style={{ flex: 1, textTransform: "uppercase" }}
+                      style={{ flex: 1, minWidth: 0, textTransform: "uppercase" }}
                     />
                   </div>
                 </div>

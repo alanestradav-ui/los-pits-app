@@ -80,7 +80,8 @@ export default function VehiculosVenta({
   const [nit, setNit] = useState("");
   const [nombreFacturacion, setNombreFacturacion] = useState("");
   
-  const [placa, setPlaca] = useState("");
+  const [platePrefix, setPlatePrefix] = useState("P");
+  const [plateNumber, setPlateNumber] = useState("");
   const [marca, setMarca] = useState("");
   const [linea, setLinea] = useState("");
   const [anio, setAnio] = useState("");
@@ -209,10 +210,13 @@ export default function VehiculosVenta({
 
   const registrarVehiculo = (e) => {
     e.preventDefault();
-    if (!placa.trim() || !parsePlate(placa).number.trim()) {
+    const cleanNum = plateNumber.trim().toUpperCase();
+    if (!cleanNum) {
       alert("La placa es obligatoria.");
       return;
     }
+    const fullPlaca = platePrefix === "Extranjera" ? cleanNum : `${platePrefix}-${cleanNum}`;
+
     if (!precioPublicacion) {
       alert("El precio de publicación es obligatorio.");
       return;
@@ -231,7 +235,7 @@ export default function VehiculosVenta({
     }
 
     // Verify if already registered
-    const exists = vehiculosVenta.some(v => v.placa.toUpperCase().trim() === placa.toUpperCase().trim() && v.estado === "Disponible");
+    const exists = vehiculosVenta.some(v => v.placa.toUpperCase().trim() === fullPlaca && v.estado === "Disponible");
     if (exists) {
       alert("Ya existe un vehículo registrado con esta placa en el catálogo.");
       return;
@@ -249,7 +253,7 @@ export default function VehiculosVenta({
 
     const nuevo = {
       id: Date.now(),
-      placa: placa.toUpperCase().trim(),
+      placa: fullPlaca,
       marca: marca.trim(),
       linea: linea.trim(),
       anio: anio.trim(),
@@ -280,7 +284,8 @@ export default function VehiculosVenta({
     setVehiculosVenta([nuevo, ...vehiculosVenta]);
     
     // Clear states
-    setPlaca("");
+    setPlatePrefix("P");
+    setPlateNumber("");
     setMarca("");
     setLinea("");
     setAnio("");
@@ -1168,17 +1173,9 @@ export default function VehiculosVenta({
                   <div style={{ display: "flex", gap: "8px" }}>
                     <select
                       className="input-field"
-                      value={parsePlate(placa).prefix}
-                      onChange={(e) => {
-                        const newPrefix = e.target.value;
-                        const currentNumber = parsePlate(placa).number;
-                        if (newPrefix === "Extranjera") {
-                          setPlaca(currentNumber);
-                        } else {
-                          setPlaca(`${newPrefix}-${currentNumber}`);
-                        }
-                      }}
-                      style={{ width: "120px", padding: "4px 8px", cursor: "pointer" }}
+                      value={platePrefix}
+                      onChange={(e) => setPlatePrefix(e.target.value)}
+                      style={{ width: "110px", padding: "4px 8px", cursor: "pointer" }}
                     >
                       <option value="P">P</option>
                       <option value="A">A</option>
@@ -1193,16 +1190,8 @@ export default function VehiculosVenta({
                       required
                       placeholder="123XYZ"
                       className="input-field"
-                      value={parsePlate(placa).number}
-                      onChange={(e) => {
-                        const newNumber = e.target.value.toUpperCase();
-                        const currentPrefix = parsePlate(placa).prefix;
-                        if (currentPrefix === "Extranjera") {
-                          setPlaca(newNumber);
-                        } else {
-                          setPlaca(`${currentPrefix}-${newNumber}`);
-                        }
-                      }}
+                      value={plateNumber}
+                      onChange={(e) => setPlateNumber(e.target.value.toUpperCase())}
                       style={{ flex: 1, textTransform: "uppercase" }}
                     />
                   </div>
