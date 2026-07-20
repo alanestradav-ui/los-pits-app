@@ -84,11 +84,57 @@ const ARRAY_KEYS = [
 
 // Helper to merge local cached array data with cloud data to prevent silent data wipes on initial connection
 const mergeCollections = (key, localVal, cloudVal) => {
-  // If cloud value is present, trust it as the absolute source of truth to support deletions/edits across devices
-  if (cloudVal !== null && cloudVal !== undefined) {
-    return cloudVal;
+  if (cloudVal === null || cloudVal === undefined) return localVal;
+  if (localVal === null || localVal === undefined) return cloudVal;
+
+  if (Array.isArray(localVal) && Array.isArray(cloudVal)) {
+    if (key === "clientes") {
+      const mergedMap = new Map();
+      cloudVal.forEach(c => {
+        const id = c.telefono ? c.telefono.trim() : (c.nombre ? c.nombre.trim() : null);
+        if (id) mergedMap.set(id, c);
+      });
+      localVal.forEach(c => {
+        const id = c.telefono ? c.telefono.trim() : (c.nombre ? c.nombre.trim() : null);
+        if (id && !mergedMap.has(id)) {
+          mergedMap.set(id, c);
+        }
+      });
+      return Array.from(mergedMap.values());
+    }
+
+    if (key === "vehiculos") {
+      const mergedMap = new Map();
+      cloudVal.forEach(v => {
+        const id = v.placa ? v.placa.trim().toUpperCase() : (v.chasis ? v.chasis.trim().toUpperCase() : null);
+        if (id) mergedMap.set(id, v);
+      });
+      localVal.forEach(v => {
+        const id = v.placa ? v.placa.trim().toUpperCase() : (v.chasis ? v.chasis.trim().toUpperCase() : null);
+        if (id && !mergedMap.has(id)) {
+          mergedMap.set(id, v);
+        }
+      });
+      return Array.from(mergedMap.values());
+    }
+
+    if (["ordenes", "carwash", "parkingEntries", "parkingHistory", "vehiculosVenta", "compras", "cuentasPorCobrar", "cuentasPorPagar", "tiendaSales", "cafeteriaSales", "fixedCosts", "accesoriosInventory", "workshopInventory", "cafeteriaInventory", "toolsInventory"].includes(key)) {
+      const mergedMap = new Map();
+      cloudVal.forEach(item => {
+        const id = item && item.id !== undefined ? String(item.id) : null;
+        if (id) mergedMap.set(id, item);
+      });
+      localVal.forEach(item => {
+        const id = item && item.id !== undefined ? String(item.id) : null;
+        if (id && !mergedMap.has(id)) {
+          mergedMap.set(id, item);
+        }
+      });
+      return Array.from(mergedMap.values());
+    }
   }
-  return localVal;
+
+  return cloudVal;
 };
 
 export default function App() {
@@ -802,6 +848,77 @@ export default function App() {
     setLocalStorage("usuarios", usuarios);
     syncToCloud("usuarios", usuarios);
   }, [usuarios]);
+
+  // Auto-recover missing clients and vehicles from orders/carwash/parking history if needed
+  useEffect(() => {
+    if (!isInitialPullDone) return;
+
+    const safeClientes = Array.isArray(clientes) ? [...clientes] : [];
+    const safeVehiculos = Array.isArray(vehiculos) ? [...vehiculos] : [];
+    
+    const clientPhones = new Set(safeClientes.map(c => c.telefono?.trim()).filter(Boolean));
+    const clientNames = new Set(safeClientes.map(c => c.nombre?.toLowerCase().trim()).filter(Boolean));
+    const vehiclePlates = new Set(safeVehiculos.map(v => v.placa?.toUpperCase().trim()).filter(Boolean));
+
+    const allRecords = [
+      ...(Array.isArray(ordenes) ? ordenes : []),
+      ...(Array.isArray(carwash) ? carwash : []),
+      ...(Array.isArray(parkingEntries) ? parkingEntries : []),
+      ...(Array.isArray(parkingHistory) ? parkingHistory : []),
+      ...(Array.isArray(vehiculosVenta) ? vehiculosVenta : [])
+    ];
+
+    let clientsAdded = false;
+    let vehiclesAdded = false;
+
+    allRecords.forEach(rec => {
+      const name = rec.cliente?.trim();
+      const tel = rec.telefono?.trim();
+      const nit = rec.nit?.trim() || "C/F";
+      const nombreFacturacion = rec.nombreFacturacion?.trim() || name;
+
+      if ((tel || name) && (!tel || !clientPhones.has(tel)) && (!name || !clientNames.has(name.toLowerCase()))) {
+        safeClientes.push({
+          telefono: tel || `sin-tel-${Date.now()}-${Math.floor(Math.random()*1000)}`,
+          nombre: name || "Cliente",
+          nit: nit,
+          nombreFacturacion: nombreFacturacion,
+          fechaRegistro: rec.fecha || new Date().toISOString()
+        });
+        if (tel) clientPhones.add(tel);
+        if (name) clientNames.add(name.toLowerCase());
+        clientsAdded = true;
+      }
+
+      const placa = (rec.vehiculo?.placa || rec.placa)?.toUpperCase()?.trim();
+      const marca = rec.vehiculo?.marca || rec.marca || "";
+      const linea = rec.vehiculo?.linea || rec.linea || "";
+      const color = rec.vehiculo?.color || rec.color || "";
+      const anio = rec.anio || rec.vehiculo?.anio || "";
+
+      if (placa && !vehiclePlates.has(placa)) {
+        safeVehiculos.push({
+          placa: placa,
+          chasis: rec.chasis?.toUpperCase()?.trim() || "",
+          marca: marca,
+          linea: linea,
+          anio: anio,
+          color: color,
+          clienteTelefono: tel || "",
+          fechaRegistro: rec.fecha || new Date().toISOString()
+        });
+        vehiclePlates.add(placa);
+        vehiclesAdded = true;
+      }
+    });
+
+    if (clientsAdded) {
+      setClientes(safeClientes);
+    }
+    if (vehiclesAdded) {
+      setVehiculos(safeVehiculos);
+    }
+  }, [isInitialPullDone, ordenes, carwash, parkingEntries, parkingHistory, vehiculosVenta]);
 
   useEffect(() => {
     setLocalStorage("clientes", clientes);
