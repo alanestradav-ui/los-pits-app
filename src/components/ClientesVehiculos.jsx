@@ -424,8 +424,8 @@ export default function ClientesVehiculos({
                       </td>
                     </tr>
                   ) : (
-                    filteredClientes.map((c) => (
-                      <tr key={c.telefono} style={styles.tr}>
+                    filteredClientes.map((c, i) => (
+                      <tr key={c.telefono || i} style={styles.tr}>
                         <td style={styles.td}><strong>{c.nombre}</strong></td>
                         <td style={styles.td}>{c.telefono}</td>
                         <td style={styles.td}>{c.nit || "C/F"}</td>
@@ -809,8 +809,8 @@ export default function ClientesVehiculos({
                   style={styles.select}
                 >
                   <option value="">-- Seleccionar Propietario (Sin asignar) --</option>
-                  {(clientes || []).map(c => (
-                    <option key={c.telefono} value={c.telefono}>
+                  {(clientes || []).map((c, i) => (
+                    <option key={c.telefono || i} value={c.telefono}>
                       {c.nombre} ({c.telefono})
                     </option>
                   ))}
