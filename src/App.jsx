@@ -834,7 +834,7 @@ export default function App() {
     syncToCloud("usuarios", usuarios);
   }, [usuarios]);
 
-  // Auto-recover missing clients and vehicles from orders/carwash/parking history if needed
+  // Auto-recover missing clients and vehicles from orders/carwash/parking history deterministically
   useEffect(() => {
     if (!isInitialPullDone) return;
 
@@ -863,16 +863,20 @@ export default function App() {
       const nombreFacturacion = rec.nombreFacturacion?.trim() || name;
 
       if ((tel || name) && (!tel || !clientPhones.has(tel)) && (!name || !clientNames.has(name.toLowerCase()))) {
-        safeClientes.push({
-          telefono: tel || `sin-tel-${Date.now()}-${Math.floor(Math.random()*1000)}`,
-          nombre: name || "Cliente",
-          nit: nit,
-          nombreFacturacion: nombreFacturacion,
-          fechaRegistro: rec.fecha || new Date().toISOString()
-        });
-        if (tel) clientPhones.add(tel);
-        if (name) clientNames.add(name.toLowerCase());
-        clientsAdded = true;
+        const fallbackTel = tel || (name ? `nom-${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}` : "");
+        if (fallbackTel && !clientPhones.has(fallbackTel)) {
+          safeClientes.push({
+            telefono: fallbackTel,
+            nombre: name || "Cliente",
+            nit: nit,
+            nombreFacturacion: nombreFacturacion,
+            fechaRegistro: rec.fecha || new Date().toISOString()
+          });
+          if (tel) clientPhones.add(tel);
+          clientPhones.add(fallbackTel);
+          if (name) clientNames.add(name.toLowerCase());
+          clientsAdded = true;
+        }
       }
 
       const placa = (rec.vehiculo?.placa || rec.placa)?.toUpperCase()?.trim();
