@@ -1167,36 +1167,38 @@ export default function VehiculosVenta({
 
               <div style={styles.infoRowDivider} />
 
+              {/* Placa del Vehículo - Dedicated Full Width Row */}
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Placa del Vehículo *</label>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <select
+                    className="input-field"
+                    value={platePrefix}
+                    onChange={(e) => setPlatePrefix(e.target.value)}
+                    style={{ width: "110px", padding: "4px 8px", cursor: "pointer" }}
+                  >
+                    <option value="P">P</option>
+                    <option value="A">A</option>
+                    <option value="MI">MI</option>
+                    <option value="CD">CD</option>
+                    <option value="C">C</option>
+                    <option value="M">M</option>
+                    <option value="DIS">DIS</option>
+                    <option value="Extranjera">Extranjera</option>
+                  </select>
+                  <input
+                    required
+                    placeholder="123XYZ"
+                    className="input-field"
+                    value={plateNumber}
+                    onChange={(e) => setPlateNumber(e.target.value.toUpperCase())}
+                    style={{ flex: 1, textTransform: "uppercase" }}
+                  />
+                </div>
+              </div>
+
               <div style={styles.formRow}>
                 <div style={{ ...styles.inputGroup, flex: 1 }}>
-                  <label style={styles.label}>Placa del Vehículo *</label>
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    <select
-                      className="input-field"
-                      value={platePrefix}
-                      onChange={(e) => setPlatePrefix(e.target.value)}
-                      style={{ width: "110px", padding: "4px 8px", cursor: "pointer" }}
-                    >
-                      <option value="P">P</option>
-                      <option value="A">A</option>
-                      <option value="MI">MI</option>
-                      <option value="CD">CD</option>
-                      <option value="C">C</option>
-                      <option value="M">M</option>
-                      <option value="DIS">DIS</option>
-                      <option value="Extranjera">Extranjera</option>
-                    </select>
-                    <input
-                      required
-                      placeholder="123XYZ"
-                      className="input-field"
-                      value={plateNumber}
-                      onChange={(e) => setPlateNumber(e.target.value.toUpperCase())}
-                      style={{ flex: 1, textTransform: "uppercase" }}
-                    />
-                  </div>
-                </div>
-                <div style={{ ...styles.inputGroup, flex: 1.2 }}>
                   <label style={styles.label}>Chasis / VIN</label>
                   <input
                     placeholder="Ej. 1HGCR2F8..."

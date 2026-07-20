@@ -647,35 +647,37 @@ export default function ClientesVehiculos({
               </button>
             </div>
             <form onSubmit={handleSaveVehicle} style={styles.form}>
-              <div style={styles.formRow}>
-                <div style={{...styles.inputGroup, flex: 1}}>
-                  <label style={styles.label}>Placa (Si aplica)</label>
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    <select
-                      className="input-field"
-                      value={vPlatePrefix}
-                      onChange={(e) => setVPlatePrefix(e.target.value)}
-                      style={{ width: "110px", padding: "4px 8px", cursor: "pointer", backgroundColor: "rgba(0,0,0,0.2)" }}
-                    >
-                      <option value="P">P</option>
-                      <option value="A">A</option>
-                      <option value="MI">MI</option>
-                      <option value="CD">CD</option>
-                      <option value="C">C</option>
-                      <option value="M">M</option>
-                      <option value="DIS">DIS</option>
-                      <option value="Extranjera">Extranjera</option>
-                    </select>
-                    <input
-                      type="text"
-                      placeholder="123XYZ"
-                      className="input-field"
-                      value={vPlateNumber}
-                      onChange={(e) => setVPlateNumber(e.target.value.toUpperCase())}
-                      style={{ flex: 1, textTransform: "uppercase" }}
-                    />
-                  </div>
+              {/* Placa - Dedicated Full Width Row */}
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Placa (Si aplica)</label>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <select
+                    className="input-field"
+                    value={vPlatePrefix}
+                    onChange={(e) => setVPlatePrefix(e.target.value)}
+                    style={{ width: "110px", padding: "4px 8px", cursor: "pointer", backgroundColor: "rgba(0,0,0,0.2)" }}
+                  >
+                    <option value="P">P</option>
+                    <option value="A">A</option>
+                    <option value="MI">MI</option>
+                    <option value="CD">CD</option>
+                    <option value="C">C</option>
+                    <option value="M">M</option>
+                    <option value="DIS">DIS</option>
+                    <option value="Extranjera">Extranjera</option>
+                  </select>
+                  <input
+                    type="text"
+                    placeholder="123XYZ"
+                    className="input-field"
+                    value={vPlateNumber}
+                    onChange={(e) => setVPlateNumber(e.target.value.toUpperCase())}
+                    style={{ flex: 1, textTransform: "uppercase" }}
+                  />
                 </div>
+              </div>
+
+              <div style={styles.formRow}>
                 <div style={{...styles.inputGroup, flex: 1}}>
                   <label style={styles.label}>Chasis / VIN</label>
                   <div style={styles.inputWrapper}>

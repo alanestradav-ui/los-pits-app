@@ -1073,6 +1073,36 @@ export default function Parking({
           </div>
           
           <form onSubmit={ingresarVehiculo} style={styles.form}>
+            {/* Placa del Vehículo - Dedicated Full Width Row like Carwash */}
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Placa del Vehículo *</label>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <select
+                  className="input-field"
+                  value={platePrefix}
+                  onChange={(e) => setPlatePrefix(e.target.value)}
+                  style={{ width: "110px", padding: "4px 8px", cursor: "pointer" }}
+                >
+                  <option value="P">P</option>
+                  <option value="A">A</option>
+                  <option value="MI">MI</option>
+                  <option value="CD">CD</option>
+                  <option value="C">C</option>
+                  <option value="M">M</option>
+                  <option value="DIS">DIS</option>
+                  <option value="Extranjera">Extranjera</option>
+                </select>
+                <input
+                  placeholder="123XYZ"
+                  className="input-field"
+                  value={plateNumber}
+                  onChange={(e) => setPlateNumber(e.target.value.toUpperCase())}
+                  style={{ flex: 1, textTransform: "uppercase" }}
+                  required
+                />
+              </div>
+            </div>
+
             <div style={{ display: "flex", gap: "10px" }}>
               <div style={{ ...styles.inputGroup, flex: 1.5 }}>
                 <label style={styles.label}>Cliente (Opcional)</label>
@@ -1128,34 +1158,6 @@ export default function Parking({
                     }
                   }}
                 />
-              </div>
-              <div style={{ ...styles.inputGroup, flex: 1 }}>
-                <label style={styles.label}>Placa del Vehículo *</label>
-                <div style={{ display: "flex", gap: "8px" }}>
-                  <select
-                    className="input-field"
-                    value={platePrefix}
-                    onChange={(e) => setPlatePrefix(e.target.value)}
-                    style={{ width: "110px", padding: "4px 8px", cursor: "pointer" }}
-                  >
-                    <option value="P">P</option>
-                    <option value="A">A</option>
-                    <option value="MI">MI</option>
-                    <option value="CD">CD</option>
-                    <option value="C">C</option>
-                    <option value="M">M</option>
-                    <option value="DIS">DIS</option>
-                    <option value="Extranjera">Extranjera</option>
-                  </select>
-                  <input
-                    placeholder="123XYZ"
-                    className="input-field"
-                    value={plateNumber}
-                    onChange={(e) => setPlateNumber(e.target.value.toUpperCase())}
-                    style={{ flex: 1, minWidth: 0, textTransform: "uppercase" }}
-                    required
-                  />
-                </div>
               </div>
             </div>
 
