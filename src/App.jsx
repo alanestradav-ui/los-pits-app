@@ -590,95 +590,68 @@ export default function App() {
     await syncKeyToCloud(key, value);
   };
 
-  // Initial Sync from Cloud on mount
-  useEffect(() => {
+  const forcePullFromCloud = async () => {
     const client = getSupabaseClient();
     if (!client) {
-      globalSyncFlags.isInitialPullSucceeded = true; // Permitir uso local si la nube no está configurada
-      globalSyncFlags.isInitialPullDone = true; // Allow local usage/saves if cloud is not active
+      globalSyncFlags.isInitialPullSucceeded = true;
+      globalSyncFlags.isInitialPullDone = true;
       const activeSetInitialPullDone = globalActiveSetters.setIsInitialPullDone || setIsInitialPullDone;
       const activeSetRealtimeStatus = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
       activeSetInitialPullDone(true);
       activeSetRealtimeStatus("disconnected");
-      return;
+      return false;
     }
 
-    // If initial pull has already been completed by another mount/instance, skip redundant query
-    if (globalSyncFlags.isInitialPullDone) {
-      const activeSetInitialPullDone = globalActiveSetters.setIsInitialPullDone || setIsInitialPullDone;
+    try {
       const activeSetRealtimeStatus = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
-      activeSetInitialPullDone(true);
-      if (globalSyncFlags.isInitialPullSucceeded) {
-        activeSetRealtimeStatus("connected");
-      }
-      return;
-    }
+      activeSetRealtimeStatus("connecting");
+      const { data, error } = await client.from('app_data').select('*');
+      if (error) throw error;
+      
+      globalSyncFlags.isInitialPullSucceeded = true;
+      globalSyncFlags.isInitialPullDone = true;
 
-    // Prevent concurrent queries from multiple mounts
-    if (globalSyncFlags.isInitialPullInProgress) {
-      return;
-    }
-    globalSyncFlags.isInitialPullInProgress = true;
-
-    const pullAllCloudData = async () => {
-      try {
-        const { data, error } = await client.from('app_data').select('*');
-        if (error) throw error;
-        
-        globalSyncFlags.isInitialPullSucceeded = true; // Marcar como exitoso
-        if (data && data.length > 0) {
-          data.forEach(item => {
-            const activeSetter = globalActiveSetters[item.key];
-            if (activeSetter) {
-              const localValue = getLocalStorage(item.key, null);
-              let cloudValue = item.value;
-              if (typeof cloudValue === "string") {
-                try {
-                  cloudValue = JSON.parse(cloudValue);
-                } catch (e) {
-                  console.error("Error parsing cloud value for key " + item.key, e);
-                  cloudValue = null; // Do not use corrupt values
-                }
-              }
-              
-              if (cloudValue === null || cloudValue === undefined) {
-                // If cloud value is invalid, keep local data
-                if (localValue) {
-                  globalLastSynced[item.key] = JSON.stringify(localValue);
-                  activeSetter(localValue);
-                  return;
-                }
-                cloudValue = ARRAY_KEYS.includes(item.key) ? [] : null;
-              }
-              
-              let mergedValue = localValue ? mergeCollections(item.key, localValue, cloudValue) : cloudValue;
-              
-              if (ARRAY_KEYS.includes(item.key) && !Array.isArray(mergedValue)) {
-                if (mergedValue && typeof mergedValue === "object") {
-                  mergedValue = Object.values(mergedValue);
-                } else {
-                  mergedValue = [];
-                }
-              }
-              
-              const mergedValStr = JSON.stringify(mergedValue);
-              globalLastSynced[item.key] = mergedValStr;
-              activeSetter(mergedValue);
-              setLocalStorage(item.key, mergedValue);
+      if (data && data.length > 0) {
+        data.forEach(item => {
+          const activeSetter = globalActiveSetters[item.key];
+          let cloudValue = item.value;
+          if (typeof cloudValue === "string") {
+            try {
+              cloudValue = JSON.parse(cloudValue);
+            } catch (e) {
+              console.error("Error parsing cloud value for key " + item.key, e);
+              cloudValue = null;
             }
-          });
-        }
-      } catch (err) {
-        console.error("Error doing initial sync from cloud:", err);
-      } finally {
-        globalSyncFlags.isInitialPullDone = true;
-        globalSyncFlags.isInitialPullInProgress = false;
-        const activeSetInitialPullDone = globalActiveSetters.setIsInitialPullDone || setIsInitialPullDone;
-        activeSetInitialPullDone(true);
+          }
+          if (cloudValue !== null && cloudValue !== undefined) {
+            const localValue = getLocalStorage(item.key, null);
+            let mergedValue = localValue ? mergeCollections(item.key, localValue, cloudValue) : cloudValue;
+            if (ARRAY_KEYS.includes(item.key) && !Array.isArray(mergedValue)) {
+              mergedValue = mergedValue && typeof mergedValue === "object" ? Object.values(mergedValue) : [];
+            }
+            if (activeSetter) activeSetter(mergedValue);
+            setLocalStorage(item.key, mergedValue);
+            globalLastSynced[item.key] = JSON.stringify(mergedValue);
+          }
+        });
       }
-    };
+      activeSetRealtimeStatus("connected");
+      const activeSetInitialPullDone = globalActiveSetters.setIsInitialPullDone || setIsInitialPullDone;
+      activeSetInitialPullDone(true);
+      return true;
+    } catch (err) {
+      console.error("Error doing force pull from cloud:", err);
+      const activeSetRealtimeStatus = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
+      activeSetRealtimeStatus("disconnected");
+      const activeSetInitialPullDone = globalActiveSetters.setIsInitialPullDone || setIsInitialPullDone;
+      activeSetInitialPullDone(true);
+      return false;
+    }
+  };
 
-    pullAllCloudData();
+  // Initial Sync from Cloud on mount
+  useEffect(() => {
+    forcePullFromCloud();
   }, []);
 
   // Subscribe to Realtime Postgres changes once initial pull is complete
@@ -1312,6 +1285,7 @@ export default function App() {
             setOrdenes={setOrdenes}
             setCarwash={setCarwash}
             setCuentasPorCobrar={setCuentasPorCobrar}
+            onForceSyncCloud={forcePullFromCloud}
           />
         )}
       </main>

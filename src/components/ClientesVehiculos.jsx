@@ -16,7 +16,8 @@ import {
   Palette,
   Mail,
   MapPin,
-  Layers
+  Layers,
+  RefreshCw
 } from "lucide-react";
 
 const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
@@ -39,8 +40,23 @@ export default function ClientesVehiculos({
   usuarioActual,
   setOrdenes,
   setCarwash,
-  setCuentasPorCobrar
+  setCuentasPorCobrar,
+  onForceSyncCloud
 }) {
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+
+  const handleForceSync = async () => {
+    if (onForceSyncCloud) {
+      setIsSyncingCloud(true);
+      const success = await onForceSyncCloud();
+      setIsSyncingCloud(false);
+      if (success) {
+        alert("¡Sincronización completada! Se han recargado todos los clientes y vehículos de la nube.");
+      } else {
+        alert("No se pudo conectar a la nube en este momento. Intenta de nuevo.");
+      }
+    }
+  };
   const clientes = rawClientes || [];
   const vehiculos = rawVehiculos || [];
   const [activeSubTab, setActiveSubTab] = useState("clientes");
@@ -317,8 +333,33 @@ export default function ClientesVehiculos({
           </div>
         </div>
         
-        {/* Tab switcher */}
-        <div style={styles.subTabContainer}>
+        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          {onForceSyncCloud && (
+            <button
+              onClick={handleForceSync}
+              disabled={isSyncingCloud}
+              className="action-btn"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                backgroundColor: "rgba(59, 130, 246, 0.15)",
+                color: "#60a5fa",
+                border: "1px solid rgba(59, 130, 246, 0.3)",
+                borderRadius: "8px",
+                padding: "8px 14px",
+                fontSize: "0.85rem",
+                fontWeight: "600",
+                cursor: "pointer"
+              }}
+            >
+              <RefreshCw size={16} className={isSyncingCloud ? "spin" : ""} />
+              {isSyncingCloud ? "Sincronizando..." : "Sincronizar Nube"}
+            </button>
+          )}
+
+          {/* Tab switcher */}
+          <div style={styles.subTabContainer}>
           <button 
             onClick={() => setActiveSubTab("clientes")}
             style={{...styles.subTabButton, ...(activeSubTab === "clientes" ? styles.subTabButtonActive : {})}}
@@ -335,6 +376,7 @@ export default function ClientesVehiculos({
           </button>
         </div>
       </div>
+    </div>
 
       {/* Main Panel */}
       <div className="glass-panel" style={styles.mainPanel}>
