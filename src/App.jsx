@@ -126,8 +126,9 @@ const mergeCollections = (key, localVal, cloudVal) => {
       });
       localVal.forEach(item => {
         const id = item && item.id !== undefined ? String(item.id) : null;
-        if (id && !mergedMap.has(id)) {
-          mergedMap.set(id, item);
+        if (id) {
+          const existing = mergedMap.get(id);
+          mergedMap.set(id, existing ? { ...existing, ...item } : item);
         }
       });
       return Array.from(mergedMap.values());
@@ -619,8 +620,8 @@ export default function App() {
             try {
               cloudValue = JSON.parse(cloudValue);
             } catch (e) {
-              console.error("Error parsing cloud value for key " + item.key, e);
-              cloudValue = null;
+              // If it's a plain string primitive (e.g. "mes"), keep the raw string
+              cloudValue = item.value;
             }
           }
           if (cloudValue !== null && cloudValue !== undefined) {

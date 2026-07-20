@@ -162,6 +162,16 @@ export default function Taller({
   const [telefono, setTelefono] = useState("");
   const [platePrefix, setPlatePrefix] = useState("P");
   const [plateNumber, setPlateNumber] = useState("");
+  const formatVehicleText = (veh) => {
+    if (!veh) return "Vehículo no especificado";
+    if (typeof veh === "string") return veh;
+    if (typeof veh === "object") {
+      const parts = [veh.marca, veh.linea, veh.placa ? `(${veh.placa})` : ''].filter(Boolean);
+      return parts.join(" ") || veh.placa || "Vehículo sin datos";
+    }
+    return String(veh);
+  };
+
   const [marca, setMarca] = useState("");
   const [linea, setLinea] = useState("");
   const [anio, setAnio] = useState("");
@@ -330,7 +340,7 @@ export default function Taller({
     // Global search
     const matchesSearch = 
       (o.cliente || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (o.vehiculo || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      formatVehicleText(o.vehiculo).toLowerCase().includes(searchQuery.toLowerCase()) ||
       (o.mecanico || "").toLowerCase().includes(searchQuery.toLowerCase());
       
     return matchesSearch;
@@ -851,7 +861,7 @@ export default function Taller({
           cliente: checkoutOrder.cliente,
           telefono: checkoutOrder.telefono || "",
           nit: checkoutNit.trim() || "C/F",
-          concepto: `Taller Orden #${checkoutOrder.id} - ${checkoutOrder.vehiculo}`,
+          concepto: `Taller Orden #${checkoutOrder.id} - ${formatVehicleText(checkoutOrder.vehiculo)}`,
           total: creditAmount,
           saldo: creditAmount,
           fecha: new Date().toISOString(),
@@ -3353,7 +3363,7 @@ export default function Taller({
                             </button>
                           )}
                         </div>
-                        <p style={styles.vehicleText}>{o.vehiculo}</p>
+                        <p style={styles.vehicleText}>{formatVehicleText(o.vehiculo)}</p>
                       </div>
                       <span className="badge" style={getStatusStyle(o.estado)}>
                         {o.estado !== "Entregado" && o.estado !== "Listo para entrega" && <Clock size={12} style={{ marginRight: "4px" }} />}
@@ -3852,7 +3862,7 @@ export default function Taller({
                 Elaborar Presupuesto: {budgetModalOrder.cliente}
               </h2>
               <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "2px" }}>
-                {budgetModalOrder.vehiculo}
+                {formatVehicleText(budgetModalOrder.vehiculo)}
               </p>
             </div>
 
@@ -5339,7 +5349,7 @@ export default function Taller({
                 <Coins size={22} color="var(--color-primary)" /> Cobro y Facturación
               </h2>
               <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "2px" }}>
-                Orden de {checkoutOrder.cliente} | Vehículo: {checkoutOrder.vehiculo}
+                Orden de {checkoutOrder.cliente} | Vehículo: {formatVehicleText(checkoutOrder.vehiculo)}
               </p>
             </div>
 
