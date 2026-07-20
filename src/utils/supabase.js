@@ -25,13 +25,31 @@ export const resetSupabaseClient = () => {
   supabaseInstance = null;
 };
 
+export const safeParseJSON = (val) => {
+  if (val === null || val === undefined) return val;
+  let result = val;
+  let attempts = 0;
+  while (typeof result === "string" && attempts < 5) {
+    try {
+      const parsed = JSON.parse(result);
+      if (parsed === result) break;
+      result = parsed;
+      attempts++;
+    } catch (e) {
+      break;
+    }
+  }
+  return result;
+};
+
 export const syncKeyToCloud = async (key, value) => {
   const client = getSupabaseClient();
   if (!client) return;
   try {
+    const cleanValue = safeParseJSON(value);
     const { error } = await client
       .from('app_data')
-      .upsert({ key, value, updated_at: new Date().toISOString() });
+      .upsert({ key, value: cleanValue, updated_at: new Date().toISOString() });
     
     if (error) {
       console.error(`Error uploading key "${key}" to Supabase:`, error.message);
@@ -40,3 +58,4 @@ export const syncKeyToCloud = async (key, value) => {
     console.error(`Error syncing key "${key}" to Supabase:`, err);
   }
 };
+

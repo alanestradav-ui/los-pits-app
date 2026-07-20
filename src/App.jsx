@@ -18,7 +18,7 @@ import ClientesVehiculos from "./components/ClientesVehiculos";
 import Compras from "./components/Compras";
 import Accesorios from "./components/Accesorios";
 import { getLocalStorage, setLocalStorage } from "./utils/storage";
-import { getSupabaseClient, syncKeyToCloud } from "./utils/supabase";
+import { getSupabaseClient, syncKeyToCloud, safeParseJSON } from "./utils/supabase";
 
 // ☁️ GLOBAL CLOUD SYNC STATE (Saves data across React remounts/Strict Mode)
 const globalLastSynced = {};
@@ -82,21 +82,53 @@ const ARRAY_KEYS = [
   "accesoriosInventory"
 ];
 
+const MOCK_CLIENT_NAMES = ["mariana estévez", "mariana estevez", "carlos mendoza", "alejandro ruiz"];
+const MOCK_VEHICLE_PLATES = ["P-984FLB", "P-420DSK", "P-112HJD", "P-456GBD", "P-789DKS"];
+
+const filterOutMockItems = (key, list) => {
+  if (!Array.isArray(list)) return list;
+  return list.filter(item => {
+    if (!item) return false;
+    if (key === "clientes") {
+      const name = (item.nombre || "").toLowerCase().trim();
+      if (MOCK_CLIENT_NAMES.includes(name)) return false;
+    }
+    if (key === "vehiculos") {
+      const placa = (item.placa || "").toUpperCase().trim();
+      if (MOCK_VEHICLE_PLATES.includes(placa)) return false;
+    }
+    if (key === "ordenes" || key === "carwash") {
+      const mockIds = [1716301200000, 1716304800000, 1716308400000, 1716312000000, 1716315600000];
+      if (mockIds.includes(item.id)) return false;
+      const clienteStr = typeof item.cliente === "string" ? item.cliente.toLowerCase() : "";
+      if (MOCK_CLIENT_NAMES.some(m => clienteStr.includes(m))) return false;
+    }
+    return true;
+  });
+};
+
 // Helper to merge local cached array data with cloud data to prevent silent data wipes on initial connection
-const mergeCollections = (key, localVal, cloudVal) => {
-  if (cloudVal === null || cloudVal === undefined) return localVal;
-  if (localVal === null || localVal === undefined) return cloudVal;
+const mergeCollections = (key, localValRaw, cloudValRaw) => {
+  const localVal = filterOutMockItems(key, safeParseJSON(localValRaw));
+  const cloudVal = filterOutMockItems(key, safeParseJSON(cloudValRaw));
+
+  if (!cloudVal || (Array.isArray(cloudVal) && cloudVal.length === 0)) {
+    return Array.isArray(localVal) ? localVal : (cloudVal || []);
+  }
+  if (!localVal || (Array.isArray(localVal) && localVal.length === 0)) {
+    return cloudVal;
+  }
 
   if (Array.isArray(localVal) && Array.isArray(cloudVal)) {
     if (key === "clientes") {
       const mergedMap = new Map();
-      cloudVal.forEach(c => {
-        const id = c.telefono ? c.telefono.trim() : (c.nombre ? c.nombre.trim() : null);
-        if (id) mergedMap.set(id, c);
+      cloudVal.forEach((c, idx) => {
+        const id = (c.telefono && c.telefono.trim()) || (c.nombre && c.nombre.trim()) || `cloud_c_${idx}`;
+        mergedMap.set(id, c);
       });
-      localVal.forEach(c => {
-        const id = c.telefono ? c.telefono.trim() : (c.nombre ? c.nombre.trim() : null);
-        if (id && !mergedMap.has(id)) {
+      localVal.forEach((c, idx) => {
+        const id = (c.telefono && c.telefono.trim()) || (c.nombre && c.nombre.trim()) || `local_c_${idx}`;
+        if (!mergedMap.has(id)) {
           mergedMap.set(id, c);
         }
       });
@@ -105,38 +137,37 @@ const mergeCollections = (key, localVal, cloudVal) => {
 
     if (key === "vehiculos") {
       const mergedMap = new Map();
-      cloudVal.forEach(v => {
-        const id = v.placa ? v.placa.trim().toUpperCase() : (v.chasis ? v.chasis.trim().toUpperCase() : null);
-        if (id) mergedMap.set(id, v);
+      cloudVal.forEach((v, idx) => {
+        const id = (v.placa && v.placa.trim().toUpperCase()) || (v.chasis && v.chasis.trim().toUpperCase()) || `cloud_v_${idx}`;
+        mergedMap.set(id, v);
       });
-      localVal.forEach(v => {
-        const id = v.placa ? v.placa.trim().toUpperCase() : (v.chasis ? v.chasis.trim().toUpperCase() : null);
-        if (id && !mergedMap.has(id)) {
+      localVal.forEach((v, idx) => {
+        const id = (v.placa && v.placa.trim().toUpperCase()) || (v.chasis && v.chasis.trim().toUpperCase()) || `local_v_${idx}`;
+        if (!mergedMap.has(id)) {
           mergedMap.set(id, v);
         }
       });
       return Array.from(mergedMap.values());
     }
 
-    if (["ordenes", "carwash", "parkingEntries", "parkingHistory", "vehiculosVenta", "compras", "cuentasPorCobrar", "cuentasPorPagar", "tiendaSales", "cafeteriaSales", "fixedCosts", "accesoriosInventory", "workshopInventory", "cafeteriaInventory", "toolsInventory"].includes(key)) {
-      const mergedMap = new Map();
-      cloudVal.forEach(item => {
-        const id = item && item.id !== undefined ? String(item.id) : null;
-        if (id) mergedMap.set(id, item);
-      });
-      localVal.forEach(item => {
-        const id = item && item.id !== undefined ? String(item.id) : null;
-        if (id) {
-          const existing = mergedMap.get(id);
-          mergedMap.set(id, existing ? { ...existing, ...item } : item);
-        }
-      });
-      return Array.from(mergedMap.values());
-    }
+    // For all other array keys (ordenes, carwash, parkingHistory, workshopInventory, etc.)
+    const mergedMap = new Map();
+    cloudVal.forEach((item, idx) => {
+      const id = item && item.id !== undefined ? String(item.id) : `cloud_item_${idx}`;
+      mergedMap.set(id, item);
+    });
+    localVal.forEach((item, idx) => {
+      const id = item && item.id !== undefined ? String(item.id) : `local_item_${idx}`;
+      if (!mergedMap.has(id)) {
+        mergedMap.set(id, item);
+      }
+    });
+    return Array.from(mergedMap.values());
   }
 
   return cloudVal;
 };
+
 
 export default function App() {
   // 🔐 USER DEFINITIONS
@@ -290,7 +321,8 @@ export default function App() {
   const [ordenes, setOrdenes] = useState(() => {
     const val = getLocalStorage("ordenes", []);
     const raw = Array.isArray(val) ? val : [];
-    return raw.map(o => {
+    const filtered = filterOutMockItems("ordenes", raw);
+    return filtered.map(o => {
       let migratedEstado = o.estado;
       if (o.estado === "En proceso") migratedEstado = "En proceso de reparación";
       else if (o.estado === "Listo") migratedEstado = "Listo para entrega";
@@ -302,7 +334,8 @@ export default function App() {
   const [carwash, setCarwash] = useState(() => {
     const val = getLocalStorage("carwash", []);
     const raw = Array.isArray(val) ? val : [];
-    return raw.map(c => {
+    const filtered = filterOutMockItems("carwash", raw);
+    return filtered.map(c => {
       let migratedEstado = c.estado;
       if (c.estado === "Listo") migratedEstado = "Listo para entrega";
       else if (c.estado === "Cobrado") migratedEstado = "Entregado";
@@ -412,26 +445,16 @@ export default function App() {
     return Array.isArray(val) ? val : defaultFixedCosts;
   });
 
-  const initialClientes = [
-    { telefono: "5544-3322", nombre: "Mariana Estévez", nit: "1029384-5", nombreFacturacion: "Mariana Estévez", email: "mariana.est@gmail.com", direccion: "Km 15 Carr. Salvador", fechaRegistro: new Date().toISOString() },
-    { telefono: "4422-1188", nombre: "Carlos Mendoza", nit: "9876543-2", nombreFacturacion: "Carlos Mendoza", email: "carlos.mendoza@yahoo.com", direccion: "Zona 15 Vista Hermosa", fechaRegistro: new Date().toISOString() },
-    { telefono: "3311-2299", nombre: "Alejandro Ruiz", nit: "CF", nombreFacturacion: "Alejandro Ruiz", email: "aruiz_mx@gmail.com", direccion: "Zona 10, Ciudad de Guatemala", fechaRegistro: new Date().toISOString() }
-  ];
-
-  const initialVehiculos = [
-    { placa: "P-984FLB", chasis: "1HGCR2F81HA002931", marca: "Mazda", linea: "3", anio: "2018", color: "Gris", clienteTelefono: "5544-3322", fechaRegistro: new Date().toISOString() },
-    { placa: "P-420DSK", chasis: "MR0FX22G002837482", marca: "Toyota", linea: "Hilux", anio: "2019", color: "Blanco", clienteTelefono: "4422-1188", fechaRegistro: new Date().toISOString() },
-    { placa: "P-112HJD", chasis: "1HGCR2F84HA109283", marca: "Honda", linea: "Civic", anio: "2017", color: "Negro", clienteTelefono: "3311-2299", fechaRegistro: new Date().toISOString() }
-  ];
-
   const [clientes, setClientes] = useState(() => {
-    const val = getLocalStorage("clientes", initialClientes);
-    return Array.isArray(val) ? val : initialClientes;
+    const val = getLocalStorage("clientes", []);
+    const raw = Array.isArray(val) ? val : [];
+    return filterOutMockItems("clientes", raw);
   });
 
   const [vehiculos, setVehiculos] = useState(() => {
-    const val = getLocalStorage("vehiculos", initialVehiculos);
-    return Array.isArray(val) ? val : initialVehiculos;
+    const val = getLocalStorage("vehiculos", []);
+    const raw = Array.isArray(val) ? val : [];
+    return filterOutMockItems("vehiculos", raw);
   });
 
   const [compras, setCompras] = useState(() => {
@@ -582,13 +605,14 @@ export default function App() {
       return;
     }
     
-    const valueStr = JSON.stringify(value);
+    const cleanVal = filterOutMockItems(key, safeParseJSON(value));
+    const valueStr = JSON.stringify(cleanVal);
     if (globalLastSynced[key] === valueStr) {
       return; // Already in sync, avoid loops
     }
     
     globalLastSynced[key] = valueStr;
-    await syncKeyToCloud(key, value);
+    await syncKeyToCloud(key, cleanVal);
   };
 
   const forcePullFromCloud = async () => {
@@ -598,35 +622,34 @@ export default function App() {
       globalSyncFlags.isInitialPullDone = true;
       const activeSetInitialPullDone = globalActiveSetters.setIsInitialPullDone || setIsInitialPullDone;
       const activeSetRealtimeStatus = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
-      activeSetInitialPullDone(true);
-      activeSetRealtimeStatus("disconnected");
+      if (activeSetInitialPullDone) activeSetInitialPullDone(true);
+      if (activeSetRealtimeStatus) activeSetRealtimeStatus("disconnected");
       return false;
     }
 
     try {
       const activeSetRealtimeStatus = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
-      activeSetRealtimeStatus("connecting");
+      if (activeSetRealtimeStatus) activeSetRealtimeStatus("connecting");
       const { data, error } = await client.from('app_data').select('*');
       if (error) throw error;
 
       if (data && data.length > 0) {
         data.forEach(item => {
           const activeSetter = globalActiveSetters[item.key];
-          let cloudValue = item.value;
-          if (typeof cloudValue === "string") {
-            try {
-              cloudValue = JSON.parse(cloudValue);
-            } catch (e) {
-              // If it's a plain string primitive (e.g. "mes"), keep the raw string
-              cloudValue = item.value;
-            }
-          }
+          let cloudValue = safeParseJSON(item.value);
+
           if (cloudValue !== null && cloudValue !== undefined) {
-            const localValue = getLocalStorage(item.key, null);
-            let mergedValue = localValue ? mergeCollections(item.key, localValue, cloudValue) : cloudValue;
+            const localValue = safeParseJSON(getLocalStorage(item.key, null));
+            let mergedValue = mergeCollections(item.key, localValue, cloudValue);
+
             if (ARRAY_KEYS.includes(item.key) && !Array.isArray(mergedValue)) {
-              mergedValue = mergedValue && typeof mergedValue === "object" ? Object.values(mergedValue) : [];
+              if (mergedValue && typeof mergedValue === "object") {
+                mergedValue = Object.values(mergedValue);
+              } else {
+                mergedValue = Array.isArray(cloudValue) ? cloudValue : [];
+              }
             }
+
             const mergedValStr = JSON.stringify(mergedValue);
             globalLastSynced[item.key] = mergedValStr;
             if (activeSetter) activeSetter(mergedValue);
@@ -637,16 +660,16 @@ export default function App() {
 
       globalSyncFlags.isInitialPullSucceeded = true;
       globalSyncFlags.isInitialPullDone = true;
-      activeSetRealtimeStatus("connected");
+      if (activeSetRealtimeStatus) activeSetRealtimeStatus("connected");
       const activeSetInitialPullDone = globalActiveSetters.setIsInitialPullDone || setIsInitialPullDone;
-      activeSetInitialPullDone(true);
+      if (activeSetInitialPullDone) activeSetInitialPullDone(true);
       return true;
     } catch (err) {
       console.error("Error doing force pull from cloud:", err);
       const activeSetRealtimeStatus = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
-      activeSetRealtimeStatus("disconnected");
+      if (activeSetRealtimeStatus) activeSetRealtimeStatus("disconnected");
       const activeSetInitialPullDone = globalActiveSetters.setIsInitialPullDone || setIsInitialPullDone;
-      activeSetInitialPullDone(true);
+      if (activeSetInitialPullDone) activeSetInitialPullDone(true);
       return false;
     }
   };
@@ -675,29 +698,16 @@ export default function App() {
             return;
           }
 
-          console.log(`[Realtime Sync] Received payload for "${key}":`, {
-            type: typeof value,
-            isArray: Array.isArray(value)
-          });
-
-          let sanitizedValue = value;
-          if (typeof value === "string") {
-            try {
-              sanitizedValue = JSON.parse(value);
-            } catch (e) {
-              console.error("Error parsing realtime value for key " + key, e);
-              return; // Ignorar actualización si el JSON está corrupto/incompleto para evitar vaciar datos
-            }
-          }
+          let sanitizedValue = safeParseJSON(value);
           
           if (ARRAY_KEYS.includes(key)) {
+            sanitizedValue = filterOutMockItems(key, sanitizedValue);
             if (!Array.isArray(sanitizedValue)) {
               if (sanitizedValue && typeof sanitizedValue === "object") {
                 sanitizedValue = Object.values(sanitizedValue);
-                console.log(`[Realtime Sync] Converted object to array for key "${key}":`, sanitizedValue);
               } else {
-                console.warn(`[Realtime Sync] Se recibió un valor que no es arreglo ni objeto convertible para la llave "${key}". Ignorando para proteger datos locales.`);
-                return; // Ignorar si el tipo recibido no es válido
+                console.warn(`[Realtime Sync] Se recibió un valor que no es arreglo para la llave "${key}". Ignorando.`);
+                return;
               }
             }
           }
