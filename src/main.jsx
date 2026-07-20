@@ -15,7 +15,12 @@ if (!currentKey || !currentKey.trim()) {
 }
 
 // Force service worker to check and activate updates immediately on all open tabs
-registerSW({ immediate: true })
+registerSW({
+  immediate: true,
+  onNeedRefresh() {
+    window.location.reload();
+  }
+});
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

@@ -608,9 +608,6 @@ export default function App() {
       activeSetRealtimeStatus("connecting");
       const { data, error } = await client.from('app_data').select('*');
       if (error) throw error;
-      
-      globalSyncFlags.isInitialPullSucceeded = true;
-      globalSyncFlags.isInitialPullDone = true;
 
       if (data && data.length > 0) {
         data.forEach(item => {
@@ -630,12 +627,16 @@ export default function App() {
             if (ARRAY_KEYS.includes(item.key) && !Array.isArray(mergedValue)) {
               mergedValue = mergedValue && typeof mergedValue === "object" ? Object.values(mergedValue) : [];
             }
+            const mergedValStr = JSON.stringify(mergedValue);
+            globalLastSynced[item.key] = mergedValStr;
             if (activeSetter) activeSetter(mergedValue);
             setLocalStorage(item.key, mergedValue);
-            globalLastSynced[item.key] = JSON.stringify(mergedValue);
           }
         });
       }
+
+      globalSyncFlags.isInitialPullSucceeded = true;
+      globalSyncFlags.isInitialPullDone = true;
       activeSetRealtimeStatus("connected");
       const activeSetInitialPullDone = globalActiveSetters.setIsInitialPullDone || setIsInitialPullDone;
       activeSetInitialPullDone(true);
