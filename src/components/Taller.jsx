@@ -2737,6 +2737,59 @@ export default function Taller({
             </div>
             
             <form onSubmit={crearOrden} style={styles.form}>
+              {/* Placa - Dedicated Full Width Row like Carwash (First field) */}
+              <div style={{ ...styles.inputGroup, position: "relative" }}>
+                <label style={styles.label}>Placa *</label>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <select
+                    className="input-field"
+                    value={platePrefix}
+                    onChange={(e) => setPlatePrefix(e.target.value)}
+                    style={{ width: "110px", padding: "4px 8px", cursor: "pointer" }}
+                  >
+                    <option value="P">P</option>
+                    <option value="A">A</option>
+                    <option value="MI">MI</option>
+                    <option value="CD">CD</option>
+                    <option value="C">C</option>
+                    <option value="M">M</option>
+                    <option value="DIS">DIS</option>
+                    <option value="Extranjera">Extranjera</option>
+                  </select>
+                  <input
+                    placeholder="123XYZ"
+                    className="input-field"
+                    value={plateNumber}
+                    onChange={(e) => handlePlacaInput(e.target.value.toUpperCase())}
+                    onBlur={(e) => {
+                      const val = e.target.value.trim().toUpperCase();
+                      const fullPlc = platePrefix === "Extranjera" ? val : `${platePrefix}-${val}`;
+                      if (val) {
+                        const match = (vehiculos || []).find(v => v.placa?.toUpperCase().trim() === fullPlc || v.placa?.toUpperCase().trim() === val);
+                        if (match) {
+                          selectVehiculoSuggestion(match);
+                        }
+                      }
+                      setTimeout(() => setActiveFieldSuggestions(null), 200);
+                    }}
+                    style={{ flex: 1, textTransform: "uppercase" }}
+                  />
+                </div>
+                {activeFieldSuggestions === "placa" && suggestions.length > 0 && (
+                  <ul className="suggestions-list">
+                    {suggestions.map((s, idx) => (
+                      <li 
+                        key={idx} 
+                        className="suggestion-item"
+                        onMouseDown={() => selectVehiculoSuggestion(s)}
+                      >
+                        <strong>{s.placa || "Sin Placa"}</strong> - {s.marca} {s.linea} ({s.color})
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
               <div style={{ display: "flex", gap: "10px" }}>
                 <div style={{ ...styles.inputGroup, flex: 1.5 }}>
                   <label style={styles.label}>Cliente *</label>
@@ -2820,49 +2873,6 @@ export default function Taller({
                     onChange={(e) => setNombreFacturacion(e.target.value)}
                   />
                 </div>
-              </div>
-
-              {/* Placa - Dedicated Full Width Row like Carwash */}
-              <div style={{ ...styles.inputGroup, position: "relative" }}>
-                <label style={styles.label}>Placa *</label>
-                <div style={{ display: "flex", gap: "8px" }}>
-                  <select
-                    className="input-field"
-                    value={platePrefix}
-                    onChange={(e) => setPlatePrefix(e.target.value)}
-                    style={{ width: "110px", padding: "4px 8px", cursor: "pointer" }}
-                  >
-                    <option value="P">P</option>
-                    <option value="A">A</option>
-                    <option value="MI">MI</option>
-                    <option value="CD">CD</option>
-                    <option value="C">C</option>
-                    <option value="M">M</option>
-                    <option value="DIS">DIS</option>
-                    <option value="Extranjera">Extranjera</option>
-                  </select>
-                  <input
-                    placeholder="123XYZ"
-                    className="input-field"
-                    value={plateNumber}
-                    onChange={(e) => handlePlacaInput(e.target.value.toUpperCase())}
-                    onBlur={() => setTimeout(() => setActiveFieldSuggestions(null), 200)}
-                    style={{ flex: 1, textTransform: "uppercase" }}
-                  />
-                </div>
-                {activeFieldSuggestions === "placa" && suggestions.length > 0 && (
-                  <ul className="suggestions-list">
-                    {suggestions.map((s, idx) => (
-                      <li 
-                        key={idx} 
-                        className="suggestion-item"
-                        onMouseDown={() => selectVehiculoSuggestion(s)}
-                      >
-                        <strong>{s.placa || "Sin Placa"}</strong> - {s.marca} {s.linea} ({s.color})
-                      </li>
-                    ))}
-                  </ul>
-                )}
               </div>
 
               <div style={{ display: "flex", gap: "10px" }}>
