@@ -953,19 +953,22 @@ export default function App() {
 
   const userHasPermission = (user, tabId) => {
     if (!user) return false;
-    const activeUser = usuarios.find(u => (u.user || "").toLowerCase().trim() === (user.user || "").toLowerCase().trim()) || user;
-    const activeRol = activeUser.rol?.toLowerCase()?.trim();
-    if (activeRol === "admin") return true;
-    if (activeUser.permissions) {
-      return activeUser.permissions.includes(tabId);
+    const activeUser = usuarios.find(u => (u.user || "").toLowerCase().trim() === ((typeof user === "string" ? user : user.user) || "").toLowerCase().trim()) || user;
+    const activeRol = (typeof activeUser === "string" ? activeUser : (activeUser.rol || "")).toLowerCase().trim();
+    if (activeRol === "admin" || activeRol === "administrador") return true;
+    if (tabId === "historial" && activeRol !== "lavador") return true;
+
+    if (Array.isArray(activeUser.permissions)) {
+      if (activeUser.permissions.includes(tabId)) return true;
     }
+
     // Fallbacks
     if (activeRol === "cajero") {
       return ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"].includes(tabId);
     }
     if (activeRol === "mecanico") return ["taller", "historial"].includes(tabId);
     if (activeRol === "lavador") return tabId === "carwash";
-    if (activeRol === "jefe de taller") return ["dashboard", "taller", "repuestosFaltantes", "historial"].includes(tabId);
+    if (activeRol === "jefe de taller" || activeRol === "jefe") return ["dashboard", "taller", "repuestosFaltantes", "historial"].includes(tabId);
     return false;
   };
 

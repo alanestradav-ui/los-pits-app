@@ -49,12 +49,29 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
   const [clientReportModal, setClientReportModal] = useState({ isOpen: false, item: null, vehicle: null });
 
 
+  // Safe JSON Parser helper to prevent crash on stringified fields
+  const safeParse = (val) => {
+    if (!val) return null;
+    if (typeof val === 'object') return val;
+    if (typeof val === 'string') {
+      try {
+        const parsed = JSON.parse(val);
+        if (typeof parsed === 'string') return safeParse(parsed);
+        return parsed;
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  };
+
   // 1. Group and compile history by Plate (placa)
   const vehiclesMap = {};
 
   // Process Workshop Orders if filter matches Taller or Todos
   if (historyFilter === "Todos" || historyFilter === "Taller") {
-    ordenes.forEach(o => {
+    (ordenes || []).forEach(o => {
+      if (!o) return;
       // Direct placa extraction, falling back to vehiculo string matching if direct placa is missing (retroactive)
       let placaClean = (o.placa || "").toUpperCase().trim();
       if ((!placaClean || placaClean === "N/A" || placaClean === "SIN PLACA") && typeof o.vehiculo === "string") {
@@ -94,6 +111,9 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
       if (o.cliente && o.cliente !== "N/A") vehiclesMap[placaClean].cliente = o.cliente;
       if (o.telefono) vehiclesMap[placaClean].telefono = o.telefono;
 
+      const parsedLuces = safeParse(o.luces);
+      const parsedFotos = safeParse(o.fotos);
+
       vehiclesMap[placaClean].history.push({
         id: o.id,
         tipo: "Taller",
@@ -104,17 +124,18 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
         trabajo: o.trabajo || o.motivoIngreso || "Servicio general de taller",
         kilometraje: o.kilometraje || "N/A",
         combustible: o.combustible !== undefined ? o.combustible : 0,
-        luces: o.luces || [],
-        presupuesto: o.presupuesto || null,
-        fotos: o.fotos || [],
-        checklist: o.checklist || null
+        luces: Array.isArray(parsedLuces) ? parsedLuces : [],
+        presupuesto: safeParse(o.presupuesto),
+        fotos: Array.isArray(parsedFotos) ? parsedFotos : [],
+        checklist: safeParse(o.checklist)
       });
     });
   }
 
   // Process Carwash entries if filter matches Carwash or Todos
   if (historyFilter === "Todos" || historyFilter === "Carwash") {
-    carwash.forEach(c => {
+    (carwash || []).forEach(c => {
+      if (!c) return;
       // Direct placa extraction, falling back to c.vehiculo string matching or c.placa (retroactive)
       let placaClean = (c.vehiculo?.placa || "").toUpperCase().trim();
       if ((!placaClean || placaClean === "N/A") && typeof c.vehiculo === "string") {
@@ -155,6 +176,8 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
       if (c.cliente && c.cliente !== "N/A") vehiclesMap[placaClean].cliente = c.cliente;
       if (c.telefono) vehiclesMap[placaClean].telefono = c.telefono;
 
+      const parsedFotos = safeParse(c.fotos);
+
       vehiclesMap[placaClean].history.push({
         id: c.id,
         tipo: "Carwash",
@@ -163,7 +186,7 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
         total: c.precio,
         lavador: c.lavador || "Sin asignar",
         tipoLavado: c.tipo,
-        fotos: c.fotos || []
+        fotos: Array.isArray(parsedFotos) ? parsedFotos : []
       });
     });
   }
