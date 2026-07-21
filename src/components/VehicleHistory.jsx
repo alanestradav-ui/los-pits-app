@@ -40,6 +40,49 @@ const defaultChecklistItems = [
   { id: "suspension", label: "Suspensión" }
 ];
 
+const FinancialPieChart = ({ costoRepuestos = 0, costoManoObra = 0, costoServiciosExternos = 0, utilidadNeta = 0 }) => {
+  const total = (costoRepuestos + costoManoObra + costoServiciosExternos + (utilidadNeta > 0 ? utilidadNeta : 0)) || 1;
+  
+  const slices = [
+    { label: "Costos Repuestos", value: costoRepuestos, color: "#ef4444" },
+    { label: "Mano de Obra / Comisiones", value: costoManoObra, color: "#3b82f6" },
+    { label: "Trabajos Subcontratados", value: costoServiciosExternos, color: "#f59e0b" },
+    { label: "Utilidad Neta", value: Math.max(0, utilidadNeta), color: "#10b981" }
+  ].filter(s => s.value > 0);
+
+  let cumulativeAngle = 0;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "24px", flexWrap: "wrap", justifyContent: "center", margin: "14px 0" }}>
+      <svg width="140" height="140" viewBox="-1 -1 2 2" style={{ transform: "rotate(-90deg)", filter: "drop-shadow(0 4px 10px rgba(0,0,0,0.4))" }}>
+        {slices.map((slice, i) => {
+          const sliceAngle = (slice.value / total) * 2 * Math.PI;
+          const startX = Math.cos(cumulativeAngle);
+          const startY = Math.sin(cumulativeAngle);
+          cumulativeAngle += sliceAngle;
+          const endX = Math.cos(cumulativeAngle);
+          const endY = Math.sin(cumulativeAngle);
+          const largeArcFlag = sliceAngle > Math.PI ? 1 : 0;
+          const pathData = slices.length === 1
+            ? "M -1 0 A 1 1 0 1 1 1 0 A 1 1 0 1 1 -1 0"
+            : `M 0 0 L ${startX} ${startY} A 1 1 0 ${largeArcFlag} 1 ${endX} ${endY} Z`;
+          return <path key={i} d={pathData} fill={slice.color} stroke="#111827" strokeWidth="0.04" />;
+        })}
+      </svg>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.8rem", textAlign: "left" }}>
+        {slices.map((s, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ width: "12px", height: "12px", borderRadius: "3px", backgroundColor: s.color, display: "inline-block" }} />
+            <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>{s.label}:</span>
+            <strong style={{ color: "#fff", fontSize: "0.82rem" }}>{formatMoney(s.value)} ({((s.value / total) * 100).toFixed(1)}%)</strong>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActual }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedPlaca, setSelectedPlaca] = useState(null);
@@ -48,6 +91,9 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
   const [showVehicleFinancials, setShowVehicleFinancials] = useState(false);
   const [historyFilter, setHistoryFilter] = useState("Todos"); // "Todos" | "Taller" | "Carwash"
   const [clientReportModal, setClientReportModal] = useState({ isOpen: false, item: null, vehicle: null });
+  const [financialReportModal, setFinancialReportModal] = useState({ isOpen: false, item: null, vehicle: null });
+  const [diagnosticReportModal, setDiagnosticReportModal] = useState({ isOpen: false, item: null, vehicle: null });
+
 
 
   // Safe JSON Parser helper to prevent crash on stringified fields
@@ -570,29 +616,67 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
                     marginTop: "16px",
                     paddingTop: "14px",
                     borderTop: "1px solid rgba(255, 255, 255, 0.08)",
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                    gap: "12px",
                     textAlign: "left"
                   }} className="animate-fade-in">
-                    <div style={{ backgroundColor: "rgba(255, 255, 255, 0.02)", padding: "10px 12px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.04)" }}>
-                      <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block" }}>📊 Venta Acumulada</span>
-                      <strong style={{ fontSize: "1.05rem", color: "#fff" }}>{formatMoney(selectedVehicleFinancials.totalVenta)}</strong>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                      <span style={{ fontSize: "0.85rem", fontWeight: "800", color: "var(--color-success)", display: "flex", alignItems: "center", gap: "6px" }}>
+                        <PieChart size={18} /> Resumen Acumulado de Rentabilidad
+                      </span>
+
+                      <button
+                        onClick={() => setFinancialReportModal({ isOpen: true, vehicle: selectedVehicle, item: null })}
+                        style={{
+                          backgroundColor: "var(--color-success)",
+                          color: "#fff",
+                          border: "none",
+                          padding: "6px 12px",
+                          borderRadius: "6px",
+                          fontSize: "0.78rem",
+                          fontWeight: "700",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px"
+                        }}
+                        type="button"
+                      >
+                        <Printer size={14} /> Imprimir Reporte Financiero (PDF)
+                      </button>
                     </div>
 
-                    <div style={{ backgroundColor: "rgba(255, 255, 255, 0.02)", padding: "10px 12px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.04)" }}>
-                      <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block" }}>📉 Costos (Repuestos/M.O.)</span>
-                      <strong style={{ fontSize: "1.05rem", color: "#f87171" }}>{formatMoney(selectedVehicleFinancials.totalCostos)}</strong>
-                    </div>
+                    {/* SVG Donut / Pie Chart */}
+                    <FinancialPieChart 
+                      costoRepuestos={selectedVehicleFinancials.costoRepuestos}
+                      costoManoObra={selectedVehicleFinancials.costoManoObra}
+                      costoServiciosExternos={selectedVehicleFinancials.costoServiciosExternos}
+                      utilidadNeta={selectedVehicleFinancials.utilidadNeta}
+                    />
 
-                    <div style={{ backgroundColor: "rgba(16, 185, 129, 0.08)", padding: "10px 12px", borderRadius: "8px", border: "1px solid rgba(16, 185, 129, 0.2)" }}>
-                      <span style={{ fontSize: "0.75rem", color: "var(--color-success)", fontWeight: "700", display: "block" }}>📈 Utilidad Neta Aportada</span>
-                      <strong style={{ fontSize: "1.1rem", color: "var(--color-success)" }}>
-                        {formatMoney(selectedVehicleFinancials.utilidadNeta)} 
-                        <span style={{ fontSize: "0.75rem", fontWeight: "normal", marginLeft: "6px" }}>
-                          ({selectedVehicleFinancials.totalVenta > 0 ? ((selectedVehicleFinancials.utilidadNeta / selectedVehicleFinancials.totalVenta) * 100).toFixed(1) : 0}%)
-                        </span>
-                      </strong>
+                    <div style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                      gap: "12px",
+                      marginTop: "12px"
+                    }}>
+                      <div style={{ backgroundColor: "rgba(255, 255, 255, 0.02)", padding: "10px 12px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.04)" }}>
+                        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block" }}>📊 Venta Acumulada</span>
+                        <strong style={{ fontSize: "1.05rem", color: "#fff" }}>{formatMoney(selectedVehicleFinancials.totalVenta)}</strong>
+                      </div>
+
+                      <div style={{ backgroundColor: "rgba(255, 255, 255, 0.02)", padding: "10px 12px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.04)" }}>
+                        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block" }}>📉 Costos (Repuestos/M.O.)</span>
+                        <strong style={{ fontSize: "1.05rem", color: "#f87171" }}>{formatMoney(selectedVehicleFinancials.totalCostos)}</strong>
+                      </div>
+
+                      <div style={{ backgroundColor: "rgba(16, 185, 129, 0.08)", padding: "10px 12px", borderRadius: "8px", border: "1px solid rgba(16, 185, 129, 0.2)" }}>
+                        <span style={{ fontSize: "0.75rem", color: "var(--color-success)", fontWeight: "700", display: "block" }}>📈 Utilidad Neta Aportada</span>
+                        <strong style={{ fontSize: "1.1rem", color: "var(--color-success)" }}>
+                          {formatMoney(selectedVehicleFinancials.utilidadNeta)} 
+                          <span style={{ fontSize: "0.75rem", fontWeight: "normal", marginLeft: "6px" }}>
+                            ({selectedVehicleFinancials.totalVenta > 0 ? ((selectedVehicleFinancials.utilidadNeta / selectedVehicleFinancials.totalVenta) * 100).toFixed(1) : 0}%)
+                          </span>
+                        </strong>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -740,12 +824,39 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
                                   }} className="animate-fade-in">
                                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
                                       <span style={{ fontSize: "0.82rem", fontWeight: "800", color: "var(--color-success)", display: "flex", alignItems: "center", gap: "6px" }}>
-                                        <TrendingUp size={16} /> Desglose Interno de Costos y Utilidad Neta
+                                        <PieChart size={16} /> Desglose Interno de Costos y Utilidad Neta
                                       </span>
-                                      <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontStyle: "italic" }}>Privado - Administración</span>
+
+                                      <button
+                                        onClick={() => setFinancialReportModal({ isOpen: true, vehicle: selectedVehicle, item })}
+                                        style={{
+                                          backgroundColor: "var(--color-success)",
+                                          color: "#fff",
+                                          border: "none",
+                                          padding: "6px 12px",
+                                          borderRadius: "6px",
+                                          fontSize: "0.78rem",
+                                          fontWeight: "700",
+                                          cursor: "pointer",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: "6px"
+                                        }}
+                                        type="button"
+                                      >
+                                        <Printer size={14} /> Imprimir Reporte Financiero (PDF)
+                                      </button>
                                     </div>
 
-                                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "10px" }}>
+                                    {/* Pie / Donut Chart */}
+                                    <FinancialPieChart 
+                                      costoRepuestos={fin.costoRepuestos}
+                                      costoManoObra={fin.costoManoObra}
+                                      costoServiciosExternos={fin.costoServiciosExternos}
+                                      utilidadNeta={fin.utilidadNeta}
+                                    />
+
+                                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "10px", marginTop: "10px" }}>
                                       <div style={{ backgroundColor: "rgba(0,0,0,0.2)", padding: "8px 10px", borderRadius: "6px" }}>
                                         <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", display: "block" }}>💵 Precio al Cliente:</span>
                                         <strong style={{ fontSize: "0.95rem", color: "#fff" }}>{formatMoney(fin.totalVenta)}</strong>
@@ -782,6 +893,32 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
                               {/* Expanded budget & checklist details */}
                               {isExpanded && (
                                 <div className="animate-fade-in" style={styles.expandedContent}>
+                                  
+                                  {/* Diagnostic Printable Header Button */}
+                                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", paddingBottom: "10px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                                    <span style={{ fontSize: "0.85rem", fontWeight: "800", color: "#fff", display: "flex", alignItems: "center", gap: "6px" }}>
+                                      <Wrench size={16} color="var(--color-primary)" /> Ficha Técnica de Diagnóstico y Presupuesto
+                                    </span>
+                                    <button
+                                      onClick={() => setDiagnosticReportModal({ isOpen: true, vehicle: selectedVehicle, item })}
+                                      style={{
+                                        backgroundColor: "var(--color-primary)",
+                                        color: "#fff",
+                                        border: "none",
+                                        padding: "6px 12px",
+                                        borderRadius: "6px",
+                                        fontSize: "0.78rem",
+                                        fontWeight: "700",
+                                        cursor: "pointer",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "6px"
+                                      }}
+                                      type="button"
+                                    >
+                                      <Printer size={14} /> Imprimir Ficha Diagnóstico (PDF)
+                                    </button>
+                                  </div>
                                   {/* Warning Lights checklist */}
                                   {item.luces && item.luces.length > 0 && (
                                     <div style={{ marginBottom: "16px", textAlign: "left" }}>
@@ -1200,6 +1337,440 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <span>Firma de Conformidad: ______________________</span>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FINANCIAL REPORT MODAL (WITH PIE CHART) */}
+      {financialReportModal.isOpen && (() => {
+        const fin = financialReportModal.item ? calculateFinancials(financialReportModal.item) : selectedVehicleFinancials;
+        return (
+          <div style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0,0,0,0.85)",
+            backdropFilter: "blur(6px)",
+            zIndex: 9999,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: "20px"
+          }}>
+            <div style={{
+              backgroundColor: "#111827",
+              border: "1px solid rgba(255, 255, 255, 0.15)",
+              borderRadius: "12px",
+              width: "100%",
+              maxWidth: "850px",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              boxShadow: "0 20px 40px rgba(0,0,0,0.6)",
+              color: "#f3f4f6"
+            }} className="client-report-paper">
+              
+              {/* Modal Actions Header (Hidden during print) */}
+              <div style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: "16px 24px",
+                borderBottom: "1px solid rgba(255,255,255,0.1)",
+                backgroundColor: "rgba(255,255,255,0.02)"
+              }} className="no-print">
+                <h3 style={{ margin: 0, fontSize: "1.1rem", color: "var(--color-success)", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <PieChart size={18} /> Informe Interno de Rentabilidad y Utilidad
+                </h3>
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <button
+                    onClick={() => window.print()}
+                    style={{
+                      backgroundColor: "var(--color-success)",
+                      color: "#fff",
+                      border: "none",
+                      padding: "8px 16px",
+                      borderRadius: "6px",
+                      fontWeight: "700",
+                      fontSize: "0.85rem",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px"
+                    }}
+                    type="button"
+                  >
+                    <Printer size={16} /> Imprimir / PDF
+                  </button>
+                  <button
+                    onClick={() => setFinancialReportModal({ isOpen: false, item: null, vehicle: null })}
+                    style={{
+                      backgroundColor: "rgba(255,255,255,0.1)",
+                      color: "#fff",
+                      border: "none",
+                      padding: "8px 12px",
+                      borderRadius: "6px",
+                      cursor: "pointer"
+                    }}
+                    type="button"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Printable Content Sheet */}
+              <div style={{ padding: "30px", textAlign: "left" }}>
+                
+                {/* Header Branding */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid var(--color-success)", paddingBottom: "16px", marginBottom: "20px" }}>
+                  <div>
+                    <h1 style={{ margin: 0, fontSize: "1.6rem", fontWeight: "900", color: "#fff", letterSpacing: "1px" }}>
+                      LOS PITS
+                    </h1>
+                    <p style={{ margin: "2px 0 0 0", fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                      Informe de Rentabilidad Financiera & Margenes Directos
+                    </p>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", display: "block" }}>DOCUMENTO PRIVADO</span>
+                    <strong style={{ fontSize: "1.1rem", color: "var(--color-success)" }}>
+                      {financialReportModal.item?.id ? `UTILIDAD ORDEN #${String(financialReportModal.item.id).slice(-6)}` : "INFORME ACUMULADO VEHÍCULO"}
+                    </strong>
+                    <span style={{ fontSize: "0.78rem", color: "var(--text-muted)", display: "block", marginTop: "2px" }}>
+                      Fecha: {formatDate(financialReportModal.item?.fecha || financialReportModal.vehicle?.lastServiceDate)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Vehicle & Client Info Boxes */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "20px" }}>
+                  <div style={{ backgroundColor: "rgba(255,255,255,0.03)", padding: "14px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <h4 style={{ margin: "0 0 10px 0", fontSize: "0.85rem", color: "var(--color-primary)", textTransform: "uppercase" }}>Datos del Vehículo</h4>
+                    <div style={{ fontSize: "0.82rem", display: "flex", flexDirection: "column", gap: "4px" }}>
+                      <div><strong>Placa:</strong> {financialReportModal.vehicle?.placa}</div>
+                      <div><strong>Vehículo:</strong> {financialReportModal.vehicle?.marca} {financialReportModal.vehicle?.linea} ({financialReportModal.vehicle?.anio})</div>
+                      <div><strong>Chasis / VIN:</strong> {financialReportModal.vehicle?.chasis}</div>
+                    </div>
+                  </div>
+
+                  <div style={{ backgroundColor: "rgba(255,255,255,0.03)", padding: "14px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <h4 style={{ margin: "0 0 10px 0", fontSize: "0.85rem", color: "var(--color-primary)", textTransform: "uppercase" }}>Datos del Cliente & Servicio</h4>
+                    <div style={{ fontSize: "0.82rem", display: "flex", flexDirection: "column", gap: "4px" }}>
+                      <div><strong>Cliente:</strong> {financialReportModal.vehicle?.cliente}</div>
+                      {financialReportModal.item?.mecanico && (
+                        <div><strong>Atendido por:</strong> {financialReportModal.item.mecanico}</div>
+                      )}
+                      <div><strong>Tipo:</strong> {financialReportModal.item?.tipo || "Expediente Vehicular"}</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* SVG DONUT PIE CHART VISUALIZATION */}
+                {fin && (
+                  <div style={{ backgroundColor: "rgba(255,255,255,0.02)", padding: "20px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.06)", marginBottom: "20px" }}>
+                    <h4 style={{ margin: "0 0 12px 0", fontSize: "0.88rem", color: "var(--color-success)", textTransform: "uppercase", textAlign: "center" }}>
+                      📊 Distribución Porcentual de Insumos, Costos Operativos y Ganancia Neta
+                    </h4>
+                    <FinancialPieChart 
+                      costoRepuestos={fin.costoRepuestos}
+                      costoManoObra={fin.costoManoObra}
+                      costoServiciosExternos={fin.costoServiciosExternos}
+                      utilidadNeta={fin.utilidadNeta}
+                    />
+                  </div>
+                )}
+
+                {/* Detailed Breakdown Table */}
+                {fin && (
+                  <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "20px" }}>
+                    <thead>
+                      <tr style={{ backgroundColor: "rgba(255,255,255,0.05)", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+                        <th style={{ padding: "10px", textAlign: "left", fontSize: "0.78rem", color: "var(--text-muted)" }}>Rubro Financiero</th>
+                        <th style={{ padding: "10px", textAlign: "right", fontSize: "0.78rem", color: "var(--text-muted)" }}>Monto Total (Q)</th>
+                        <th style={{ padding: "10px", textAlign: "right", fontSize: "0.78rem", color: "var(--text-muted)" }}>Porcentaje (%)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                        <td style={{ padding: "10px", fontSize: "0.85rem", color: "#fff" }}>💵 Venta / Cobro Total</td>
+                        <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", fontWeight: "bold", color: "#fff" }}>{formatMoney(fin.totalVenta)}</td>
+                        <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)" }}>100.0%</td>
+                      </tr>
+                      <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                        <td style={{ padding: "10px", fontSize: "0.85rem", color: "#f87171" }}>📦 Costo de Repuestos e Insumos</td>
+                        <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", fontWeight: "bold", color: "#f87171" }}>{formatMoney(fin.costoRepuestos)}</td>
+                        <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "#f87171" }}>{fin.totalVenta > 0 ? ((fin.costoRepuestos / fin.totalVenta) * 100).toFixed(1) : 0}%</td>
+                      </tr>
+                      <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                        <td style={{ padding: "10px", fontSize: "0.85rem", color: "#60a5fa" }}>🛠️ Costo Mano de Obra (Comisión)</td>
+                        <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", fontWeight: "bold", color: "#60a5fa" }}>{formatMoney(fin.costoManoObra)}</td>
+                        <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "#60a5fa" }}>{fin.totalVenta > 0 ? ((fin.costoManoObra / fin.totalVenta) * 100).toFixed(1) : 0}%</td>
+                      </tr>
+                      {fin.costoServiciosExternos > 0 && (
+                        <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                          <td style={{ padding: "10px", fontSize: "0.85rem", color: "#fbbf24" }}>⚙️ Trabajos Subcontratados</td>
+                          <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", fontWeight: "bold", color: "#fbbf24" }}>{formatMoney(fin.costoServiciosExternos)}</td>
+                          <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "#fbbf24" }}>{fin.totalVenta > 0 ? ((fin.costoServiciosExternos / fin.totalVenta) * 100).toFixed(1) : 0}%</td>
+                        </tr>
+                      )}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ borderTop: "2px solid rgba(16, 185, 129, 0.4)", backgroundColor: "rgba(16, 185, 129, 0.08)" }}>
+                        <td style={{ padding: "12px 10px", textAlign: "left", fontWeight: "800", fontSize: "0.95rem", color: "var(--color-success)" }}>💎 UTILIDAD NETA DEL TALLER:</td>
+                        <td style={{ padding: "12px 10px", textAlign: "right", fontWeight: "900", fontSize: "1.1rem", color: "var(--color-success)" }}>{formatMoney(fin.utilidadNeta)}</td>
+                        <td style={{ padding: "12px 10px", textAlign: "right", fontWeight: "900", fontSize: "1.1rem", color: "var(--color-success)" }}>{fin.margenPct.toFixed(1)}%</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                )}
+
+                {/* Footer Signatures */}
+                <div style={{ marginTop: "30px", paddingTop: "16px", borderTop: "1px solid rgba(255,255,255,0.08)", fontSize: "0.75rem", color: "var(--text-muted)", display: "flex", justifyContent: "space-between" }}>
+                  <div>
+                    <span>🔒 Documento de auditoría financiera interna.</span>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <span>Firma Administración / Gerencia: ______________________</span>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* DIAGNOSTIC AND BUDGET REPORT MODAL */}
+      {diagnosticReportModal.isOpen && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0,0,0,0.85)",
+          backdropFilter: "blur(6px)",
+          zIndex: 9999,
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          padding: "20px"
+        }}>
+          <div style={{
+            backgroundColor: "#111827",
+            border: "1px solid rgba(255, 255, 255, 0.15)",
+            borderRadius: "12px",
+            width: "100%",
+            maxWidth: "850px",
+            maxHeight: "90vh",
+            overflowY: "auto",
+            boxShadow: "0 20px 40px rgba(0,0,0,0.6)",
+            color: "#f3f4f6"
+          }} className="client-report-paper">
+            
+            {/* Modal Header */}
+            <div style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: "16px 24px",
+              borderBottom: "1px solid rgba(255,255,255,0.1)",
+              backgroundColor: "rgba(255,255,255,0.02)"
+            }} className="no-print">
+              <h3 style={{ margin: 0, fontSize: "1.1rem", color: "#fff", display: "flex", alignItems: "center", gap: "8px" }}>
+                <Wrench size={18} color="var(--color-primary)" /> Vista Ficha Técnica y Diagnóstico
+              </h3>
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button
+                  onClick={() => window.print()}
+                  style={{
+                    backgroundColor: "var(--color-primary)",
+                    color: "#fff",
+                    border: "none",
+                    padding: "8px 16px",
+                    borderRadius: "6px",
+                    fontWeight: "700",
+                    fontSize: "0.85rem",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px"
+                  }}
+                  type="button"
+                >
+                  <Printer size={16} /> Imprimir / PDF
+                </button>
+                <button
+                  onClick={() => setDiagnosticReportModal({ isOpen: false, item: null, vehicle: null })}
+                  style={{
+                    backgroundColor: "rgba(255,255,255,0.1)",
+                    color: "#fff",
+                    border: "none",
+                    padding: "8px 12px",
+                    borderRadius: "6px",
+                    cursor: "pointer"
+                  }}
+                  type="button"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Content Sheet */}
+            <div style={{ padding: "30px", textAlign: "left" }}>
+              
+              {/* Header Branding */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid var(--color-primary)", paddingBottom: "16px", marginBottom: "20px" }}>
+                <div>
+                  <h1 style={{ margin: 0, fontSize: "1.6rem", fontWeight: "900", color: "#fff", letterSpacing: "1px" }}>
+                    LOS PITS
+                  </h1>
+                  <p style={{ margin: "2px 0 0 0", fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                    Ficha Técnica de Diagnóstico & Presupuesto
+                  </p>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", display: "block" }}>HOJA DE INSPECCIÓN TÉCNICA</span>
+                  <strong style={{ fontSize: "1.1rem", color: "var(--color-primary)" }}>
+                    {diagnosticReportModal.item?.id ? `ORDEN #${String(diagnosticReportModal.item.id).slice(-6)}` : "FICHA DE RECEPCIÓN"}
+                  </strong>
+                  <span style={{ fontSize: "0.78rem", color: "var(--text-muted)", display: "block", marginTop: "2px" }}>
+                    Fecha: {formatDate(diagnosticReportModal.item?.fecha)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Vehicle & Client Info Boxes */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "20px" }}>
+                <div style={{ backgroundColor: "rgba(255,255,255,0.03)", padding: "14px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <h4 style={{ margin: "0 0 10px 0", fontSize: "0.85rem", color: "var(--color-primary)", textTransform: "uppercase" }}>Datos del Vehículo</h4>
+                  <div style={{ fontSize: "0.82rem", display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <div><strong>Placa:</strong> {diagnosticReportModal.vehicle?.placa}</div>
+                    <div><strong>Vehículo:</strong> {diagnosticReportModal.vehicle?.marca} {diagnosticReportModal.vehicle?.linea} ({diagnosticReportModal.vehicle?.anio})</div>
+                    <div><strong>Chasis / VIN:</strong> {diagnosticReportModal.vehicle?.chasis}</div>
+                    <div><strong>Kilometraje:</strong> {diagnosticReportModal.item?.kilometraje || "N/A"} km</div>
+                    <div><strong>Combustible:</strong> {diagnosticReportModal.item?.combustible !== undefined ? diagnosticReportModal.item.combustible : 0}%</div>
+                  </div>
+                </div>
+
+                <div style={{ backgroundColor: "rgba(255,255,255,0.03)", padding: "14px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <h4 style={{ margin: "0 0 10px 0", fontSize: "0.85rem", color: "var(--color-primary)", textTransform: "uppercase" }}>Datos del Cliente y Servicio</h4>
+                  <div style={{ fontSize: "0.82rem", display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <div><strong>Cliente:</strong> {diagnosticReportModal.vehicle?.cliente}</div>
+                    <div><strong>Mecánico Asignado:</strong> {diagnosticReportModal.item?.mecanico || "Sin asignar"}</div>
+                    <div><strong>Motivo / Trabajo:</strong> {diagnosticReportModal.item?.trabajo}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Warning Lights */}
+              {diagnosticReportModal.item?.luces && diagnosticReportModal.item.luces.length > 0 && (
+                <div style={{ marginBottom: "20px" }}>
+                  <h4 style={{ margin: "0 0 8px 0", fontSize: "0.85rem", color: "#ef4444", textTransform: "uppercase" }}>🚨 Testigos / Luces de Alerta en Tablero al Ingreso</h4>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                    {diagnosticReportModal.item.luces.map(l => (
+                      <span key={l} style={{ fontSize: "0.78rem", padding: "4px 10px", borderRadius: "6px", backgroundColor: "rgba(239, 68, 68, 0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#fff", fontWeight: "bold" }}>
+                        {getWarningLightLabel(l)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Checklist de Recepción */}
+              {diagnosticReportModal.item?.checklist && Object.keys(diagnosticReportModal.item.checklist).length > 0 && (
+                <div style={{ marginBottom: "20px" }}>
+                  <h4 style={{ margin: "0 0 10px 0", fontSize: "0.88rem", color: "#fff", textTransform: "uppercase" }}>📋 Checklist de Recepción e Inspección Técnica</h4>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "10px" }}>
+                    {Object.entries(diagnosticReportModal.item.checklist).map(([key, value]) => {
+                      const label = defaultChecklistItems.find(i => i.id === key)?.label || key;
+                      let status = typeof value === "object" ? value.status || "N/A" : value || "N/A";
+                      let note = typeof value === "object" ? value.note || "" : "";
+                      return (
+                        <div key={key} style={{ padding: "8px 12px", borderRadius: "6px", backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", fontSize: "0.8rem" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold" }}>
+                            <span>{label}</span>
+                            <span style={{ color: (status === "Bueno" || status === "Funciona") ? "var(--color-success)" : status === "Regular" ? "var(--color-warning)" : "#f87171" }}>{status}</span>
+                          </div>
+                          {note && <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "4px" }}>📝 {note}</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Detailed Budget Table */}
+              <h4 style={{ margin: "0 0 10px 0", fontSize: "0.88rem", color: "#fff", textTransform: "uppercase" }}>📋 Presupuesto Técnico Detallado</h4>
+              {diagnosticReportModal.item?.presupuesto ? (
+                <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "20px" }}>
+                  <thead>
+                    <tr style={{ backgroundColor: "rgba(255,255,255,0.05)", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+                      <th style={{ padding: "10px", textAlign: "left", fontSize: "0.78rem", color: "var(--text-muted)" }}>Descripción / Ítem</th>
+                      <th style={{ padding: "10px", textAlign: "center", fontSize: "0.78rem", color: "var(--text-muted)" }}>Tipo</th>
+                      <th style={{ padding: "10px", textAlign: "right", fontSize: "0.78rem", color: "var(--text-muted)" }}>Precio</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(diagnosticReportModal.item.presupuesto.labor || []).map((l, i) => (
+                      <tr key={`l-${i}`} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                        <td style={{ padding: "10px", fontSize: "0.85rem", color: "#fff" }}>🛠️ {l.desc}</td>
+                        <td style={{ padding: "10px", textAlign: "center", fontSize: "0.8rem", color: "var(--text-muted)" }}>Mano de Obra</td>
+                        <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", fontWeight: "600", color: "#fff" }}>{formatMoney(l.price)}</td>
+                      </tr>
+                    ))}
+                    {(diagnosticReportModal.item.presupuesto.parts || []).map((p, i) => (
+                      <tr key={`p-${i}`} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                        <td style={{ padding: "10px", fontSize: "0.85rem", color: "#fff" }}>📦 {p.desc} {p.code ? `(${p.code})` : ""} x{p.qty || 1}</td>
+                        <td style={{ padding: "10px", textAlign: "center", fontSize: "0.8rem", color: "var(--text-muted)" }}>Repuesto</td>
+                        <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", fontWeight: "600", color: "#fff" }}>{formatMoney((p.price || 0) * (p.qty || 1))}</td>
+                      </tr>
+                    ))}
+                    {(diagnosticReportModal.item.presupuesto.services || []).map((s, i) => (
+                      <tr key={`s-${i}`} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                        <td style={{ padding: "10px", fontSize: "0.85rem", color: "#fff" }}>⚙️ {s.desc}</td>
+                        <td style={{ padding: "10px", textAlign: "center", fontSize: "0.8rem", color: "var(--text-muted)" }}>Servicio Técnico</td>
+                        <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", fontWeight: "600", color: "#fff" }}>{formatMoney(s.price)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ borderTop: "2px solid rgba(255,255,255,0.15)" }}>
+                      <td colSpan={2} style={{ padding: "12px 10px", textAlign: "right", fontWeight: "800", fontSize: "0.95rem", color: "#fff" }}>TOTAL PRESUPUESTADO:</td>
+                      <td style={{ padding: "12px 10px", textAlign: "right", fontWeight: "900", fontSize: "1.1rem", color: "var(--color-primary)" }}>{formatMoney(diagnosticReportModal.item.total)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              ) : (
+                <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", fontStyle: "italic", marginBottom: "20px" }}>No se registró presupuesto desglosado para esta orden.</p>
+              )}
+
+              {/* Photos */}
+              {diagnosticReportModal.item?.fotos && diagnosticReportModal.item.fotos.length > 0 && (
+                <div style={{ marginBottom: "20px" }}>
+                  <h4 style={{ margin: "0 0 10px 0", fontSize: "0.88rem", color: "#fff", textTransform: "uppercase" }}>📸 Fotografías Adjuntas al Expediente</h4>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+                    {diagnosticReportModal.item.fotos.map((img, idx) => (
+                      <img key={idx} src={img} alt={`Ficha ${idx + 1}`} style={{ width: "120px", height: "120px", borderRadius: "8px", objectFit: "cover", border: "1px solid rgba(255,255,255,0.1)" }} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Signatures */}
+              <div style={{ marginTop: "30px", paddingTop: "16px", borderTop: "1px solid rgba(255,255,255,0.08)", fontSize: "0.75rem", color: "var(--text-muted)", display: "flex", justifyContent: "space-between" }}>
+                <div>
+                  <span>Mecánico Encargado: ______________________</span>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <span>Firma Asesor Técnico / Jefe de Taller: ______________________</span>
                 </div>
               </div>
 
