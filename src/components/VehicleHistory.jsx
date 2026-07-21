@@ -45,6 +45,7 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
   const [selectedPlaca, setSelectedPlaca] = useState(null);
   const [expandedOrders, setExpandedOrders] = useState({});
   const [expandedFinancials, setExpandedFinancials] = useState({});
+  const [showVehicleFinancials, setShowVehicleFinancials] = useState(false);
   const [historyFilter, setHistoryFilter] = useState("Todos"); // "Todos" | "Taller" | "Carwash"
   const [clientReportModal, setClientReportModal] = useState({ isOpen: false, item: null, vehicle: null });
 
@@ -442,7 +443,7 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
                 return (
                   <button
                     key={v.placa}
-                    onClick={() => { setSelectedPlaca(v.placa); setExpandedOrders({}); }}
+                    onClick={() => { setSelectedPlaca(v.placa); setExpandedOrders({}); setShowVehicleFinancials(false); }}
                     style={{
                       ...styles.vehicleItem,
                       ...(isActive ? styles.vehicleItemActive : {})
@@ -493,26 +494,51 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => setClientReportModal({ isOpen: true, vehicle: selectedVehicle, item: null })}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      backgroundColor: "var(--color-primary)",
-                      color: "#fff",
-                      border: "none",
-                      padding: "8px 14px",
-                      borderRadius: "8px",
-                      fontSize: "0.82rem",
-                      fontWeight: "700",
-                      cursor: "pointer",
-                      boxShadow: "0 4px 12px rgba(99, 102, 241, 0.25)"
-                    }}
-                    type="button"
-                  >
-                    <Printer size={16} /> Reporte Cliente (Imprimir / PDF)
-                  </button>
+                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                    <button
+                      onClick={() => setClientReportModal({ isOpen: true, vehicle: selectedVehicle, item: null })}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        backgroundColor: "var(--color-primary)",
+                        color: "#fff",
+                        border: "none",
+                        padding: "8px 14px",
+                        borderRadius: "8px",
+                        fontSize: "0.82rem",
+                        fontWeight: "700",
+                        cursor: "pointer",
+                        boxShadow: "0 4px 12px rgba(99, 102, 241, 0.25)"
+                      }}
+                      type="button"
+                    >
+                      <Printer size={16} /> Reporte Cliente (PDF)
+                    </button>
+
+                    {isStaff && (
+                      <button
+                        onClick={() => setShowVehicleFinancials(prev => !prev)}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          backgroundColor: showVehicleFinancials ? "rgba(16, 185, 129, 0.2)" : "rgba(255, 255, 255, 0.08)",
+                          color: showVehicleFinancials ? "var(--color-success)" : "#fff",
+                          border: showVehicleFinancials ? "1px solid rgba(16, 185, 129, 0.4)" : "1px solid rgba(255, 255, 255, 0.12)",
+                          padding: "8px 14px",
+                          borderRadius: "8px",
+                          fontSize: "0.82rem",
+                          fontWeight: "700",
+                          cursor: "pointer",
+                          transition: "all 0.2s ease"
+                        }}
+                        type="button"
+                      >
+                        <PieChart size={16} /> {showVehicleFinancials ? "Ocultar Utilidad" : "Ver Utilidad y Gastos"}
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div style={styles.infoGrid}>
@@ -538,8 +564,8 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
                   </div>
                 </div>
 
-                {/* Staff Financial Breakdown Banner */}
-                {isStaff && selectedVehicleFinancials && (
+                {/* Staff Financial Breakdown Banner (Hidden by default, shown on toggle) */}
+                {isStaff && showVehicleFinancials && selectedVehicleFinancials && (
                   <div style={{
                     marginTop: "16px",
                     paddingTop: "14px",
@@ -548,7 +574,7 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
                     gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
                     gap: "12px",
                     textAlign: "left"
-                  }}>
+                  }} className="animate-fade-in">
                     <div style={{ backgroundColor: "rgba(255, 255, 255, 0.02)", padding: "10px 12px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.04)" }}>
                       <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block" }}>📊 Venta Acumulada</span>
                       <strong style={{ fontSize: "1.05rem", color: "#fff" }}>{formatMoney(selectedVehicleFinancials.totalVenta)}</strong>
