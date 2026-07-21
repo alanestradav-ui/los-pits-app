@@ -5521,50 +5521,7 @@ export default function Taller({
             </div>
             
             <form onSubmit={guardarEdicionIngreso} style={styles.form}>
-              <div style={{ display: "flex", gap: "12px" }}>
-                <div style={{ ...styles.inputGroup, flex: 1.5 }}>
-                  <label style={styles.label}>Cliente *</label>
-                  <input
-                    type="text"
-                    required
-                    className="input-field"
-                    value={editingEntryOrder.cliente || ""}
-                    onChange={(e) => setEditingEntryOrder({ ...editingEntryOrder, cliente: e.target.value })}
-                  />
-                </div>
-                <div style={{ ...styles.inputGroup, flex: 1 }}>
-                  <label style={styles.label}>Teléfono</label>
-                  <input
-                    type="text"
-                    className="input-field"
-                    value={editingEntryOrder.telefono || ""}
-                    onChange={(e) => setEditingEntryOrder({ ...editingEntryOrder, telefono: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: "flex", gap: "12px" }}>
-                <div style={{ ...styles.inputGroup, flex: 1 }}>
-                  <label style={styles.label}>NIT</label>
-                  <input
-                    type="text"
-                    className="input-field"
-                    value={editingEntryOrder.nit || ""}
-                    onChange={(e) => setEditingEntryOrder({ ...editingEntryOrder, nit: e.target.value })}
-                  />
-                </div>
-                <div style={{ ...styles.inputGroup, flex: 2 }}>
-                  <label style={styles.label}>Nombre de Facturación</label>
-                  <input
-                    type="text"
-                    className="input-field"
-                    value={editingEntryOrder.nombreFacturacion || ""}
-                    onChange={(e) => setEditingEntryOrder({ ...editingEntryOrder, nombreFacturacion: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              {/* Placa - Dedicated Full Width Row */}
+              {/* Placa - Dedicated Full Width Row (First field) */}
               <div style={styles.inputGroup}>
                 <label style={styles.label}>Placa *</label>
                 <div style={{ display: "flex", gap: "8px" }}>
@@ -5607,6 +5564,49 @@ export default function Taller({
                       }
                     }}
                     style={{ flex: 1, minWidth: 0, textTransform: "uppercase" }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "12px" }}>
+                <div style={{ ...styles.inputGroup, flex: 1.5 }}>
+                  <label style={styles.label}>Cliente *</label>
+                  <input
+                    type="text"
+                    required
+                    className="input-field"
+                    value={editingEntryOrder.cliente || ""}
+                    onChange={(e) => setEditingEntryOrder({ ...editingEntryOrder, cliente: e.target.value })}
+                  />
+                </div>
+                <div style={{ ...styles.inputGroup, flex: 1 }}>
+                  <label style={styles.label}>Teléfono</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingEntryOrder.telefono || ""}
+                    onChange={(e) => setEditingEntryOrder({ ...editingEntryOrder, telefono: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "12px" }}>
+                <div style={{ ...styles.inputGroup, flex: 1 }}>
+                  <label style={styles.label}>NIT</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingEntryOrder.nit || ""}
+                    onChange={(e) => setEditingEntryOrder({ ...editingEntryOrder, nit: e.target.value })}
+                  />
+                </div>
+                <div style={{ ...styles.inputGroup, flex: 2 }}>
+                  <label style={styles.label}>Nombre de Facturación</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingEntryOrder.nombreFacturacion || ""}
+                    onChange={(e) => setEditingEntryOrder({ ...editingEntryOrder, nombreFacturacion: e.target.value })}
                   />
                 </div>
               </div>
