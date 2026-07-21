@@ -396,8 +396,25 @@ export default function Carwash({
   const isWorker = usuarioActual?.rol === "lavador";
   const isManager = usuarioActual?.rol === "admin" || usuarioActual?.rol === "cajero";
 
-  // Wash type presets from config
-  const presets = carwashPresets || [];
+  // Wash type presets from config (Deduplicated by tipo)
+  const presetsMap = new Map();
+  (carwashPresets || []).forEach(p => {
+    if (p && p.tipo) {
+      const key = String(p.tipo).trim().toLowerCase();
+      if (!presetsMap.has(key)) {
+        presetsMap.set(key, p);
+      }
+    }
+  });
+  const presets = Array.from(presetsMap.values());
+
+  // Deduplicated washers list
+  const lavadoresList = Array.from(
+    new Set((lavadores || []).map(l => (typeof l === "string" ? l.trim() : "")).filter(Boolean))
+  );
+  if (lavadoresList.length === 0) {
+    lavadoresList.push("Luis", "Carlos");
+  }
 
   // Filter carwash supplies
   const filteredInvProducts = (carwashInventory || []).filter(p => {
@@ -1929,7 +1946,7 @@ export default function Carwash({
               <div style={styles.inputGroup}>
                 <label style={styles.label}>Asignar Lavadores (Opcional)</label>
                 <div style={{ display: "flex", gap: "14px", flexWrap: "wrap", marginTop: "4px" }}>
-                  {lavadores.map((l, i) => {
+                  {lavadoresList.map((l, i) => {
                     const isChecked = selectedLavadores.includes(l);
                     return (
                       <label key={i} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.9rem", cursor: "pointer", color: isChecked ? "#fff" : "var(--text-muted)", fontWeight: isChecked ? "bold" : "normal" }}>
@@ -2256,7 +2273,7 @@ export default function Carwash({
                       <div style={styles.infoRow}>
                         <span style={styles.infoLabel}>🧼 Lavador(es):</span>
                         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end", maxWidth: "60%" }}>
-                          {lavadores.map((l, idx) => {
+                          {lavadoresList.map((l, idx) => {
                             const washerList = c.lavadores || (c.lavador ? c.lavador.split(", ").filter(Boolean) : []);
                             const isChecked = washerList.includes(l);
                             return (

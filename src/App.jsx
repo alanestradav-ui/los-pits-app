@@ -203,20 +203,26 @@ export default function App() {
     });
   });
 
-  const listMecanicos = usuarios
-    .filter(u => {
-      const r = (u.rol || "").trim().toLowerCase();
-      return r === "mecanico" || r === "mecánico" || r === "jefe de taller" || r === "jefe" || r === "admin" || r === "administrador" || r === "administradora";
-    })
-    .map(u => u.user);
+  const listMecanicos = Array.from(new Set(
+    usuarios
+      .filter(u => {
+        const r = (u.rol || "").trim().toLowerCase();
+        return r === "mecanico" || r === "mecánico" || r === "jefe de taller" || r === "jefe" || r === "admin" || r === "administrador" || r === "administradora";
+      })
+      .map(u => (u.user || "").trim())
+      .filter(Boolean)
+  ));
   const mecanicos = listMecanicos.length > 0 ? listMecanicos : ["Juan", "Pedro"];
 
-  const listLavadores = usuarios
-    .filter(u => {
-      const r = (u.rol || "").trim().toLowerCase();
-      return r === "lavador" || r === "admin" || r === "administrador" || r === "administradora";
-    })
-    .map(u => u.user);
+  const listLavadores = Array.from(new Set(
+    usuarios
+      .filter(u => {
+        const r = (u.rol || "").trim().toLowerCase();
+        return r === "lavador" || r === "admin" || r === "administrador" || r === "administradora";
+      })
+      .map(u => (u.user || "").trim())
+      .filter(Boolean)
+  ));
   const lavadores = listLavadores.length > 0 ? listLavadores : ["Luis", "Carlos"];
 
   // 🔑 LOGIN STATES
