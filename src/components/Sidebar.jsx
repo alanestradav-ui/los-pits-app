@@ -16,7 +16,8 @@ import {
   Store,
   Receipt,
   Users,
-  Wallet
+  Wallet,
+  Tv
 } from "lucide-react";
 
 export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLogout, isOpen, setIsOpen, realtimeStatus }) {
@@ -41,6 +42,12 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
       label: "Carwash", 
       icon: Car, 
       roles: ["admin", "cajero", "lavador"] 
+    },
+    { 
+      id: "pantalla", 
+      label: "Pantalla Monitor", 
+      icon: Tv, 
+      roles: ["admin", "cajero", "mecanico", "lavador", "jefe de taller"] 
     },
     { 
       id: "parqueo", 

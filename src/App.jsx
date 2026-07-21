@@ -17,6 +17,7 @@ import VehiculosVenta from "./components/VehiculosVenta";
 import ClientesVehiculos from "./components/ClientesVehiculos";
 import Compras from "./components/Compras";
 import Accesorios from "./components/Accesorios";
+import Pantalla from "./components/Pantalla";
 import { getLocalStorage, setLocalStorage } from "./utils/storage";
 import { getSupabaseClient, syncKeyToCloud, safeParseJSON } from "./utils/supabase";
 
@@ -959,6 +960,7 @@ export default function App() {
 
   const userHasPermission = (user, tabId) => {
     if (!user) return false;
+    if (tabId === "pantalla") return true; // Pantalla de monitoreo accesible para todos los usuarios registrados
     const activeUser = usuarios.find(u => (u.user || "").toLowerCase().trim() === ((typeof user === "string" ? user : user.user) || "").toLowerCase().trim()) || user;
     const activeRol = (typeof activeUser === "string" ? activeUser : (activeUser.rol || "")).toLowerCase().trim();
     if (activeRol === "admin" || activeRol === "administrador") return true;
@@ -1312,6 +1314,15 @@ export default function App() {
             setCarwash={setCarwash}
             setCuentasPorCobrar={setCuentasPorCobrar}
             onForceSyncCloud={forcePullFromCloud}
+          />
+        )}
+
+        {currentTab === "pantalla" && userHasPermission(usuarioActivo, "pantalla") && (
+          <Pantalla 
+            ordenes={ordenes}
+            carwash={carwash}
+            usuarioActual={usuarioActivo}
+            usuarios={usuarios}
           />
         )}
       </main>
