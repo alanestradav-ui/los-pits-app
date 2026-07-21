@@ -65,6 +65,19 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
     return null;
   };
 
+  // Safe String Extractor helper to prevent React rendering object crashes
+  const getString = (val, fallback = "N/A") => {
+    if (!val) return fallback;
+    if (typeof val === "string") return val.trim() || fallback;
+    if (typeof val === "number") return String(val);
+    if (typeof val === "object") {
+      if (val.nombre) return String(val.nombre);
+      if (val.name) return String(val.name);
+      if (val.marca || val.linea) return `${val.marca || ""} ${val.linea || ""}`.trim();
+    }
+    return fallback;
+  };
+
   // 1. Group and compile history by Plate (placa)
   const vehiclesMap = {};
 
@@ -72,9 +85,13 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
   if (historyFilter === "Todos" || historyFilter === "Taller") {
     (ordenes || []).forEach(o => {
       if (!o) return;
-      // Direct placa extraction, falling back to vehiculo string matching if direct placa is missing (retroactive)
-      let placaClean = (o.placa || "").toUpperCase().trim();
-      if ((!placaClean || placaClean === "N/A" || placaClean === "SIN PLACA") && typeof o.vehiculo === "string") {
+      // Direct placa extraction, falling back to vehiculo string/object matching
+      let placaClean = "";
+      if (typeof o.placa === "string" && o.placa.trim()) {
+        placaClean = o.placa.toUpperCase().trim();
+      } else if (o.vehiculo && typeof o.vehiculo === "object" && o.vehiculo.placa) {
+        placaClean = String(o.vehiculo.placa).toUpperCase().trim();
+      } else if (typeof o.vehiculo === "string") {
         const match = o.vehiculo.match(/\(([^)]+)\)/);
         if (match) {
           placaClean = match[1].toUpperCase().trim();
@@ -83,33 +100,44 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
       
       if (!placaClean || placaClean === "N/A" || placaClean === "SIN PLACA") return;
       
-      // Clean plate from vehicle string description for better display
-      let vehDesc = o.vehiculo || `${o.marca || ""} ${o.linea || ""}`;
-      if (typeof vehDesc === "string") {
-        vehDesc = vehDesc.replace(/\s*\([^)]+\)/g, "").trim();
+      // Clean vehicle description string
+      let vehDesc = "";
+      if (typeof o.vehiculo === "string") {
+        vehDesc = o.vehiculo.replace(/\s*\([^)]+\)/g, "").trim();
+      } else if (o.vehiculo && typeof o.vehiculo === "object") {
+        vehDesc = `${o.vehiculo.marca || ""} ${o.vehiculo.linea || ""} (${o.vehiculo.anio || ""})`.trim();
+      } else {
+        vehDesc = `${getString(o.marca, "")} ${getString(o.linea, "")}`.trim();
       }
+      if (!vehDesc || vehDesc === "()") vehDesc = "N/A";
+
+      const marcaStr = typeof o.marca === "object" ? getString(o.marca) : getString(o.marca || o.vehiculo?.marca);
+      const lineaStr = typeof o.linea === "object" ? getString(o.linea) : getString(o.linea || o.vehiculo?.linea);
+      const anioStr = typeof o.anio === "object" ? getString(o.anio) : getString(o.anio || o.vehiculo?.anio);
+      const chasisStr = typeof o.chasis === "object" ? getString(o.chasis) : getString(o.chasis || o.vehiculo?.chasis);
+      const clienteStr = getString(o.cliente);
 
       if (!vehiclesMap[placaClean]) {
         vehiclesMap[placaClean] = {
           placa: placaClean,
-          marca: o.marca || "N/A",
-          linea: o.linea || "N/A",
-          anio: o.anio || "N/A",
-          chasis: o.chasis || "N/A",
-          cliente: o.cliente || "N/A",
-          telefono: o.telefono || "",
+          marca: marcaStr,
+          linea: lineaStr,
+          anio: anioStr,
+          chasis: chasisStr,
+          cliente: clienteStr,
+          telefono: getString(o.telefono, ""),
           vehiculoDesc: vehDesc,
           history: []
         };
       }
 
       // Keep the most complete data
-      if (o.marca && o.marca !== "N/A") vehiclesMap[placaClean].marca = o.marca;
-      if (o.linea && o.linea !== "N/A") vehiclesMap[placaClean].linea = o.linea;
-      if (o.anio && o.anio !== "N/A") vehiclesMap[placaClean].anio = o.anio;
-      if (o.chasis && o.chasis !== "N/A") vehiclesMap[placaClean].chasis = o.chasis;
-      if (o.cliente && o.cliente !== "N/A") vehiclesMap[placaClean].cliente = o.cliente;
-      if (o.telefono) vehiclesMap[placaClean].telefono = o.telefono;
+      if (marcaStr && marcaStr !== "N/A") vehiclesMap[placaClean].marca = marcaStr;
+      if (lineaStr && lineaStr !== "N/A") vehiclesMap[placaClean].linea = lineaStr;
+      if (anioStr && anioStr !== "N/A") vehiclesMap[placaClean].anio = anioStr;
+      if (chasisStr && chasisStr !== "N/A") vehiclesMap[placaClean].chasis = chasisStr;
+      if (clienteStr && clienteStr !== "N/A") vehiclesMap[placaClean].cliente = clienteStr;
+      if (o.telefono) vehiclesMap[placaClean].telefono = getString(o.telefono, "");
 
       const parsedLuces = safeParse(o.luces);
       const parsedFotos = safeParse(o.fotos);
@@ -117,12 +145,12 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
       vehiclesMap[placaClean].history.push({
         id: o.id,
         tipo: "Taller",
-        fecha: o.fecha,
-        estado: o.estado,
-        total: o.total,
-        mecanico: o.mecanico || "Sin asignar",
-        trabajo: o.trabajo || o.motivoIngreso || "Servicio general de taller",
-        kilometraje: o.kilometraje || "N/A",
+        fecha: getString(o.fecha, new Date().toISOString()),
+        estado: getString(o.estado, "Registrado"),
+        total: parseFloat(o.total) || 0,
+        mecanico: getString(o.mecanico, "Sin asignar"),
+        trabajo: getString(o.trabajo || o.motivoIngreso, "Servicio general de taller"),
+        kilometraje: getString(o.kilometraje, "N/A"),
         combustible: o.combustible !== undefined ? o.combustible : 0,
         luces: Array.isArray(parsedLuces) ? parsedLuces : [],
         presupuesto: safeParse(o.presupuesto),
@@ -136,56 +164,58 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
   if (historyFilter === "Todos" || historyFilter === "Carwash") {
     (carwash || []).forEach(c => {
       if (!c) return;
-      // Direct placa extraction, falling back to c.vehiculo string matching or c.placa (retroactive)
-      let placaClean = (c.vehiculo?.placa || "").toUpperCase().trim();
-      if ((!placaClean || placaClean === "N/A") && typeof c.vehiculo === "string") {
+      // Direct placa extraction, falling back to c.vehiculo string/object matching or c.placa
+      let placaClean = "";
+      if (c.vehiculo && typeof c.vehiculo === "object" && c.vehiculo.placa) {
+        placaClean = String(c.vehiculo.placa).toUpperCase().trim();
+      } else if (typeof c.vehiculo === "string") {
         const match = c.vehiculo.match(/\(([^)]+)\)/);
-        if (match) {
-          placaClean = match[1].toUpperCase().trim();
-        }
+        if (match) placaClean = match[1].toUpperCase().trim();
       }
-      if (!placaClean && c.placa) {
+      if (!placaClean && typeof c.placa === "string" && c.placa.trim()) {
         placaClean = c.placa.toUpperCase().trim();
       }
       
       if (!placaClean || placaClean === "N/A" || placaClean === "SIN PLACA") return;
 
-      // Clean plate from vehicle string description for better display
+      // Clean vehicle description string
       let vehDesc = "";
       if (typeof c.vehiculo === "string") {
         vehDesc = c.vehiculo.replace(/\s*\([^)]+\)/g, "").trim();
-      } else {
-        vehDesc = `${c.vehiculo?.marca || ""} ${c.vehiculo?.linea || ""}`.trim();
+      } else if (c.vehiculo && typeof c.vehiculo === "object") {
+        vehDesc = `${c.vehiculo.marca || ""} ${c.vehiculo.linea || ""}`.trim();
       }
       if (!vehDesc) vehDesc = "N/A";
+
+      const clienteStr = getString(c.cliente);
 
       if (!vehiclesMap[placaClean]) {
         vehiclesMap[placaClean] = {
           placa: placaClean,
-          marca: c.vehiculo?.marca || "N/A",
-          linea: c.vehiculo?.linea || "N/A",
+          marca: getString(c.vehiculo?.marca),
+          linea: getString(c.vehiculo?.linea),
           anio: "N/A",
           chasis: "N/A",
-          cliente: c.cliente || "N/A",
-          telefono: c.telefono || "",
+          cliente: clienteStr,
+          telefono: getString(c.telefono, ""),
           vehiculoDesc: vehDesc,
           history: []
         };
       }
 
-      if (c.cliente && c.cliente !== "N/A") vehiclesMap[placaClean].cliente = c.cliente;
-      if (c.telefono) vehiclesMap[placaClean].telefono = c.telefono;
+      if (clienteStr && clienteStr !== "N/A") vehiclesMap[placaClean].cliente = clienteStr;
+      if (c.telefono) vehiclesMap[placaClean].telefono = getString(c.telefono, "");
 
       const parsedFotos = safeParse(c.fotos);
 
       vehiclesMap[placaClean].history.push({
         id: c.id,
         tipo: "Carwash",
-        fecha: c.fecha,
-        estado: c.estado,
-        total: c.precio,
-        lavador: c.lavador || "Sin asignar",
-        tipoLavado: c.tipo,
+        fecha: getString(c.fecha, new Date().toISOString()),
+        estado: getString(c.estado, "Completado"),
+        total: parseFloat(c.precio) || 0,
+        lavador: getString(c.lavador, "Sin asignar"),
+        tipoLavado: getString(c.tipo, "General"),
         fotos: Array.isArray(parsedFotos) ? parsedFotos : []
       });
     });
