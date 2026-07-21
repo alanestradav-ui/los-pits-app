@@ -274,7 +274,7 @@ export default function Finance({
       : 0.10; // default 10%
     
     const cobradas = ordenes
-      .filter(o => o.estado === "Entregado" && o.cajero && o.cajero.toLowerCase() === name.toLowerCase() && o.cajeroComisionApplies !== false && isWithinCommDates(o.fecha, o.id))
+      .filter(o => o.estado === "Entregado" && o.cajero && o.cajero.toLowerCase() === name.toLowerCase() && o.cajeroComisionApplies === true && isWithinCommDates(o.fecha, o.id))
       .reduce((sum, o) => {
         const totalLabor = o.presupuesto?.labor?.reduce((lSum, item) => lSum + (parseFloat(item.price) || 0), 0) || o.total || 0;
         return sum + (totalLabor * pctTaller);
@@ -385,7 +385,7 @@ export default function Finance({
         o.estado === "Entregado" && 
         o.cajero && 
         o.cajero.toLowerCase() === lowerName && 
-        o.cajeroComisionApplies !== false &&
+        o.cajeroComisionApplies === true &&
         isWithinCommDates(o.fecha, o.id)
       );
 

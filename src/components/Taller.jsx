@@ -293,8 +293,8 @@ export default function Taller({
   const [inputServicePrice, setInputServicePrice] = useState("");
   const [inputServicePurchasePrice, setInputServicePurchasePrice] = useState("");
   
-  const [cajeroComisionApplies, setCajeroComisionApplies] = useState(true);
-  const [budgetCajeroComisionApplies, setBudgetCajeroComisionApplies] = useState(true);
+  const [cajeroComisionApplies, setCajeroComisionApplies] = useState(false);
+  const [budgetCajeroComisionApplies, setBudgetCajeroComisionApplies] = useState(false);
   
   const [inputInsumoDesc, setInputInsumoDesc] = useState("");
   const [inputInsumoQty, setInputInsumoQty] = useState("1");
@@ -657,7 +657,7 @@ export default function Taller({
     setNombreFacturacion("");
     setMotivosIngreso([]);
     setInputMotivo("");
-    setCajeroComisionApplies(true);
+    setCajeroComisionApplies(false);
     const initCheck = {};
     defaultChecklistItems.forEach(item => {
       initCheck[item.id] = { status: "Bueno", note: "" };
@@ -696,7 +696,7 @@ export default function Taller({
             nuevoTotal = valorPrecio;
           }
           // Open split payment modal instead of directly updating order state!
-          setCheckoutOrder({ ...o, total: nuevoTotal, cajeroComisionApplies: o.cajeroComisionApplies !== false });
+          setCheckoutOrder({ ...o, total: nuevoTotal, cajeroComisionApplies: o.cajeroComisionApplies === true });
           setCheckoutNit(o.nit || "C/F");
           setCheckoutNombreFacturacion(o.nombreFacturacion || o.cliente);
           setCheckoutPayments({ efectivo: "", transferencia: "", cheque: "", tarjeta: "", credito: "" });
@@ -960,7 +960,7 @@ export default function Taller({
           comision,
           total: checkoutOrder.total,
           cajero: usuarioActual.user,
-          cajeroComisionApplies: checkoutOrder.cajeroComisionApplies !== false,
+          cajeroComisionApplies: checkoutOrder.cajeroComisionApplies === true,
           fecha: new Date().toISOString()
         };
       }
@@ -3530,7 +3530,7 @@ export default function Taller({
                                 setCurrentBudget(o.presupuesto || { labor: [], parts: [], services: [], discount: 0, insumos: [], tools: [] });
                                 setInputDiscount(o.presupuesto?.discount?.toString() || "0");
                                 setDiagnosticPhotos((o.fotosDiagnostico || []).map(f => typeof f === 'string' ? { base64: f, comment: '' } : f));
-                                setBudgetCajeroComisionApplies(o.cajeroComisionApplies !== false);
+                                setBudgetCajeroComisionApplies(o.cajeroComisionApplies === true);
                               }}
                               style={{
                                 background: "none",
@@ -3761,7 +3761,7 @@ export default function Taller({
                                   setBudgetModalOrder(o);
                                   setCurrentBudget(o.presupuesto || { labor: [], parts: [], services: [], discount: 0, insumos: [], tools: [] });
                                   setInputDiscount(o.presupuesto?.discount?.toString() || "0");
-                                  setBudgetCajeroComisionApplies(o.cajeroComisionApplies !== false);
+                                  setBudgetCajeroComisionApplies(o.cajeroComisionApplies === true);
                                 }}
                                 className="btn btn-warning-glow"
                                 style={{ ...styles.cardActionBtn, flex: 1.8, height: "38px", padding: "0 10px", margin: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
