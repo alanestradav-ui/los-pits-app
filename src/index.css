@@ -406,3 +406,40 @@ p {
   }
 }
 
+/* Print CSS Media Queries for Client Reports */
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  .client-report-paper, .client-report-paper * {
+    visibility: visible !important;
+  }
+  .client-report-paper {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    background-color: #fff !important;
+    color: #000 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+  .client-report-paper h1, 
+  .client-report-paper h2, 
+  .client-report-paper h3, 
+  .client-report-paper h4, 
+  .client-report-paper strong,
+  .client-report-paper td {
+    color: #000 !important;
+  }
+  .client-report-paper table th {
+    color: #333 !important;
+    background-color: #f3f4f6 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
+
+

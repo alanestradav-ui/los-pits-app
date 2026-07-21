@@ -1195,6 +1195,7 @@ export default function App() {
           <VehicleHistory 
             ordenes={ordenes}
             carwash={carwash}
+            usuarioActual={usuarioActivo}
           />
         )}
 
