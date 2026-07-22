@@ -5560,7 +5560,7 @@ export default function Taller({
         document.body
       )}
 
-      {editingEntryOrder && (
+      {editingEntryOrder && createPortal(
         <div style={styles.modalOverlay}>
           <div className="glass-panel" style={{ ...styles.modalContent, maxWidth: "600px" }}>
             <div style={styles.modalHeader}>
