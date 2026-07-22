@@ -1320,14 +1320,23 @@ export default function Taller({
     }
   };
 
-  const sharePDFViaWhatsApp = async (pdf, filename, phoneFormatted) => {
-    // 1. Descargar el archivo PDF directamente en el dispositivo
-    pdf.save(filename);
-    
-    // 2. Abrir de una vez la conversación de WhatsApp con el número del cliente
-    const text = `Estimado cliente, le adjunto su documento en PDF (se ha descargado automáticamente en su dispositivo como "${filename}"). Por favor, adjunte o arrastre el archivo a este chat para visualizarlo.`;
-    const waUrl = `https://wa.me/${phoneFormatted}?text=${encodeURIComponent(text)}`;
-    window.open(waUrl, "_blank");
+  const handleWhatsAppRedirect = (phoneFormatted, text) => {
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    let waUrl = "";
+    if (isMobile) {
+      // Force native app redirect on mobile devices
+      waUrl = `whatsapp://send?phone=${phoneFormatted}&text=${encodeURIComponent(text)}`;
+      window.open(waUrl, "_blank");
+    } else {
+      // Direct Web WhatsApp redirect on desktop
+      waUrl = `https://web.whatsapp.com/send?phone=${phoneFormatted}&text=${encodeURIComponent(text)}`;
+      const newWindow = window.open(waUrl, "_blank");
+      // Fallback in case web.whatsapp.com gets blocked or fails to open
+      if (!newWindow || newWindow.closed || typeof newWindow.closed === "undefined") {
+        const fallbackUrl = `https://api.whatsapp.com/send?phone=${phoneFormatted}&text=${encodeURIComponent(text)}`;
+        window.open(fallbackUrl, "_blank");
+      }
+    }
   };
 
   const exportarPresupuestoImagen = async (o, share = false) => {
@@ -5122,8 +5131,7 @@ export default function Taller({
                           const pdf = await exportarPresupuestoImagen(presupuestoFormalOrder, true);
                           pdf.save(filename);
                           const text = `Estimado cliente, le comparto su presupuesto en PDF (se ha descargado automáticamente en su dispositivo como "${filename}"). Por favor, adjunte o arrastre el archivo a este chat para visualizarlo.`;
-                          const waUrl = `https://api.whatsapp.com/send?phone=${phoneFormatted}&text=${encodeURIComponent(text)}`;
-                          window.open(waUrl, "_blank");
+                          handleWhatsAppRedirect(phoneFormatted, text);
                         } catch (err) {
                           alert("Error al generar PDF: " + err.message);
                         }
@@ -5322,8 +5330,7 @@ export default function Taller({
                     const pdf = await exportarRecepcionImagen(recepcionFormalOrder, true);
                     pdf.save(filename);
                     const text = `Estimado cliente, le comparto su comprobante de recepción en PDF (se ha descargado automáticamente en su dispositivo como "${filename}"). Por favor, adjunte o arrastre el archivo a este chat para visualizarlo.`;
-                    const waUrl = `https://api.whatsapp.com/send?phone=${phoneFormatted}&text=${encodeURIComponent(text)}`;
-                    window.open(waUrl, "_blank");
+                    handleWhatsAppRedirect(phoneFormatted, text);
                   } catch (err) {
                     alert("Error al generar PDF: " + err.message);
                   }
