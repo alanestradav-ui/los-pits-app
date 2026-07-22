@@ -1320,7 +1320,31 @@ export default function Taller({
     }
   };
 
-  const exportarPresupuestoImagen = async (o) => {
+  const sharePDFViaWhatsApp = async (pdf, filename, phoneFormatted) => {
+    try {
+      const pdfBlob = pdf.output('blob');
+      const file = new File([pdfBlob], filename, { type: 'application/pdf' });
+      
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: filename,
+          text: 'Adjunto de Los Pits Auto Center'
+        });
+        return;
+      }
+    } catch (e) {
+      console.log("Web Share API failed or was cancelled:", e);
+    }
+    
+    // Fallback: download the file and open WhatsApp with instruction to drag & drop
+    pdf.save(filename);
+    const text = `Estimado cliente, le comparto su documento en PDF (el cual se ha descargado automáticamente en su dispositivo como "${filename}"). Por favor, arrastre o adjunte el archivo descargado a esta conversación para visualizarlo.`;
+    const waUrl = `https://wa.me/${phoneFormatted}?text=${encodeURIComponent(text)}`;
+    window.open(waUrl, "_blank");
+  };
+
+  const exportarPresupuestoImagen = async (o, share = false) => {
     // Helper to load images asynchronously
     const loadImages = async (sources) => {
       return Promise.all(sources.map(srcObj => {
@@ -2047,10 +2071,11 @@ export default function Taller({
     const dataURL = canvas.toDataURL("image/jpeg", 0.95);
     const pdf = new jsPDF("p", "px", [800, canvas.height]);
     pdf.addImage(dataURL, "JPEG", 0, 0, 800, canvas.height);
+    if (share) return pdf;
     pdf.save(`Presupuesto_${o.placa || "auto"}.pdf`);
   };
 
-  const exportarRecepcionImagen = async (o) => {
+  const exportarRecepcionImagen = async (o, share = false) => {
     // 1. Load images asynchronously
     const loadImages = async (sources) => {
       return Promise.all(sources.map(src => {
@@ -2702,6 +2727,7 @@ export default function Taller({
     const dataURL = canvas.toDataURL("image/jpeg", 0.95);
     const pdf = new jsPDF("p", "px", [800, canvas.height]);
     pdf.addImage(dataURL, "JPEG", 0, 0, 800, canvas.height);
+    if (share) return pdf;
     pdf.save(`Recepcion_${o.placa || "auto"}.pdf`);
   };
 
@@ -5093,62 +5119,19 @@ export default function Taller({
                     <button 
                       type="button" 
                       className="btn btn-secondary" 
-                      onClick={() => {
+                      onClick={async () => {
                         const cleanPhone = presupuestoFormalOrder.telefono ? presupuestoFormalOrder.telefono.replace(/\D/g, "") : "";
                         const phoneFormatted = cleanPhone.startsWith("502") || cleanPhone.length > 8
                           ? cleanPhone
                           : (cleanPhone.length === 8 ? `502${cleanPhone}` : "");
-                          
-                        let text = `*LOS PITS AUTO CENTER*\n`;
-                        text += `*PRESUPUESTO DE REPARACIÓN*\n\n`;
-                        text += `*Cliente:* ${presupuestoFormalOrder.cliente}\n`;
-                        text += `*Vehículo:* ${presupuestoFormalOrder.marca} ${presupuestoFormalOrder.linea} (${presupuestoFormalOrder.placa})\n`;
-                        text += `*Fecha:* ${new Date(presupuestoFormalOrder.id).toLocaleDateString()}\n`;
-                        text += `----------------------------------\n\n`;
                         
-                        if (presupuestoFormalOrder.presupuesto.labor && presupuestoFormalOrder.presupuesto.labor.length > 0) {
-                          text += `*Mano de Obra:*\n`;
-                          presupuestoFormalOrder.presupuesto.labor.forEach(item => {
-                            text += `- ${item.desc}: Q${item.price.toFixed(2)}\n`;
-                          });
-                          text += `\n`;
+                        const filename = `Presupuesto_${presupuestoFormalOrder.placa || "auto"}.pdf`;
+                        try {
+                          const pdf = await exportarPresupuestoImagen(presupuestoFormalOrder, true);
+                          await sharePDFViaWhatsApp(pdf, filename, phoneFormatted);
+                        } catch (err) {
+                          alert("Error al generar PDF: " + err.message);
                         }
-                        
-                        if (presupuestoFormalOrder.presupuesto.parts && presupuestoFormalOrder.presupuesto.parts.length > 0) {
-                          text += `*Repuestos:*\n`;
-                          presupuestoFormalOrder.presupuesto.parts.forEach(item => {
-                            const brandText = item.brand ? ` (${item.brand})` : "";
-                            const presentationText = item.presentation ? ` - ${item.presentation}` : "";
-                            text += `- ${item.qty}x ${item.desc}${brandText}${presentationText} (c/u Q${item.salePrice.toFixed(2)}): Q${(item.qty * item.salePrice).toFixed(2)}\n`;
-                          });
-                          text += `\n`;
-                        }
-                        
-                        if (presupuestoFormalOrder.presupuesto.services && presupuestoFormalOrder.presupuesto.services.length > 0) {
-                          text += `*Servicios:*\n`;
-                          presupuestoFormalOrder.presupuesto.services.forEach(item => {
-                            text += `- ${item.desc}: Q${item.price.toFixed(2)}\n`;
-                          });
-                          text += `\n`;
-                        }
-
-                        const discountPct = Number(presupuestoFormalOrder.presupuesto?.discount || 0);
-                        if (discountPct > 0) {
-                          const totalLabor = presupuestoFormalOrder.presupuesto.labor?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
-                          const totalParts = presupuestoFormalOrder.presupuesto.parts?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.salePrice || 0)), 0) || 0;
-                          const totalServices = presupuestoFormalOrder.presupuesto.services?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
-                          const subTotal = Number(totalLabor) + Number(totalParts) + Number(totalServices);
-                          const discountAmount = subTotal * (discountPct / 100);
-                          text += `Subtotal: Q${subTotal.toFixed(2)}\n`;
-                          text += `Descuento ${discountPct}%: -Q${discountAmount.toFixed(2)}\n\n`;
-                        }
-                        
-                        text += `----------------------------------\n`;
-                        text += `*TOTAL ESTIMADO: Q${presupuestoFormalOrder.total.toFixed(2)}*\n\n`;
-                        text += `_Este presupuesto es estimado y válido por 15 días._`;
-                        
-                        const waUrl = `https://wa.me/${phoneFormatted}?text=${encodeURIComponent(text)}`;
-                        window.open(waUrl, "_blank");
                       }}
                       style={{ display: "flex", alignItems: "center", gap: "6px" }}
                     >
@@ -5300,46 +5283,19 @@ export default function Taller({
               <button 
                 type="button" 
                 className="btn btn-secondary" 
-                onClick={() => {
+                onClick={async () => {
                   const cleanPhone = recepcionFormalOrder.telefono ? recepcionFormalOrder.telefono.replace(/\D/g, "") : "";
                   const phoneFormatted = cleanPhone.startsWith("502") || cleanPhone.length > 8
                     ? cleanPhone
                     : (cleanPhone.length === 8 ? `502${cleanPhone}` : "");
-                    
-                  let text = `*LOS PITS AUTO CENTER*\n`;
-                  text += `*COMPROBANTE DE RECEPCIÓN DE VEHÍCULO*\n\n`;
-                  text += `*Cliente:* ${recepcionFormalOrder.cliente}\n`;
-                  text += `*Vehículo:* ${recepcionFormalOrder.marca} ${recepcionFormalOrder.linea} (${recepcionFormalOrder.placa})\n`;
-                  text += `*Fecha:* ${new Date(recepcionFormalOrder.id).toLocaleDateString()}\n`;
-                  text += `*Combustible:* ${recepcionFormalOrder.combustible ?? 50}%\n`;
-                  text += `----------------------------------\n\n`;
-                  text += `*Motivo de Ingreso:*\n${recepcionFormalOrder.motivoIngreso || recepcionFormalOrder.trabajo}\n\n`;
                   
-                  if (recepcionFormalOrder.checklist) {
-                    text += `*Inventario / Inspección:*\n`;
-                    defaultChecklistItems.forEach(item => {
-                      const val = recepcionFormalOrder.checklist[item.id] || { status: "Bueno", note: "" };
-                      const status = typeof val === "object" ? val.status : val;
-                      const note = typeof val === "object" ? val.note : "";
-                      const statusIcon = status === "Bueno" ? "✅" : (status === "Regular" ? "⚠️" : "❌");
-                      const noteText = note ? ` (${note})` : "";
-                      text += `${statusIcon} ${item.label}: *${status}*${noteText}\n`;
-                    });
-                    text += `\n`;
+                  const filename = `Recepcion_${recepcionFormalOrder.placa || "auto"}.pdf`;
+                  try {
+                    const pdf = await exportarRecepcionImagen(recepcionFormalOrder, true);
+                    await sharePDFViaWhatsApp(pdf, filename, phoneFormatted);
+                  } catch (err) {
+                    alert("Error al generar PDF: " + err.message);
                   }
-                  
-                  if (recepcionFormalOrder.luces && recepcionFormalOrder.luces.length > 0) {
-                    text += `*Testigos encendidos:* ${recepcionFormalOrder.luces.map(l => {
-                      const lDef = warningLightsDef.find(item => item.id === l);
-                      return lDef ? lDef.label : l;
-                    }).join(", ")}\n\n`;
-                  }
-                  
-                  text += `----------------------------------\n`;
-                  text += `_Vehículo recibido correctamente en taller._`;
-                  
-                  const waUrl = `https://wa.me/${phoneFormatted}?text=${encodeURIComponent(text)}`;
-                  window.open(waUrl, "_blank");
                 }}
                 style={{ display: "flex", alignItems: "center", gap: "6px" }}
               >
