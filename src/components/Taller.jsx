@@ -5107,16 +5107,22 @@ export default function Taller({
                       className="btn btn-secondary" 
                       onClick={async () => {
                         const cleanPhone = presupuestoFormalOrder.telefono ? presupuestoFormalOrder.telefono.replace(/\D/g, "") : "";
-                        const phoneFormatted = cleanPhone.startsWith("502") || cleanPhone.length > 8
-                          ? cleanPhone
-                          : (cleanPhone.length === 8 ? `502${cleanPhone}` : "");
+                        let phoneFormatted = cleanPhone;
+                        if (cleanPhone.length === 8) {
+                          phoneFormatted = "502" + cleanPhone;
+                        }
+                        
+                        if (!phoneFormatted) {
+                          alert("El cliente no tiene un número de teléfono válido registrado.");
+                          return;
+                        }
                         
                         const filename = `Presupuesto_${presupuestoFormalOrder.placa || "auto"}.pdf`;
                         try {
                           const pdf = await exportarPresupuestoImagen(presupuestoFormalOrder, true);
                           pdf.save(filename);
                           const text = `Estimado cliente, le comparto su presupuesto en PDF (se ha descargado automáticamente en su dispositivo como "${filename}"). Por favor, adjunte o arrastre el archivo a este chat para visualizarlo.`;
-                          const waUrl = `https://wa.me/${phoneFormatted}?text=${encodeURIComponent(text)}`;
+                          const waUrl = `https://api.whatsapp.com/send?phone=${phoneFormatted}&text=${encodeURIComponent(text)}`;
                           window.open(waUrl, "_blank");
                         } catch (err) {
                           alert("Error al generar PDF: " + err.message);
@@ -5301,16 +5307,22 @@ export default function Taller({
                 className="btn btn-secondary" 
                 onClick={async () => {
                   const cleanPhone = recepcionFormalOrder.telefono ? recepcionFormalOrder.telefono.replace(/\D/g, "") : "";
-                  const phoneFormatted = cleanPhone.startsWith("502") || cleanPhone.length > 8
-                    ? cleanPhone
-                    : (cleanPhone.length === 8 ? `502${cleanPhone}` : "");
+                  let phoneFormatted = cleanPhone;
+                  if (cleanPhone.length === 8) {
+                    phoneFormatted = "502" + cleanPhone;
+                  }
+                  
+                  if (!phoneFormatted) {
+                    alert("El cliente no tiene un número de teléfono válido registrado.");
+                    return;
+                  }
                   
                   const filename = `Recepcion_${recepcionFormalOrder.placa || "auto"}.pdf`;
                   try {
                     const pdf = await exportarRecepcionImagen(recepcionFormalOrder, true);
                     pdf.save(filename);
                     const text = `Estimado cliente, le comparto su comprobante de recepción en PDF (se ha descargado automáticamente en su dispositivo como "${filename}"). Por favor, adjunte o arrastre el archivo a este chat para visualizarlo.`;
-                    const waUrl = `https://wa.me/${phoneFormatted}?text=${encodeURIComponent(text)}`;
+                    const waUrl = `https://api.whatsapp.com/send?phone=${phoneFormatted}&text=${encodeURIComponent(text)}`;
                     window.open(waUrl, "_blank");
                   } catch (err) {
                     alert("Error al generar PDF: " + err.message);
