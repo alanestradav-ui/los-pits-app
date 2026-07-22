@@ -539,33 +539,38 @@ export default function Taller({
     e.preventDefault();
     if (!editingEntryOrder) return;
     
-    if (!editingEntryOrder.cliente?.trim() || !editingEntryOrder.placa?.trim() || !parsePlate(editingEntryOrder.placa).number.trim() || !editingEntryOrder.marca?.trim() || !editingEntryOrder.linea?.trim() || !editingEntryOrder.motivoIngreso?.trim()) {
+    const clienteVal = (editingEntryOrder.cliente || "").trim();
+    const placaVal = (editingEntryOrder.placa || "").trim();
+    const marcaVal = (editingEntryOrder.marca || "").trim();
+    const lineaVal = (editingEntryOrder.linea || "").trim();
+    const motivoVal = (editingEntryOrder.motivoIngreso || "").trim();
+    
+    if (!clienteVal || !placaVal || !parsePlate(placaVal).number.trim() || !marcaVal || !lineaVal || !motivoVal) {
       alert("Completa los campos obligatorios (Placa, Marca, Línea, Cliente y Motivo de ingreso).");
       return;
     }
     
-    const updatedVehiculo = `${editingEntryOrder.marca.trim()} ${editingEntryOrder.linea.trim()} (${editingEntryOrder.placa.toUpperCase().trim()})`;
+    const updatedVehiculo = `${marcaVal} ${lineaVal} (${placaVal.toUpperCase()})`;
     
     const updatedOrders = ordenes.map(o => {
       if (o.id === editingEntryOrder.id) {
-        const motivosString = editingEntryOrder.motivoIngreso.trim();
-        const newMotivosArray = motivosString.split(" / ");
+        const newMotivosArray = motivoVal.split(" / ");
         
         const updatedOrder = {
           ...o,
-          cliente: editingEntryOrder.cliente.trim(),
-          telefono: editingEntryOrder.telefono.trim(),
-          nit: editingEntryOrder.nit?.trim() || "C/F",
-          nombreFacturacion: editingEntryOrder.nombreFacturacion?.trim() || editingEntryOrder.cliente.trim(),
-          placa: editingEntryOrder.placa.toUpperCase().trim(),
-          chasis: editingEntryOrder.chasis?.toUpperCase()?.trim() || "",
-          marca: editingEntryOrder.marca.trim(),
-          linea: editingEntryOrder.linea.trim(),
-          anio: editingEntryOrder.anio?.toString()?.trim() || "",
-          color: editingEntryOrder.color?.trim() || "",
-          kilometraje: editingEntryOrder.kilometraje?.toString()?.trim() || "",
-          motivoIngreso: motivosString,
-          trabajo: motivosString,
+          cliente: clienteVal,
+          telefono: (editingEntryOrder.telefono || "").trim(),
+          nit: (editingEntryOrder.nit || "").trim() || "C/F",
+          nombreFacturacion: (editingEntryOrder.nombreFacturacion || "").trim() || clienteVal,
+          placa: placaVal.toUpperCase(),
+          chasis: (editingEntryOrder.chasis || "").toUpperCase().trim(),
+          marca: marcaVal,
+          linea: lineaVal,
+          anio: (editingEntryOrder.anio || "").toString().trim(),
+          color: (editingEntryOrder.color || "").trim(),
+          kilometraje: (editingEntryOrder.kilometraje || "").toString().trim(),
+          motivoIngreso: motivoVal,
+          trabajo: motivoVal,
           motivosIngreso: newMotivosArray,
           vehiculo: updatedVehiculo
         };
@@ -2791,7 +2796,17 @@ export default function Taller({
                       if (val) {
                         const match = (vehiculos || []).find(v => v.placa?.toUpperCase().trim() === fullPlc || v.placa?.toUpperCase().trim() === val);
                         if (match) {
-                          selectVehiculoSuggestion(match);
+                          const owner = (clientes || []).find(c => c.telefono === match.clienteTelefono);
+                          const ownerName = owner ? (owner.nombre || "") : "";
+                          
+                          if (!cliente.trim() || cliente.trim() === ownerName) {
+                            selectVehiculoSuggestion(match);
+                          } else {
+                            const isSame = window.confirm(`El vehículo con placa ${fullPlc} está registrado a nombre de "${ownerName}". ¿Deseas cargar los datos de este cliente?`);
+                            if (isSame) {
+                              selectVehiculoSuggestion(match);
+                            }
+                          }
                         }
                       }
                       setTimeout(() => setActiveFieldSuggestions(null), 200);
@@ -2852,11 +2867,22 @@ export default function Taller({
                     onChange={(e) => handleTelefonoInput(e.target.value)}
                     onBlur={(e) => {
                       const val = e.target.value.trim();
-                      const match = (clientes || []).find(c => c.telefono === val);
-                      if (match) {
-                        setCliente(match.nombre || "");
-                        if (match.nit) setNit(match.nit);
-                        if (match.nombreFacturacion) setNombreFacturacion(match.nombreFacturacion);
+                      if (val) {
+                        const match = (clientes || []).find(c => c.telefono === val);
+                        if (match) {
+                          if (!cliente.trim() || cliente.trim() === match.nombre) {
+                            setCliente(match.nombre || "");
+                            if (match.nit) setNit(match.nit);
+                            if (match.nombreFacturacion) setNombreFacturacion(match.nombreFacturacion);
+                          } else {
+                            const isSame = window.confirm(`El teléfono ingresado ya pertenece a "${match.nombre}". ¿Deseas cargar los datos de este cliente?`);
+                            if (isSame) {
+                              setCliente(match.nombre || "");
+                              if (match.nit) setNit(match.nit);
+                              if (match.nombreFacturacion) setNombreFacturacion(match.nombreFacturacion);
+                            }
+                          }
+                        }
                       }
                       setTimeout(() => setActiveFieldSuggestions(null), 200);
                     }}
