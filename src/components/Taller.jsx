@@ -1321,25 +1321,11 @@ export default function Taller({
   };
 
   const sharePDFViaWhatsApp = async (pdf, filename, phoneFormatted) => {
-    try {
-      const pdfBlob = pdf.output('blob');
-      const file = new File([pdfBlob], filename, { type: 'application/pdf' });
-      
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: filename,
-          text: 'Adjunto de Los Pits Auto Center'
-        });
-        return;
-      }
-    } catch (e) {
-      console.log("Web Share API failed or was cancelled:", e);
-    }
-    
-    // Fallback: download the file and open WhatsApp with instruction to drag & drop
+    // 1. Descargar el archivo PDF directamente en el dispositivo
     pdf.save(filename);
-    const text = `Estimado cliente, le comparto su documento en PDF (el cual se ha descargado automáticamente en su dispositivo como "${filename}"). Por favor, arrastre o adjunte el archivo descargado a esta conversación para visualizarlo.`;
+    
+    // 2. Abrir de una vez la conversación de WhatsApp con el número del cliente
+    const text = `Estimado cliente, le adjunto su documento en PDF (se ha descargado automáticamente en su dispositivo como "${filename}"). Por favor, adjunte o arrastre el archivo a este chat para visualizarlo.`;
     const waUrl = `https://wa.me/${phoneFormatted}?text=${encodeURIComponent(text)}`;
     window.open(waUrl, "_blank");
   };
