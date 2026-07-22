@@ -1530,6 +1530,134 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
                   </table>
                 )}
 
+                {/* Detailed performed jobs/works breakdown */}
+                {fin && (
+                  <div style={{ marginTop: "24px" }}>
+                    {financialReportModal.item ? (
+                      /* Single Order Done Works Table */
+                      <>
+                        <h4 style={{ margin: "0 0 10px 0", fontSize: "0.9rem", color: "#fff", textTransform: "uppercase", display: "flex", alignItems: "center", gap: "6px" }}>
+                          <FileCheck size={16} color="var(--color-success)" /> Detalle de Trabajos y Repuestos (Utilidad por Rubro)
+                        </h4>
+                        <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "20px" }}>
+                          <thead>
+                            <tr style={{ backgroundColor: "rgba(255,255,255,0.05)", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+                              <th style={{ padding: "10px", textAlign: "left", fontSize: "0.78rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Descripción de Trabajo / Ítem</th>
+                              <th style={{ padding: "10px", textAlign: "center", fontSize: "0.78rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Tipo</th>
+                              <th style={{ padding: "10px", textAlign: "right", fontSize: "0.78rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Costo Operativo</th>
+                              <th style={{ padding: "10px", textAlign: "right", fontSize: "0.78rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Precio Cliente</th>
+                              <th style={{ padding: "10px", textAlign: "right", fontSize: "0.78rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Utilidad Neta</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {financialReportModal.item.presupuesto ? (
+                              <>
+                                {(financialReportModal.item.presupuesto.labor || []).map((l, i) => {
+                                  const price = parseFloat(l.price) || 0;
+                                  const cost = parseFloat(l.cost) || (parseFloat(financialReportModal.item.comision) || (price * 0.15));
+                                  const utility = price - cost;
+                                  return (
+                                    <tr key={`l-${i}`} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                                      <td style={{ padding: "10px", fontSize: "0.85rem", color: "#fff" }}>🛠️ {l.desc}</td>
+                                      <td style={{ padding: "10px", textAlign: "center", fontSize: "0.8rem", color: "var(--text-muted)" }}>Mano de Obra</td>
+                                      <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "#f87171" }}>{formatMoney(cost)}</td>
+                                      <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "#fff" }}>{formatMoney(price)}</td>
+                                      <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "var(--color-success)", fontWeight: "bold" }}>{formatMoney(utility)}</td>
+                                    </tr>
+                                  );
+                                })}
+                                {(financialReportModal.item.presupuesto.parts || []).map((p, i) => {
+                                  const qty = parseFloat(p.qty) || 1;
+                                  const price = (parseFloat(p.price) || 0) * qty;
+                                  const unitCost = p.purchasePrice !== undefined ? parseFloat(p.purchasePrice) : (p.cost !== undefined ? parseFloat(p.cost) : (parseFloat(p.price) || 0) * 0.65);
+                                  const cost = unitCost * qty;
+                                  const utility = price - cost;
+                                  return (
+                                    <tr key={`p-${i}`} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                                      <td style={{ padding: "10px", fontSize: "0.85rem", color: "#fff" }}>📦 {p.desc} {p.code ? `(${p.code})` : ""} x{qty}</td>
+                                      <td style={{ padding: "10px", textAlign: "center", fontSize: "0.8rem", color: "var(--text-muted)" }}>Repuesto</td>
+                                      <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "#f87171" }}>{formatMoney(cost)}</td>
+                                      <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "#fff" }}>{formatMoney(price)}</td>
+                                      <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "var(--color-success)", fontWeight: "bold" }}>{formatMoney(utility)}</td>
+                                    </tr>
+                                  );
+                                })}
+                                {(financialReportModal.item.presupuesto.services || []).map((s, i) => {
+                                  const price = parseFloat(s.price) || 0;
+                                  const cost = parseFloat(s.cost) || (price * 0.70);
+                                  const utility = price - cost;
+                                  return (
+                                    <tr key={`s-${i}`} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                                      <td style={{ padding: "10px", fontSize: "0.85rem", color: "#fff" }}>⚙️ {s.desc}</td>
+                                      <td style={{ padding: "10px", textAlign: "center", fontSize: "0.8rem", color: "var(--text-muted)" }}>Servicio Técnico</td>
+                                      <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "#f87171" }}>{formatMoney(cost)}</td>
+                                      <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "#fff" }}>{formatMoney(price)}</td>
+                                      <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "var(--color-success)", fontWeight: "bold" }}>{formatMoney(utility)}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </>
+                            ) : (
+                              <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                                <td style={{ padding: "10px", fontSize: "0.85rem", color: "#fff" }}>{financialReportModal.item.trabajo || financialReportModal.item.tipoLavado || "Servicio General"}</td>
+                                <td style={{ padding: "10px", textAlign: "center", fontSize: "0.8rem", color: "var(--text-muted)" }}>{financialReportModal.item.tipo}</td>
+                                <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "#f87171" }}>{formatMoney(fin.costoRepuestos + fin.costoManoObra)}</td>
+                                <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "#fff" }}>{formatMoney(fin.totalVenta)}</td>
+                                <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "var(--color-success)", fontWeight: "bold" }}>{formatMoney(fin.utilidadNeta)}</td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </>
+                    ) : (
+                      /* Accumulated Vehicles History Done Works Table */
+                      <>
+                        <h4 style={{ margin: "0 0 10px 0", fontSize: "0.9rem", color: "#fff", textTransform: "uppercase", display: "flex", alignItems: "center", gap: "6px" }}>
+                          <FileCheck size={16} color="var(--color-success)" /> Historial Financiero de Servicios Realizados
+                        </h4>
+                        <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "20px" }}>
+                          <thead>
+                            <tr style={{ backgroundColor: "rgba(255,255,255,0.05)", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+                              <th style={{ padding: "10px", textAlign: "left", fontSize: "0.78rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Fecha</th>
+                              <th style={{ padding: "10px", textAlign: "left", fontSize: "0.78rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Servicio / Trabajos Detallados</th>
+                              <th style={{ padding: "10px", textAlign: "center", fontSize: "0.78rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Encargado</th>
+                              <th style={{ padding: "10px", textAlign: "right", fontSize: "0.78rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Costo Total</th>
+                              <th style={{ padding: "10px", textAlign: "right", fontSize: "0.78rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Cobro Cliente</th>
+                              <th style={{ padding: "10px", textAlign: "right", fontSize: "0.78rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Utilidad</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(financialReportModal.vehicle?.history || []).map((h, idx) => {
+                              const hFin = calculateFinancials(h);
+                              return (
+                                <tr key={idx} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                                  <td style={{ padding: "10px", fontSize: "0.82rem", color: "var(--text-muted)", verticalAlign: "top" }}>{formatDate(h.fecha).split(" ")[0]}</td>
+                                  <td style={{ padding: "10px", fontSize: "0.85rem", color: "#fff", verticalAlign: "top" }}>
+                                    <strong style={{ display: "block", color: "var(--color-primary)" }}>
+                                      {h.trabajo || h.tipoLavado || "Servicio"}
+                                    </strong>
+                                    {h.presupuesto && (
+                                      <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "4px", paddingLeft: "8px", borderLeft: "2px solid rgba(255,255,255,0.15)" }}>
+                                        {h.presupuesto.labor && h.presupuesto.labor.map((l, li) => <div key={li}>🛠️ {l.desc}</div>)}
+                                        {h.presupuesto.parts && h.presupuesto.parts.map((p, pi) => <div key={pi}>📦 {p.desc} x{p.qty || 1}</div>)}
+                                        {h.presupuesto.services && h.presupuesto.services.map((s, si) => <div key={si}>⚙️ {s.desc}</div>)}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: "10px", textAlign: "center", fontSize: "0.82rem", color: "var(--text-muted)", verticalAlign: "top" }}>{h.mecanico || h.lavador || "Taller"}</td>
+                                  <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "#f87171", verticalAlign: "top" }}>{formatMoney(hFin.totalCostos)}</td>
+                                  <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", fontWeight: "600", color: "#fff", verticalAlign: "top" }}>{formatMoney(hFin.totalVenta)}</td>
+                                  <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "var(--color-success)", fontWeight: "bold", verticalAlign: "top" }}>{formatMoney(hFin.utilidadNeta)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </>
+                    )}
+                  </div>
+                )}
+
                 {/* Footer Signatures */}
                 <div style={{ marginTop: "30px", paddingTop: "16px", borderTop: "1px solid rgba(255,255,255,0.08)", fontSize: "0.75rem", color: "var(--text-muted)", display: "flex", justifyContent: "space-between" }}>
                   <div>
