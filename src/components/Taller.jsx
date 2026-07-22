@@ -326,7 +326,7 @@ export default function Taller({
     : [];
 
   const isWorker = usuarioActual?.rol === "mecanico";
-  const isManager = usuarioActual?.rol === "admin" || usuarioActual?.rol === "cajero";
+  const isManager = usuarioActual?.rol === "admin" || usuarioActual?.rol === "cajero" || usuarioActual?.rol === "jefe de taller";
 
   // Filter orders by search query and role
   const filteredOrdenes = ordenes.filter(o => {
@@ -3401,7 +3401,7 @@ export default function Taller({
                       <div>
                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                           <h4 style={styles.clientName}>{o.cliente}</h4>
-                          {usuarioActual?.rol === "admin" && (
+                          {isManager && (
                             <button
                               onClick={() => setEditingEntryOrder({ ...o, motivoIngreso: o.motivoIngreso || o.trabajo || "" })}
                               style={{
