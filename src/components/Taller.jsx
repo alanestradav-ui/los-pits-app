@@ -1321,11 +1321,15 @@ export default function Taller({
   };
 
   const handleWhatsAppRedirect = (phoneFormatted, text) => {
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     const cleanNumber = phoneFormatted.replace(/\D/g, "");
+    
+    // Alerta de diagnóstico para verificar el número exacto procesado
+    alert("Abriendo WhatsApp para el número de teléfono: " + cleanNumber);
+    
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     if (isMobile) {
-      // Use window.location.href on mobile to trigger app redirection without popup blocks
-      window.location.href = `whatsapp://send?phone=${cleanNumber}&text=${encodeURIComponent(text)}`;
+      // Use wa.me universal link on mobile via location.href to ensure proper OS redirection
+      window.location.href = `https://wa.me/${cleanNumber}?text=${encodeURIComponent(text)}`;
     } else {
       // Direct Web WhatsApp redirect on desktop
       const webUrl = `https://web.whatsapp.com/send?phone=${cleanNumber}&text=${encodeURIComponent(text)}`;
