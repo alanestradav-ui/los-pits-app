@@ -5114,14 +5114,44 @@ export default function Taller({
                         const filename = `Presupuesto_${presupuestoFormalOrder.placa || "auto"}.pdf`;
                         try {
                           const pdf = await exportarPresupuestoImagen(presupuestoFormalOrder, true);
-                          await sharePDFViaWhatsApp(pdf, filename, phoneFormatted);
+                          pdf.save(filename);
+                          const text = `Estimado cliente, le comparto su presupuesto en PDF (se ha descargado automáticamente en su dispositivo como "${filename}"). Por favor, adjunte o arrastre el archivo a este chat para visualizarlo.`;
+                          const waUrl = `https://wa.me/${phoneFormatted}?text=${encodeURIComponent(text)}`;
+                          window.open(waUrl, "_blank");
                         } catch (err) {
                           alert("Error al generar PDF: " + err.message);
                         }
                       }}
                       style={{ display: "flex", alignItems: "center", gap: "6px" }}
                     >
-                      💬 Compartir por WhatsApp
+                      💬 Chat Directo Cliente
+                    </button>
+
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary" 
+                      onClick={async () => {
+                        const filename = `Presupuesto_${presupuestoFormalOrder.placa || "auto"}.pdf`;
+                        try {
+                          const pdf = await exportarPresupuestoImagen(presupuestoFormalOrder, true);
+                          const pdfBlob = pdf.output('blob');
+                          const file = new File([pdfBlob], filename, { type: 'application/pdf' });
+                          if (navigator.share) {
+                            await navigator.share({
+                              files: [file],
+                              title: filename,
+                              text: 'Presupuesto Los Pits Auto Center'
+                            });
+                          } else {
+                            alert("Tu dispositivo o navegador no soporta el menú de compartir nativo. Usa la opción 'Chat Directo'.");
+                          }
+                        } catch (err) {
+                          console.log("Error sharing budget:", err);
+                        }
+                      }}
+                      style={{ display: "flex", alignItems: "center", gap: "6px" }}
+                    >
+                      📲 Compartir PDF (Móvil)
                     </button>
                   </>
                 )}
@@ -5278,14 +5308,44 @@ export default function Taller({
                   const filename = `Recepcion_${recepcionFormalOrder.placa || "auto"}.pdf`;
                   try {
                     const pdf = await exportarRecepcionImagen(recepcionFormalOrder, true);
-                    await sharePDFViaWhatsApp(pdf, filename, phoneFormatted);
+                    pdf.save(filename);
+                    const text = `Estimado cliente, le comparto su comprobante de recepción en PDF (se ha descargado automáticamente en su dispositivo como "${filename}"). Por favor, adjunte o arrastre el archivo a este chat para visualizarlo.`;
+                    const waUrl = `https://wa.me/${phoneFormatted}?text=${encodeURIComponent(text)}`;
+                    window.open(waUrl, "_blank");
                   } catch (err) {
                     alert("Error al generar PDF: " + err.message);
                   }
                 }}
                 style={{ display: "flex", alignItems: "center", gap: "6px" }}
               >
-                💬 Compartir por WhatsApp
+                💬 Chat Directo Cliente
+              </button>
+
+              <button 
+                type="button" 
+                className="btn btn-secondary" 
+                onClick={async () => {
+                  const filename = `Recepcion_${recepcionFormalOrder.placa || "auto"}.pdf`;
+                  try {
+                    const pdf = await exportarRecepcionImagen(recepcionFormalOrder, true);
+                    const pdfBlob = pdf.output('blob');
+                    const file = new File([pdfBlob], filename, { type: 'application/pdf' });
+                    if (navigator.share) {
+                      await navigator.share({
+                        files: [file],
+                        title: filename,
+                        text: 'Comprobante de Recepción Los Pits Auto Center'
+                      });
+                    } else {
+                      alert("Tu dispositivo o navegador no soporta el menú de compartir nativo. Usa la opción 'Chat Directo'.");
+                    }
+                  } catch (err) {
+                    console.log("Error sharing reception:", err);
+                  }
+                }}
+                style={{ display: "flex", alignItems: "center", gap: "6px" }}
+              >
+                📲 Compartir PDF (Móvil)
               </button>
             </div>
           </div>
