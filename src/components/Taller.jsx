@@ -1322,18 +1322,17 @@ export default function Taller({
 
   const handleWhatsAppRedirect = (phoneFormatted, text) => {
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    let waUrl = "";
+    const cleanNumber = phoneFormatted.replace(/\D/g, "");
     if (isMobile) {
-      // Force native app redirect on mobile devices
-      waUrl = `whatsapp://send?phone=${phoneFormatted}&text=${encodeURIComponent(text)}`;
-      window.open(waUrl, "_blank");
+      // Use window.location.href on mobile to trigger app redirection without popup blocks
+      window.location.href = `whatsapp://send?phone=${cleanNumber}&text=${encodeURIComponent(text)}`;
     } else {
       // Direct Web WhatsApp redirect on desktop
-      waUrl = `https://web.whatsapp.com/send?phone=${phoneFormatted}&text=${encodeURIComponent(text)}`;
-      const newWindow = window.open(waUrl, "_blank");
+      const webUrl = `https://web.whatsapp.com/send?phone=${cleanNumber}&text=${encodeURIComponent(text)}`;
+      const newWindow = window.open(webUrl, "_blank");
       // Fallback in case web.whatsapp.com gets blocked or fails to open
       if (!newWindow || newWindow.closed || typeof newWindow.closed === "undefined") {
-        const fallbackUrl = `https://api.whatsapp.com/send?phone=${phoneFormatted}&text=${encodeURIComponent(text)}`;
+        const fallbackUrl = `https://api.whatsapp.com/send?phone=${cleanNumber}&text=${encodeURIComponent(text)}`;
         window.open(fallbackUrl, "_blank");
       }
     }
