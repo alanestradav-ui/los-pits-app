@@ -18,7 +18,9 @@ import {
   Receipt,
   Users,
   Wallet,
-  Tv
+  Tv,
+  GripVertical,
+  RotateCcw
 } from "lucide-react";
 
 export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLogout, isOpen, setIsOpen, realtimeStatus }) {
@@ -133,7 +135,13 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
   const [orderedItems, setOrderedItems] = useState([]);
   const [draggedIndex, setDraggedIndex] = useState(null);
   const [isReorderingActive, setIsReorderingActive] = useState(false);
-  const touchTimeout = useRef(null);
+
+  const pressTimer = useRef(null);
+  const startPos = useRef({ x: 0, y: 0 });
+  const isLongPressing = useRef(false);
+  const justReordered = useRef(false);
+
+  const storageKey = `sidebar_modules_order_${usuarioActual?.user || usuarioActual?.id || "default"}`;
 
   // Sync menu list with permissions and saved order
   useEffect(() => {
@@ -149,7 +157,7 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
     });
 
     try {
-      const savedOrderStr = localStorage.getItem("sidebar_modules_order");
+      const savedOrderStr = localStorage.getItem(storageKey) || localStorage.getItem("sidebar_modules_order");
       if (savedOrderStr) {
         const savedOrder = JSON.parse(savedOrderStr);
         const sorted = [...visible].sort((a, b) => {
@@ -167,7 +175,7 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
     } catch (e) {
       setOrderedItems(visible);
     }
-  }, [usuarioActual, rol]);
+  }, [usuarioActual, rol, storageKey]);
 
   // Swaps items and saves array state to localStorage
   const reorderItems = (fromIndex, toIndex) => {
@@ -179,89 +187,134 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
     
     try {
       const orderIds = nextItems.map(item => item.id);
+      localStorage.setItem(storageKey, JSON.stringify(orderIds));
       localStorage.setItem("sidebar_modules_order", JSON.stringify(orderIds));
     } catch (e) {
       console.error(e);
     }
   };
 
-  // --- Drag and Drop Mouse Events (Desktop) ---
-  const handleDragStart = (e, index) => {
-    setDraggedIndex(index);
-    e.dataTransfer.effectAllowed = "move";
-    e.currentTarget.style.opacity = "0.5";
+  const resetOrder = () => {
+    try {
+      localStorage.removeItem(storageKey);
+      localStorage.removeItem("sidebar_modules_order");
+    } catch (e) {}
+    const visible = menuItems.filter(item => {
+      if (rol === "admin") return true;
+      if (item.id === "finanzas" || item.id === "configuracion") {
+        if (rol === "admin" || rol === "cajero") return true;
+      }
+      if (usuarioActual?.permissions) {
+        return usuarioActual.permissions.includes(item.id);
+      }
+      return item.roles.includes(rol);
+    });
+    setOrderedItems(visible);
   };
 
-  const handleDragEnd = (e) => {
-    e.currentTarget.style.opacity = "1";
+  // --- Press and Hold Handlers (Mouse + Touch) ---
+  const clearPressTimer = () => {
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+  };
+
+  const startPressTimer = (index, clientX, clientY) => {
+    clearPressTimer();
+    isLongPressing.current = false;
+    startPos.current = { x: clientX, y: clientY };
+
+    pressTimer.current = setTimeout(() => {
+      isLongPressing.current = true;
+      setDraggedIndex(index);
+      setIsReorderingActive(true);
+
+      if (typeof navigator !== "undefined" && navigator.vibrate) {
+        try {
+          navigator.vibrate(40);
+        } catch (e) {}
+      }
+    }, 300); // 300ms press-and-hold duration
+  };
+
+  const handleMouseDown = (e, index) => {
+    if (e.button !== 0) return; // Only main left click
+    startPressTimer(index, e.clientX, e.clientY);
+  };
+
+  const handleTouchStart = (e, index) => {
+    if (e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    startPressTimer(index, touch.clientX, touch.clientY);
+  };
+
+  const handlePointerMove = (clientX, clientY, e) => {
+    if (pressTimer.current && !isReorderingActive) {
+      const dx = clientX - startPos.current.x;
+      const dy = clientY - startPos.current.y;
+      if (Math.hypot(dx, dy) > 10) {
+        clearPressTimer();
+      }
+    }
+
+    if (isReorderingActive && draggedIndex !== null) {
+      if (e && e.cancelable) e.preventDefault();
+
+      const elementUnderPointer = document.elementFromPoint(clientX, clientY);
+      if (!elementUnderPointer) return;
+
+      const menuItem = elementUnderPointer.closest("[data-index]");
+      if (menuItem) {
+        const targetIndex = parseInt(menuItem.getAttribute("data-index"), 10);
+        if (!isNaN(targetIndex) && targetIndex !== draggedIndex) {
+          reorderItems(draggedIndex, targetIndex);
+          setDraggedIndex(targetIndex);
+        }
+      }
+    }
+  };
+
+  const handleMouseMove = (e) => {
+    handlePointerMove(e.clientX, e.clientY, e);
+  };
+
+  const handleTouchMove = (e) => {
+    if (e.touches.length > 0) {
+      handlePointerMove(e.touches[0].clientX, e.touches[0].clientY, e);
+    }
+  };
+
+  const handlePressEnd = () => {
+    clearPressTimer();
+    if (isLongPressing.current || isReorderingActive) {
+      justReordered.current = true;
+      setTimeout(() => {
+        justReordered.current = false;
+      }, 150);
+    }
     setDraggedIndex(null);
+    setIsReorderingActive(false);
+    isLongPressing.current = false;
+  };
+
+  // HTML5 Drag and drop handlers (Desktop fallback)
+  const handleDragStart = (e, index) => {
+    setDraggedIndex(index);
+    setIsReorderingActive(true);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setIsReorderingActive(false);
   };
 
   const handleDragOver = (e, index) => {
     e.preventDefault();
     if (draggedIndex === null || draggedIndex === index) return;
-    
     reorderItems(draggedIndex, index);
     setDraggedIndex(index);
-  };
-
-  // --- Touch Drag Events (Mobile) ---
-  const handleTouchStart = (e, index) => {
-    const targetEl = e.currentTarget;
-    if (touchTimeout.current) clearTimeout(touchTimeout.current);
-    
-    touchTimeout.current = setTimeout(() => {
-      setDraggedIndex(index);
-      setIsReorderingActive(true);
-      
-      if (navigator.vibrate) {
-        navigator.vibrate(50); // Small haptic vibration to confirm holding
-      }
-      
-      targetEl.style.opacity = "0.6";
-      targetEl.style.transform = "scale(0.98)";
-      targetEl.style.boxShadow = "0 8px 24px rgba(59, 130, 246, 0.25)";
-    }, 450); // 450ms press-and-hold trigger delay
-  };
-
-  const handleTouchMove = (e) => {
-    if (!isReorderingActive) {
-      if (touchTimeout.current) {
-        clearTimeout(touchTimeout.current);
-        touchTimeout.current = null;
-      }
-      return;
-    }
-    
-    // Prevent default scroll behavior of touch interfaces when actively ordering
-    if (e.cancelable) e.preventDefault();
-    
-    const touch = e.touches[0];
-    const elementUnderTouch = document.elementFromPoint(touch.clientX, touch.clientY);
-    if (!elementUnderTouch) return;
-    
-    const menuItem = elementUnderTouch.closest("[data-index]");
-    if (menuItem) {
-      const targetIndex = parseInt(menuItem.getAttribute("data-index"), 10);
-      if (!isNaN(targetIndex) && targetIndex !== draggedIndex) {
-        reorderItems(draggedIndex, targetIndex);
-        setDraggedIndex(targetIndex);
-      }
-    }
-  };
-
-  const handleTouchEnd = (e) => {
-    if (touchTimeout.current) {
-      clearTimeout(touchTimeout.current);
-      touchTimeout.current = null;
-    }
-    
-    setDraggedIndex(null);
-    setIsReorderingActive(false);
-    
-    e.currentTarget.style.opacity = "1";
-    e.currentTarget.style.transform = "none";
-    e.currentTarget.style.boxShadow = "none";
   };
 
   // Determine badge colors for user roles
@@ -341,11 +394,40 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
         </div>
 
         {/* Navigation Menu */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 6px 8px 6px", borderBottom: "1px solid rgba(255, 255, 255, 0.04)", marginBottom: "8px" }}>
+          <span style={{ fontSize: "0.7rem", fontWeight: "800", letterSpacing: "1px", color: "var(--text-muted)", textTransform: "uppercase" }}>
+            Módulos {isReorderingActive && <span style={{ color: "var(--color-primary)", textTransform: "none", fontSize: "0.68rem" }}>(Arrastrando...)</span>}
+          </span>
+          <button 
+            type="button"
+            onClick={resetOrder}
+            title="Restablecer orden predeterminado"
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+              fontSize: "0.7rem",
+              padding: "2px 6px",
+              borderRadius: "4px",
+              transition: "all 0.2s"
+            }}
+            className="btn-reset-order"
+          >
+            <RotateCcw size={12} />
+            <span>Restablecer</span>
+          </button>
+        </div>
+
         <nav style={styles.nav}>
           <ul style={styles.menuList}>
             {orderedItems.map((item, index) => {
               const Icon = item.icon;
               const isActive = currentTab === item.id;
+              const isItemBeingDragged = draggedIndex === index;
               
               return (
                 <li 
@@ -355,33 +437,59 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
                   onDragStart={(e) => handleDragStart(e, index)}
                   onDragEnd={handleDragEnd}
                   onDragOver={(e) => handleDragOver(e, index)}
+                  onMouseDown={(e) => handleMouseDown(e, index)}
                   onTouchStart={(e) => handleTouchStart(e, index)}
+                  onMouseMove={handleMouseMove}
                   onTouchMove={handleTouchMove}
-                  onTouchEnd={handleTouchEnd}
+                  onMouseUp={handlePressEnd}
+                  onTouchEnd={handlePressEnd}
+                  onMouseLeave={clearPressTimer}
                   style={{
-                    cursor: draggedIndex !== null ? "grabbing" : "grab",
+                    cursor: isItemBeingDragged ? "grabbing" : "grab",
                     userSelect: "none",
-                    touchAction: isReorderingActive ? "none" : "pan-y"
+                    touchAction: isReorderingActive ? "none" : "pan-y",
+                    borderRadius: "10px",
+                    transition: isItemBeingDragged ? "none" : "transform 0.15s ease, background-color 0.15s ease",
+                    transform: isItemBeingDragged ? "scale(1.03)" : "none",
+                    zIndex: isItemBeingDragged ? 10 : 1,
+                    opacity: isItemBeingDragged ? 0.9 : 1
                   }}
+                  className={isItemBeingDragged ? "module-item-dragging" : ""}
                 >
                   <button
                     onClick={() => {
-                      if (!isReorderingActive) {
+                      if (!isReorderingActive && !isLongPressing.current && !justReordered.current) {
                         setCurrentTab(item.id);
                       }
                     }}
                     style={{
                       ...styles.menuItem,
-                      ...(isActive ? styles.menuItemActive : {})
+                      ...(isActive ? styles.menuItemActive : {}),
+                      ...(isItemBeingDragged ? {
+                        border: "1px dashed var(--color-primary)",
+                        background: "rgba(59, 130, 246, 0.18)",
+                        boxShadow: "0 8px 24px rgba(59, 130, 246, 0.3)"
+                      } : {})
                     }}
                     className="menu-button-item"
                   >
-                    <Icon 
-                      size={20} 
+                    <GripVertical 
+                      size={15} 
+                      className="drag-grip-icon"
                       style={{
-                        marginRight: "12px",
+                        marginRight: "6px",
+                        color: isItemBeingDragged ? "var(--color-primary)" : "var(--text-muted)",
+                        opacity: isItemBeingDragged ? 1 : 0.4,
+                        flexShrink: 0
+                      }} 
+                    />
+                    <Icon 
+                      size={19} 
+                      style={{
+                        marginRight: "10px",
                         color: isActive ? "var(--color-primary)" : "var(--text-muted)",
-                        filter: isActive ? "drop-shadow(0 0 6px rgba(59, 130, 246, 0.5))" : "none"
+                        filter: isActive ? "drop-shadow(0 0 6px rgba(59, 130, 246, 0.5))" : "none",
+                        flexShrink: 0
                       }} 
                     />
                     <span style={isActive ? styles.menuItemTextActive : styles.menuItemText}>
@@ -443,8 +551,24 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
           }
           .menu-button-item:hover {
-            background: rgba(255, 255, 255, 0.03);
-            transform: translateX(4px);
+            background: rgba(255, 255, 255, 0.04);
+            transform: translateX(3px);
+          }
+          .menu-button-item:hover .drag-grip-icon {
+            opacity: 0.9 !important;
+            color: var(--color-primary);
+          }
+          .btn-reset-order:hover {
+            color: #fff !important;
+            background: rgba(255, 255, 255, 0.08) !important;
+          }
+          .module-item-dragging {
+            animation: pulse-drag-border 1.2s infinite ease-in-out;
+          }
+          @keyframes pulse-drag-border {
+            0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+            50% { box-shadow: 0 0 12px 3px rgba(59, 130, 246, 0.6); }
+            100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
           }
           .btn-ghost-logout {
             display: flex;
