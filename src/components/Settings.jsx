@@ -2010,7 +2010,9 @@ export default function SettingsComponent({
                         </tr>
                       </thead>
                       <tbody>
-                        {usuarios.map((userObj) => {
+                        {Array.from(new Map((usuarios || []).map(u => [String(u?.user || "").toLowerCase().trim(), u])).values())
+                          .filter(u => u && u.user)
+                          .map((userObj) => {
                           const isCurrentUser = userObj.user.toLowerCase().trim() === usuarioActual?.user?.toLowerCase()?.trim();
                           const isMainAdmin = userObj.user.toLowerCase().trim() === "admin";
                           

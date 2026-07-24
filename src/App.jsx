@@ -108,19 +108,65 @@ const filterOutMockItems = (key, list) => {
   });
 };
 
+export const deduplicateUsers = (userList) => {
+  if (!Array.isArray(userList)) return [];
+  const map = new Map();
+  userList.forEach(u => {
+    if (!u) return;
+    const usernameKey = String(u.user || u.username || "").toLowerCase().trim();
+    if (!usernameKey) return;
+    if (!map.has(usernameKey)) {
+      map.set(usernameKey, u);
+    } else {
+      const existing = map.get(usernameKey);
+      map.set(usernameKey, {
+        ...existing,
+        ...u,
+        permissions: (u.permissions && u.permissions.length > 0) ? u.permissions : (existing.permissions || [])
+      });
+    }
+  });
+  return Array.from(map.values());
+};
+
 // Helper to merge local cached array data with cloud data to prevent silent data wipes on initial connection
 const mergeCollections = (key, localValRaw, cloudValRaw) => {
   const localVal = filterOutMockItems(key, safeParseJSON(localValRaw));
   const cloudVal = filterOutMockItems(key, safeParseJSON(cloudValRaw));
 
   if (!cloudVal || (Array.isArray(cloudVal) && cloudVal.length === 0)) {
-    return Array.isArray(localVal) ? localVal : (cloudVal || []);
+    const res = Array.isArray(localVal) ? localVal : (cloudVal || []);
+    return key === "usuarios" ? deduplicateUsers(res) : res;
   }
   if (!localVal || (Array.isArray(localVal) && localVal.length === 0)) {
-    return cloudVal;
+    return key === "usuarios" ? deduplicateUsers(cloudVal) : cloudVal;
   }
 
   if (Array.isArray(localVal) && Array.isArray(cloudVal)) {
+    if (key === "usuarios") {
+      const mergedMap = new Map();
+      const cloudUsers = deduplicateUsers(cloudVal);
+      const localUsers = deduplicateUsers(localVal);
+
+      cloudUsers.forEach((u) => {
+        const username = String(u.user || u.username || "").toLowerCase().trim();
+        if (username) mergedMap.set(username, u);
+      });
+
+      localUsers.forEach((u) => {
+        const username = String(u.user || u.username || "").toLowerCase().trim();
+        if (username) {
+          if (!mergedMap.has(username)) {
+            mergedMap.set(username, u);
+          } else {
+            const existing = mergedMap.get(username);
+            mergedMap.set(username, { ...u, ...existing });
+          }
+        }
+      });
+      return Array.from(mergedMap.values());
+    }
+
     if (key === "clientes") {
       const mergedMap = new Map();
       cloudVal.forEach((c, idx) => {
@@ -166,7 +212,7 @@ const mergeCollections = (key, localValRaw, cloudValRaw) => {
     return Array.from(mergedMap.values());
   }
 
-  return cloudVal;
+  return key === "usuarios" ? deduplicateUsers(cloudVal) : cloudVal;
 };
 
 
@@ -181,7 +227,7 @@ export default function App() {
       { user: "jefe", pass: "1234", rol: "jefe de taller", permissions: ["dashboard", "taller", "repuestosFaltantes", "historial"], salarioBase: 4000, comisionTaller: 10, comisionCarwash: 0, comisionarLabor: true, comisionarRepuestos: true, comisionarCarwash: false, comisionRepuestos: 5 }
     ];
     const val = getLocalStorage("usuarios", defaultUsers);
-    const loaded = Array.isArray(val) ? val : defaultUsers;
+    const loaded = deduplicateUsers(Array.isArray(val) ? val : defaultUsers);
     return loaded.map(u => {
       const perms = u.permissions || [];
       const updatedPerms = (u.rol === "admin" || u.rol === "cajero")
@@ -709,6 +755,9 @@ export default function App() {
           
           if (ARRAY_KEYS.includes(key)) {
             sanitizedValue = filterOutMockItems(key, sanitizedValue);
+            if (key === "usuarios") {
+              sanitizedValue = deduplicateUsers(sanitizedValue);
+            }
             if (!Array.isArray(sanitizedValue)) {
               if (sanitizedValue && typeof sanitizedValue === "object") {
                 sanitizedValue = Object.values(sanitizedValue);
@@ -837,8 +886,9 @@ export default function App() {
   }, [fixedCosts]);
 
   useEffect(() => {
-    setLocalStorage("usuarios", usuarios);
-    syncToCloud("usuarios", usuarios);
+    const cleanUsers = deduplicateUsers(usuarios);
+    setLocalStorage("usuarios", cleanUsers);
+    syncToCloud("usuarios", cleanUsers);
   }, [usuarios]);
 
   // Auto-recover missing clients and vehicles from orders/carwash/parking history deterministically
