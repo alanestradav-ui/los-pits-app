@@ -759,32 +759,39 @@ export default function SettingsComponent({
   // Delivered workshop orders sales & variable costs
   const deliveredOrders = (ordenes || []).filter(o => o.estado === "Entregado");
   const wsSalesRevenue = deliveredOrders.reduce((sum, o) => sum + o.total, 0);
-  const wsCommissions = deliveredOrders.reduce((sum, o) => sum + o.comision, 0);
+  const wsCommissions = deliveredOrders.reduce((sum, o) => sum + (parseFloat(o.comision) || 0), 0);
   const wsPartsCost = deliveredOrders.reduce((sum, o) => 
-    sum + (o.presupuesto?.parts || []).reduce((sub, p) => sub + (p.qty * (p.purchasePrice || 0)), 0)
+    sum + (o.presupuesto?.parts || []).reduce((sub, p) => sub + ((parseFloat(p.qty) || 1) * (parseFloat(p.purchasePrice) || parseFloat(p.unitCost) || (parseFloat(p.price) * 0.7) || 0)), 0)
   , 0);
 
   // Delivered carwash sales & variable costs
   const deliveredCarwash = (carwash || []).filter(c => c.estado === "Entregado");
-  const cwSalesRevenue = deliveredCarwash.reduce((sum, c) => sum + c.precio, 0);
-  const cwCommissions = deliveredCarwash.reduce((sum, c) => sum + c.comision, 0);
-  const cwSuppliesCost = (carwashConsumption || []).reduce((sum, c) => sum + c.cost, 0);
+  const cwSalesRevenue = deliveredCarwash.reduce((sum, c) => sum + (c.tallerOrderId ? 0 : c.precio), 0);
+  const cwCommissions = deliveredCarwash.reduce((sum, c) => sum + (parseFloat(c.comision) || 0), 0);
+  const cwSuppliesCost = (carwashConsumption || []).reduce((sum, c) => sum + (parseFloat(c.cost) || 0), 0);
 
   // Cafeteria sales & variable costs
   const cafSalesRevenue = (cafeteriaSales || []).reduce((sum, s) => sum + s.total, 0);
   const cafItemsCost = (cafeteriaSales || []).reduce((sum, s) => 
-    sum + (s.items || []).reduce((sub, item) => sub + (item.qty * (item.purchasePrice || 0)), 0)
+    sum + (s.items || []).reduce((sub, item) => sub + ((parseFloat(item.qty) || 1) * (parseFloat(item.purchasePrice) || (parseFloat(item.price) * 0.6) || 0)), 0)
+  , 0);
+
+  // Tienda sales & variable costs
+  const tiendaSalesRevenue = (tiendaSales || []).reduce((sum, s) => sum + s.total, 0);
+  const tiendaItemsCost = (tiendaSales || []).reduce((sum, s) => 
+    sum + (s.items || []).reduce((sub, item) => sub + ((parseFloat(item.qty) || 1) * (parseFloat(item.purchasePrice) || (parseFloat(item.price) * 0.6) || 0)), 0)
   , 0);
 
   // Totals
-  const totalSalesRevenue = wsSalesRevenue + cwSalesRevenue + cafSalesRevenue;
-  const totalVariableCosts = wsCommissions + wsPartsCost + cwCommissions + cwSuppliesCost + cafItemsCost;
+  const totalSalesRevenue = wsSalesRevenue + cwSalesRevenue + cafSalesRevenue + tiendaSalesRevenue;
+  const totalVariableCosts = wsCommissions + wsPartsCost + cwCommissions + cwSuppliesCost + cafItemsCost + tiendaItemsCost;
 
-  // Margin ratio (gross contribution)
-  const marginRatio = totalSalesRevenue > 0 ? (totalSalesRevenue - totalVariableCosts) / totalSalesRevenue : 0.65;
-  const breakEvenPoint = marginRatio > 0 ? totalFixedCosts / marginRatio : 0;
-  const isBreakEvenMet = totalSalesRevenue >= breakEvenPoint;
-  const progressPercent = breakEvenPoint > 0 ? Math.min((totalSalesRevenue / breakEvenPoint) * 100, 100) : 0;
+  // Margin ratio & Break even based on Contribution Margin (Utilidad Bruta)
+  const totalContributionMargin = totalSalesRevenue - totalVariableCosts;
+  const marginRatio = totalSalesRevenue > 0 ? (totalContributionMargin / totalSalesRevenue) : 0.65;
+  const breakEvenPoint = marginRatio > 0 ? totalFixedCosts / marginRatio : totalFixedCosts;
+  const isBreakEvenMet = totalContributionMargin >= totalFixedCosts;
+  const progressPercent = totalFixedCosts > 0 ? Math.min((Math.max(0, totalContributionMargin) / totalFixedCosts) * 100, 100) : 0;
 
   return (
     <div style={styles.container} className="animate-fade-in">

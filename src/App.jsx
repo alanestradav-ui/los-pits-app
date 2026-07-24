@@ -1274,6 +1274,7 @@ export default function App() {
             vehiculosVenta={vehiculosVenta}
             cuentasPorCobrar={cuentasPorCobrar}
             cuentasPorPagar={cuentasPorPagar}
+            carwashConsumption={carwashConsumption}
             dashboardPeriod={dashboardPeriod}
             setDashboardPeriod={setDashboardPeriod}
             customStartDate={customStartDate}

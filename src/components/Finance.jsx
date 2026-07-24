@@ -9,7 +9,12 @@ import {
   Calendar, 
   Users,
   CircleParking,
-  Coffee
+  Coffee,
+  TrendingDown,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  ShoppingBag
 } from "lucide-react";
 import { formatMoney, formatDate } from "../utils/storage";
 import { jsPDF } from "jspdf";
@@ -27,6 +32,7 @@ export default function Finance({
   vehiculosVenta = [],
   cuentasPorCobrar = [],
   cuentasPorPagar = [],
+  carwashConsumption = [],
   dashboardPeriod,
   setDashboardPeriod,
   customStartDate,
@@ -228,6 +234,81 @@ export default function Finance({
   const totalPendingTaller = pendingTaller.reduce((sum, o) => sum + o.total, 0);
   const totalPendingCarwash = pendingCarwash.reduce((sum, c) => sum + c.precio, 0);
   const totalPendingGrand = totalPendingTaller + totalPendingCarwash;
+
+  // --- DIRECT / VARIABLE COSTS CALCULATION (FOR PERIOD) ---
+  const totalTallerPartsCost = billedTaller.reduce((sum, o) => {
+    if (o.presupuesto && Array.isArray(o.presupuesto.parts)) {
+      return sum + o.presupuesto.parts.reduce((pSum, part) => {
+        const qty = parseFloat(part.qty) || 1;
+        const purchase = parseFloat(part.purchasePrice) || parseFloat(part.unitCost) || (parseFloat(part.price) * 0.7);
+        return pSum + (qty * purchase);
+      }, 0);
+    }
+    return sum;
+  }, 0);
+
+  const totalCafeteriaItemCost = filteredCafeteria.reduce((sum, s) => {
+    if (s.items && Array.isArray(s.items)) {
+      return sum + s.items.reduce((iSum, item) => {
+        const qty = parseFloat(item.qty) || 1;
+        const purchase = parseFloat(item.purchasePrice) || (parseFloat(item.price) * 0.6);
+        return iSum + (qty * purchase);
+      }, 0);
+    }
+    return sum;
+  }, 0);
+
+  const totalTiendaItemCost = (filteredTienda || []).reduce((sum, s) => {
+    if (s.items && Array.isArray(s.items)) {
+      return sum + s.items.reduce((iSum, item) => {
+        const qty = parseFloat(item.qty) || 1;
+        const purchase = parseFloat(item.purchasePrice) || (parseFloat(item.price) * 0.6);
+        return iSum + (qty * purchase);
+      }, 0);
+    }
+    return sum;
+  }, 0);
+
+  const totalCarwashSuppliesCost = (filterByPeriod(carwashConsumption || [], "fecha")).reduce((sum, c) => sum + (parseFloat(c.cost) || 0), 0);
+
+  // Period commissions paid on delivered orders
+  const periodMechanicComms = billedTaller.reduce((sum, o) => sum + (parseFloat(o.comision) || 0), 0);
+  const periodWasherComms = billedCarwash.reduce((sum, c) => sum + (parseFloat(c.comision) || 0), 0);
+  const periodCashierComms = billedTaller.reduce((sum, o) => {
+    if (!o.cajero || !o.cajeroComisionApplies) return sum;
+    const cashierUser = (usuarios || []).find(u => u.user.toLowerCase() === o.cajero.toLowerCase());
+    const pct = cashierUser ? (cashierUser.comisionTaller / 100) : 0.10;
+    const totalLabor = o.presupuesto?.labor?.reduce((lSum, item) => lSum + (parseFloat(item.price) || 0), 0) || o.total || 0;
+    return sum + (totalLabor * pct);
+  }, 0);
+
+  const totalCommissionsPaidPeriod = periodMechanicComms + periodWasherComms + periodCashierComms;
+  const totalVariableCostsPeriod = totalTallerPartsCost + totalCafeteriaItemCost + totalTiendaItemCost + totalCarwashSuppliesCost + totalCommissionsPaidPeriod;
+
+  const totalContributionMarginPeriod = totalGrandRevenue - totalVariableCostsPeriod;
+  const contributionMarginRatioPeriod = totalGrandRevenue > 0 ? (totalContributionMarginPeriod / totalGrandRevenue) : 0;
+
+  // Fixed Monthly Costs
+  const overheadMonthly = (fixedCosts || []).reduce((sum, c) => sum + (parseFloat(c.amount) || 0), 0);
+  const salariesMonthly = (usuarios || []).reduce((sum, u) => sum + (parseFloat(u.salarioBase) || 0), 0);
+  const totalMonthlyFixed = overheadMonthly + salariesMonthly;
+
+  let periodScaleFactor = 1;
+  if (dashboardPeriod === "dia") periodScaleFactor = 1 / 30;
+  else if (dashboardPeriod === "semana") periodScaleFactor = 7 / 30;
+  else if (dashboardPeriod === "mes") periodScaleFactor = 1;
+  else if (dashboardPeriod === "ano") periodScaleFactor = 12;
+  else if (dashboardPeriod === "personalizado") {
+    if (customStartDate && customEndDate) {
+      const diffMs = new Date(customEndDate) - new Date(customStartDate);
+      const diffDays = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)) + 1);
+      periodScaleFactor = diffDays / 30;
+    }
+  }
+
+  const periodFixedCosts = totalMonthlyFixed * periodScaleFactor;
+  const netProfitPeriod = totalContributionMarginPeriod - periodFixedCosts;
+  const isProfitablePeriod = netProfitPeriod >= 0;
 
   // Commissions Calculations per worker
   const getMechanicCommissions = (name) => {
@@ -814,45 +895,60 @@ export default function Finance({
       {/* 1. BALANCE GENERAL TAB */}
       {activeTab === "overview" && (
         <div style={styles.tabContent}>
-          {/* Main revenue stats */}
-          <div style={styles.revenueRow}>
-            {/* Box 1: Caja (Efectivo) */}
-            <div className="glass-panel" style={{ ...styles.revenueCard, borderColor: "rgba(16, 185, 129, 0.2)" }}>
-              <div style={styles.cardGlowGreen} />
-              <div style={styles.revHeader}>
-                <Coins size={24} color="var(--color-success)" />
-                <span style={styles.revLabel}>Recaudado en Caja (Efectivo)</span>
-              </div>
-              <span style={{ ...styles.revAmount, color: "var(--color-success)", fontFamily: "var(--font-display)" }}>
-                {formatMoney(cashRevenueTotal)}
-              </span>
-              <p style={styles.revSub}>Total acumulado cobrado en efectivo físico.</p>
-            </div>
-
-            {/* Box 2: Bancos (Otros Métodos) */}
+          {/* Main Financial KPI Overview Cards */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "20px", marginBottom: "25px" }}>
+            {/* Box 1: Facturación Bruta */}
             <div className="glass-panel" style={{ ...styles.revenueCard, borderColor: "rgba(59, 130, 246, 0.2)" }}>
               <div style={styles.cardGlowBlue} />
               <div style={styles.revHeader}>
-                <TrendingUp size={24} color="var(--color-primary)" />
-                <span style={styles.revLabel}>Recaudado en Bancos</span>
+                <DollarSign size={24} color="var(--color-primary)" />
+                <span style={styles.revLabel}>Recaudación Bruta Total</span>
               </div>
-              <span style={{ ...styles.revAmount, color: "var(--color-primary)", fontFamily: "var(--font-display)" }}>
-                {formatMoney(bankRevenueTotal)}
+              <span style={{ ...styles.revAmount, color: "#fff", fontFamily: "var(--font-display)" }}>
+                {formatMoney(totalGrandRevenue)}
               </span>
-              <p style={styles.revSub}>Tarjetas, transferencias y cheques depositados.</p>
+              <p style={styles.revSub}>Caja (Efectivo): {formatMoney(cashRevenueTotal)} • Bancos: {formatMoney(bankRevenueTotal)}</p>
             </div>
 
-            {/* Box 2: Pending */}
-            <div className="glass-panel" style={{ ...styles.revenueCard, borderColor: "rgba(245, 158, 11, 0.2)" }}>
-              <div style={styles.cardGlowOrange} />
+            {/* Box 2: Costos Directos y Comisiones */}
+            <div className="glass-panel" style={{ ...styles.revenueCard, borderColor: "rgba(239, 68, 68, 0.2)" }}>
+              <div style={{ ...styles.cardGlowOrange, background: "radial-gradient(circle, rgba(239, 68, 68, 0.15) 0%, transparent 70%)" }} />
               <div style={styles.revHeader}>
-                <Calendar size={24} color="var(--color-warning)" />
-                <span style={styles.revLabel}>Flujo Pendiente (Activo / Listo)</span>
+                <TrendingDown size={24} color="#f87171" />
+                <span style={styles.revLabel}>Costos Directos y Comisiones</span>
               </div>
-              <span style={{ ...styles.revAmount, color: "var(--color-warning)", fontFamily: "var(--font-display)" }}>
-                {formatMoney(totalPendingGrand)}
+              <span style={{ ...styles.revAmount, color: "#f87171", fontFamily: "var(--font-display)" }}>
+                {formatMoney(totalVariableCostsPeriod)}
               </span>
-              <p style={styles.revSub}>Estimación del valor de los vehículos actualmente en taller o carwash.</p>
+              <p style={styles.revSub}>Repuestos, insumos y comisiones pagadas a colaboradores.</p>
+            </div>
+
+            {/* Box 3: Utilidad Bruta (Margen) */}
+            <div className="glass-panel" style={{ ...styles.revenueCard, borderColor: "rgba(16, 185, 129, 0.2)" }}>
+              <div style={styles.cardGlowGreen} />
+              <div style={styles.revHeader}>
+                <TrendingUp size={24} color="#34d399" />
+                <span style={styles.revLabel}>Utilidad Bruta (Margen)</span>
+              </div>
+              <span style={{ ...styles.revAmount, color: "#34d399", fontFamily: "var(--font-display)" }}>
+                {formatMoney(totalContributionMarginPeriod)}
+              </span>
+              <p style={styles.revSub}>Margen de contribución real: {(contributionMarginRatioPeriod * 100).toFixed(1)}% de las ventas.</p>
+            </div>
+
+            {/* Box 4: Utilidad Neta Operativa */}
+            <div className="glass-panel" style={{ ...styles.revenueCard, borderColor: isProfitablePeriod ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)" }}>
+              <div style={{ ...styles.cardGlowGreen, background: isProfitablePeriod ? "radial-gradient(circle, rgba(16, 185, 129, 0.15) 0%, transparent 70%)" : "radial-gradient(circle, rgba(239, 68, 68, 0.15) 0%, transparent 70%)" }} />
+              <div style={styles.revHeader}>
+                {isProfitablePeriod ? <CheckCircle2 size={24} color="#34d399" /> : <XCircle size={24} color="#f87171" />}
+                <span style={styles.revLabel}>Utilidad Neta Operativa</span>
+              </div>
+              <span style={{ ...styles.revAmount, color: isProfitablePeriod ? "#34d399" : "#f87171", fontFamily: "var(--font-display)" }}>
+                {formatMoney(netProfitPeriod)}
+              </span>
+              <p style={styles.revSub}>
+                {isProfitablePeriod ? `🟢 Superávit tras cubrir ${formatMoney(periodFixedCosts)} de costos fijos.` : `🔴 Déficit tras restar ${formatMoney(periodFixedCosts)} de costos fijos.`}
+              </p>
             </div>
           </div>
 
@@ -1200,8 +1296,43 @@ export default function Finance({
         
         const totalRev = revTaller + revCarwash + revParking + revCafeteria + revTienda;
 
-        // Calculate Fixed Costs
-        const overheadMonthly = (fixedCosts || []).reduce((sum, c) => sum + (c.amount || 0), 0);
+        // Direct / Variable costs calculation
+        const partsCost = periodTaller.reduce((sum, o) => {
+          if (o.presupuesto && Array.isArray(o.presupuesto.parts)) {
+            return sum + o.presupuesto.parts.reduce((pSum, part) => {
+              const qty = parseFloat(part.qty) || 1;
+              const purchase = parseFloat(part.purchasePrice) || parseFloat(part.unitCost) || (parseFloat(part.price) * 0.7);
+              return pSum + (qty * purchase);
+            }, 0);
+          }
+          return sum;
+        }, 0);
+
+        const cafeteriaCost = periodCafeteria.reduce((sum, s) => {
+          if (s.items && Array.isArray(s.items)) {
+            return sum + s.items.reduce((iSum, item) => iSum + ((parseFloat(item.qty) || 1) * (parseFloat(item.purchasePrice) || (parseFloat(item.price) * 0.6))), 0);
+          }
+          return sum;
+        }, 0);
+
+        const tiendaCost = (periodTienda || []).reduce((sum, s) => {
+          if (s.items && Array.isArray(s.items)) {
+            return sum + s.items.reduce((iSum, item) => iSum + ((parseFloat(item.qty) || 1) * (parseFloat(item.purchasePrice) || (parseFloat(item.price) * 0.6))), 0);
+          }
+          return sum;
+        }, 0);
+
+        const carwashSuppliesBE = (filterByBreakevenPeriod(carwashConsumption || [], "fecha")).reduce((sum, c) => sum + (parseFloat(c.cost) || 0), 0);
+
+        const commsPaid = periodTaller.reduce((sum, o) => sum + (parseFloat(o.comision) || 0), 0) +
+                          periodCarwash.reduce((sum, c) => sum + (parseFloat(c.comision) || 0), 0);
+
+        const totalVariableCosts = partsCost + cafeteriaCost + tiendaCost + carwashSuppliesBE + commsPaid;
+        const totalContributionMargin = totalRev - totalVariableCosts;
+        const marginRatio = totalRev > 0 ? (totalContributionMargin / totalRev) : 0;
+
+        // Fixed Costs calculation
+        const overheadMonthly = (fixedCosts || []).reduce((sum, c) => sum + (parseFloat(c.amount) || 0), 0);
         const salariesMonthly = (usuarios || []).reduce((sum, u) => sum + (parseFloat(u.salarioBase) || 0), 0);
         const totalMonthlyFixed = overheadMonthly + salariesMonthly;
 
@@ -1222,9 +1353,11 @@ export default function Finance({
         const periodOverhead = overheadMonthly * scale;
         const periodSalaries = salariesMonthly * scale;
 
-        const progressPercent = Math.min((totalRev / (periodFixed || 1)) * 100, 100);
-        const balance = totalRev - periodFixed;
-        const reachedBE = totalRev >= periodFixed;
+        // Net Operating Result & BE Cobertura
+        const netProfit = totalContributionMargin - periodFixed;
+        const reachedBE = totalContributionMargin >= periodFixed;
+        const progressPercent = periodFixed > 0 ? Math.min((Math.max(0, totalContributionMargin) / periodFixed) * 100, 100) : 0;
+        const requiredGrossSales = marginRatio > 0 ? (periodFixed / marginRatio) : periodFixed;
 
         return (
           <div style={styles.tabContent}>
@@ -1232,7 +1365,9 @@ export default function Finance({
             <div className="glass-panel text-left" style={{ padding: "20px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px" }}>
               <div>
                 <h2 style={{ fontSize: "1.2rem", fontWeight: "700" }}>Punto de Equilibrio Financiero</h2>
-                <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "2px" }}>Analiza los ingresos vs. egresos fijos del taller y planilla.</p>
+                <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "2px" }}>
+                  Mide si la <strong>Utilidad Bruta (Margen de Contribución)</strong> cubre los <strong>Costos Fijos Operativos</strong>.
+                </p>
               </div>
               <div style={{ display: "flex", gap: "8px" }}>
                 {[
@@ -1279,22 +1414,22 @@ export default function Finance({
               }} />
 
               <div style={{ textAlign: "center" }}>
-                <span style={{ fontSize: "0.9rem", color: "var(--text-muted)", fontWeight: "600", textTransform: "uppercase", letterSpacing: "1px" }}>
-                  Progreso del Periodo ({periodName})
+                <span style={{ fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: "700", textTransform: "uppercase", letterSpacing: "1px" }}>
+                  Cobertura de Costos Fijos por Utilidad Bruta ({periodName})
                 </span>
                 <h1 style={{ fontSize: "3.2rem", fontWeight: "900", color: reachedBE ? "#10b981" : "#ef4444", marginTop: "8px", fontFamily: "var(--font-display)" }}>
                   {progressPercent.toFixed(1)}%
                 </h1>
-                <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginTop: "6px" }}>
+                <p style={{ color: reachedBE ? "#34d399" : "#f87171", fontSize: "0.95rem", fontWeight: "600", marginTop: "6px" }}>
                   {reachedBE 
-                    ? `🟢 Has superado el punto de equilibrio por ${formatMoney(balance)}` 
-                    : `🔴 Faltan ${formatMoney(Math.abs(balance))} para cubrir costos fijos`
+                    ? `🟢 ¡Punto de Equilibrio Alcanzado! Tu Utilidad Bruta (${formatMoney(totalContributionMargin)}) cubre los ${formatMoney(periodFixed)} de costos fijos y genera una Utilidad Neta de ${formatMoney(netProfit)}.` 
+                    : `🔴 En Faltante de Equilibrio. Tu Utilidad Bruta (${formatMoney(totalContributionMargin)}) no cubre los ${formatMoney(periodFixed)} de costos fijos. Faltan ${formatMoney(Math.abs(netProfit))} de Utilidad Bruta para el equilibrio.`
                   }
                 </p>
               </div>
 
               {/* Progress Bar */}
-              <div style={{ width: "100%", maxWidth: "600px" }}>
+              <div style={{ width: "100%", maxWidth: "650px" }}>
                 <div style={{ height: "14px", width: "100%", backgroundColor: "rgba(255,255,255,0.05)", borderRadius: "7px", overflow: "hidden", border: "1px solid rgba(255,255,255,0.08)" }}>
                   <div style={{
                     height: "100%",
@@ -1305,85 +1440,133 @@ export default function Finance({
                   }} />
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: "8px", fontSize: "0.82rem", color: "var(--text-muted)" }}>
-                  <span>Recaudado: {formatMoney(totalRev)}</span>
-                  <span>Meta: {formatMoney(periodFixed)}</span>
+                  <span>Utilidad Bruta Generada: <strong>{formatMoney(totalContributionMargin)}</strong></span>
+                  <span>Costos Fijos Operativos Meta: <strong>{formatMoney(periodFixed)}</strong></span>
+                </div>
+              </div>
+
+              {/* Target Sales Box */}
+              <div style={{
+                width: "100%",
+                maxWidth: "650px",
+                padding: "14px 18px",
+                borderRadius: "10px",
+                background: "rgba(59, 130, 246, 0.08)",
+                border: "1px solid rgba(59, 130, 246, 0.2)",
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                fontSize: "0.88rem",
+                textAlign: "left"
+              }}>
+                <TrendingUp size={24} color="var(--color-primary)" style={{ flexShrink: 0 }} />
+                <div>
+                  <span style={{ color: "#fff", fontWeight: "700" }}>Ventas Brutas Totales Requeridas: </span>
+                  <span style={{ color: "var(--color-primary)", fontWeight: "800" }}>{formatMoney(requiredGrossSales)}</span>
+                  <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "2px" }}>
+                    Con tu margen de utilidad bruta actual del <strong>{(marginRatio * 100).toFixed(1)}%</strong>, necesitas facturar <strong>{formatMoney(requiredGrossSales)}</strong> en ventas para cubrir tus costos fijos de {formatMoney(periodFixed)}.
+                  </p>
                 </div>
               </div>
             </div>
 
-            {/* Income & Cost Details Breakdown */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "25px" }}>
-              {/* Cost Card */}
-              <div className="glass-panel" style={{ padding: "24px", textAlign: "left" }}>
-                <h3 style={{ fontSize: "1.1rem", fontWeight: "700", marginBottom: "16px", color: "#ef4444", display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span style={{ display: "inline-block", width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "#ef4444" }}></span> Costos Fijos ({periodName})
+            {/* Income & Cost Details Breakdown (P&L Financial Statement) */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "20px" }}>
+              {/* Card 1: Ingresos Brutos */}
+              <div className="glass-panel" style={{ padding: "20px", textAlign: "left" }}>
+                <h3 style={{ fontSize: "1rem", fontWeight: "700", marginBottom: "14px", color: "var(--color-primary)", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <DollarSign size={18} /> (1) Ingresos Brutos ({periodName})
                 </h3>
-                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem" }}>
-                    <span>Gastos Administrativos / Fijos:</span>
-                    <strong style={{ color: "#fff" }}>{formatMoney(periodOverhead)}</strong>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.85rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>🔧 Taller Mecánico:</span>
+                    <strong>{formatMoney(revTaller)}</strong>
                   </div>
-                  {fixedCosts.map(c => (
-                    <div key={c.id} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", color: "var(--text-muted)", paddingLeft: "12px" }}>
-                      <span>• {c.name}:</span>
-                      <span>{formatMoney(c.amount * scale)}</span>
-                    </div>
-                  ))}
-                  <div style={{ height: "1px", backgroundColor: "rgba(255,255,255,0.04)", margin: "4px 0" }} />
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem" }}>
-                    <span>Planilla Base (Colaboradores):</span>
-                    <strong style={{ color: "#fff" }}>{formatMoney(periodSalaries)}</strong>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>🧼 Carwash & Lavados:</span>
+                    <strong>{formatMoney(revCarwash)}</strong>
                   </div>
-                  {usuarios.map((u, index) => (
-                    <div key={index} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", color: "var(--text-muted)", paddingLeft: "12px" }}>
-                      <span>• {u.user} ({u.rol}):</span>
-                      <span>{formatMoney((u.salarioBase || 0) * scale)}</span>
-                    </div>
-                  ))}
-                  <div style={{ height: "1px", backgroundColor: "rgba(255,255,255,0.06)", margin: "6px 0" }} />
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1.05rem", fontWeight: "800", color: "#fff" }}>
-                    <span>Total Costos Fijos:</span>
-                    <span style={{ color: "#ef4444" }}>{formatMoney(periodFixed)}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>🅿️ Estacionamiento:</span>
+                    <strong>{formatMoney(revParking)}</strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>☕ Cafetería:</span>
+                    <strong>{formatMoney(revCafeteria)}</strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>🛒 Tienda POS:</span>
+                    <strong>{formatMoney(revTienda)}</strong>
+                  </div>
+                  <div style={{ height: "1px", backgroundColor: "rgba(255,255,255,0.06)", margin: "4px 0" }} />
+                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "800", color: "#fff" }}>
+                    <span>Total Ingresos Brutos (V):</span>
+                    <span style={{ color: "var(--color-primary)" }}>{formatMoney(totalRev)}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Revenue Card */}
-              <div className="glass-panel" style={{ padding: "24px", textAlign: "left" }}>
-                <h3 style={{ fontSize: "1.1rem", fontWeight: "700", marginBottom: "16px", color: "#10b981", display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span style={{ display: "inline-block", width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "#10b981" }}></span> Ingresos Reales ({periodName})
+              {/* Card 2: Costos Directos / Variables */}
+              <div className="glass-panel" style={{ padding: "20px", textAlign: "left" }}>
+                <h3 style={{ fontSize: "1rem", fontWeight: "700", marginBottom: "14px", color: "#f87171", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <TrendingDown size={18} /> (2) Costos Variables ({periodName})
                 </h3>
-                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem" }}>
-                    <span>🔧 Taller Mecánico:</span>
-                    <strong style={{ color: "#fff" }}>{formatMoney(revTaller)}</strong>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.85rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>Costo Repuestos Taller:</span>
+                    <strong>{formatMoney(partsCost)}</strong>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", color: "var(--text-muted)", paddingLeft: "12px" }}>
-                    <span>• {periodTaller.length} Vehículos entregados</span>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>Costo Mercadería Cafetería:</span>
+                    <strong>{formatMoney(cafeteriaCost)}</strong>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem" }}>
-                    <span>🧼 Carwash & Lavados:</span>
-                    <strong style={{ color: "#fff" }}>{formatMoney(revCarwash)}</strong>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>Costo Mercadería Tienda:</span>
+                    <strong>{formatMoney(tiendaCost)}</strong>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", color: "var(--text-muted)", paddingLeft: "12px" }}>
-                    <span>• {periodCarwash.length} Servicios entregados</span>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>Insumos Carwash:</span>
+                    <strong>{formatMoney(carwashSuppliesBE)}</strong>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem" }}>
-                    <span>🅿️ Estacionamiento:</span>
-                    <strong style={{ color: "#fff" }}>{formatMoney(revParking)}</strong>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>Comisiones de Personal:</span>
+                    <strong>{formatMoney(commsPaid)}</strong>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem" }}>
-                    <span>☕ Cafetería Ventas:</span>
-                    <strong style={{ color: "#fff" }}>{formatMoney(revCafeteria)}</strong>
+                  <div style={{ height: "1px", backgroundColor: "rgba(255,255,255,0.06)", margin: "4px 0" }} />
+                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "800", color: "#fff" }}>
+                    <span>Total Costos Variables (CV):</span>
+                    <span style={{ color: "#f87171" }}>{formatMoney(totalVariableCosts)}</span>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem" }}>
-                    <span>🛒 Tienda Ventas:</span>
-                    <strong style={{ color: "#fff" }}>{formatMoney(revTienda)}</strong>
+                </div>
+              </div>
+
+              {/* Card 3: Utilidad Bruta & Costos Fijos */}
+              <div className="glass-panel" style={{ padding: "20px", textAlign: "left" }}>
+                <h3 style={{ fontSize: "1rem", fontWeight: "700", marginBottom: "14px", color: "#34d399", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <TrendingUp size={18} /> (3) Margen & Costos Fijos
+                </h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.85rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "700" }}>
+                    <span>Utilidad Bruta (MC = V - CV):</span>
+                    <span style={{ color: "#34d399" }}>{formatMoney(totalContributionMargin)}</span>
                   </div>
-                  <div style={{ height: "1px", backgroundColor: "rgba(255,255,255,0.06)", margin: "6px 0" }} />
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1.05rem", fontWeight: "800", color: "#fff" }}>
-                    <span>Total Ingresos:</span>
-                    <span style={{ color: "#10b981" }}>{formatMoney(totalRev)}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                    <span>Margen de Ganancia %:</span>
+                    <span>{(marginRatio * 100).toFixed(1)}%</span>
+                  </div>
+                  <div style={{ height: "1px", backgroundColor: "rgba(255,255,255,0.06)", margin: "4px 0" }} />
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>Gastos Administrativos / Fijos:</span>
+                    <strong>{formatMoney(periodOverhead)}</strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>Planilla Base (Salarios):</span>
+                    <strong>{formatMoney(periodSalaries)}</strong>
+                  </div>
+                  <div style={{ height: "1px", backgroundColor: "rgba(255,255,255,0.06)", margin: "4px 0" }} />
+                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "800" }}>
+                    <span>Total Costos Fijos (CF):</span>
+                    <span style={{ color: "#ef4444" }}>{formatMoney(periodFixed)}</span>
                   </div>
                 </div>
               </div>
