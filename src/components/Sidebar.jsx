@@ -1,3 +1,4 @@
+import React, { useState, useEffect, useRef } from "react";
 import { 
   Gauge, 
   Wrench, 
@@ -129,17 +130,139 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
     }
   ];
 
-  // Filter items matching user permissions
-  const visibleItems = menuItems.filter(item => {
-    if (rol === "admin") return true;
-    if (item.id === "finanzas" || item.id === "configuracion") {
-      if (rol === "admin" || rol === "cajero") return true;
+  const [orderedItems, setOrderedItems] = useState([]);
+  const [draggedIndex, setDraggedIndex] = useState(null);
+  const [isReorderingActive, setIsReorderingActive] = useState(false);
+  const touchTimeout = useRef(null);
+
+  // Sync menu list with permissions and saved order
+  useEffect(() => {
+    const visible = menuItems.filter(item => {
+      if (rol === "admin") return true;
+      if (item.id === "finanzas" || item.id === "configuracion") {
+        if (rol === "admin" || rol === "cajero") return true;
+      }
+      if (usuarioActual?.permissions) {
+        return usuarioActual.permissions.includes(item.id);
+      }
+      return item.roles.includes(rol);
+    });
+
+    try {
+      const savedOrderStr = localStorage.getItem("sidebar_modules_order");
+      if (savedOrderStr) {
+        const savedOrder = JSON.parse(savedOrderStr);
+        const sorted = [...visible].sort((a, b) => {
+          const idxA = savedOrder.indexOf(a.id);
+          const idxB = savedOrder.indexOf(b.id);
+          if (idxA === -1 && idxB === -1) return 0;
+          if (idxA === -1) return 1;
+          if (idxB === -1) return -1;
+          return idxA - idxB;
+        });
+        setOrderedItems(sorted);
+      } else {
+        setOrderedItems(visible);
+      }
+    } catch (e) {
+      setOrderedItems(visible);
     }
-    if (usuarioActual?.permissions) {
-      return usuarioActual.permissions.includes(item.id);
+  }, [usuarioActual, rol]);
+
+  // Swaps items and saves array state to localStorage
+  const reorderItems = (fromIndex, toIndex) => {
+    if (fromIndex === toIndex) return;
+    const nextItems = [...orderedItems];
+    const [moved] = nextItems.splice(fromIndex, 1);
+    nextItems.splice(toIndex, 0, moved);
+    setOrderedItems(nextItems);
+    
+    try {
+      const orderIds = nextItems.map(item => item.id);
+      localStorage.setItem("sidebar_modules_order", JSON.stringify(orderIds));
+    } catch (e) {
+      console.error(e);
     }
-    return item.roles.includes(rol);
-  });
+  };
+
+  // --- Drag and Drop Mouse Events (Desktop) ---
+  const handleDragStart = (e, index) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+    e.currentTarget.style.opacity = "0.5";
+  };
+
+  const handleDragEnd = (e) => {
+    e.currentTarget.style.opacity = "1";
+    setDraggedIndex(null);
+  };
+
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === index) return;
+    
+    reorderItems(draggedIndex, index);
+    setDraggedIndex(index);
+  };
+
+  // --- Touch Drag Events (Mobile) ---
+  const handleTouchStart = (e, index) => {
+    const targetEl = e.currentTarget;
+    if (touchTimeout.current) clearTimeout(touchTimeout.current);
+    
+    touchTimeout.current = setTimeout(() => {
+      setDraggedIndex(index);
+      setIsReorderingActive(true);
+      
+      if (navigator.vibrate) {
+        navigator.vibrate(50); // Small haptic vibration to confirm holding
+      }
+      
+      targetEl.style.opacity = "0.6";
+      targetEl.style.transform = "scale(0.98)";
+      targetEl.style.boxShadow = "0 8px 24px rgba(59, 130, 246, 0.25)";
+    }, 450); // 450ms press-and-hold trigger delay
+  };
+
+  const handleTouchMove = (e) => {
+    if (!isReorderingActive) {
+      if (touchTimeout.current) {
+        clearTimeout(touchTimeout.current);
+        touchTimeout.current = null;
+      }
+      return;
+    }
+    
+    // Prevent default scroll behavior of touch interfaces when actively ordering
+    if (e.cancelable) e.preventDefault();
+    
+    const touch = e.touches[0];
+    const elementUnderTouch = document.elementFromPoint(touch.clientX, touch.clientY);
+    if (!elementUnderTouch) return;
+    
+    const menuItem = elementUnderTouch.closest("[data-index]");
+    if (menuItem) {
+      const targetIndex = parseInt(menuItem.getAttribute("data-index"), 10);
+      if (!isNaN(targetIndex) && targetIndex !== draggedIndex) {
+        reorderItems(draggedIndex, targetIndex);
+        setDraggedIndex(targetIndex);
+      }
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    if (touchTimeout.current) {
+      clearTimeout(touchTimeout.current);
+      touchTimeout.current = null;
+    }
+    
+    setDraggedIndex(null);
+    setIsReorderingActive(false);
+    
+    e.currentTarget.style.opacity = "1";
+    e.currentTarget.style.transform = "none";
+    e.currentTarget.style.boxShadow = "none";
+  };
 
   // Determine badge colors for user roles
   const getRoleBadgeStyle = (userRole) => {
@@ -220,14 +343,33 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
         {/* Navigation Menu */}
         <nav style={styles.nav}>
           <ul style={styles.menuList}>
-            {visibleItems.map((item) => {
+            {orderedItems.map((item, index) => {
               const Icon = item.icon;
               const isActive = currentTab === item.id;
               
               return (
-                <li key={item.id}>
+                <li 
+                  key={item.id}
+                  data-index={index}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, index)}
+                  onDragEnd={handleDragEnd}
+                  onDragOver={(e) => handleDragOver(e, index)}
+                  onTouchStart={(e) => handleTouchStart(e, index)}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
+                  style={{
+                    cursor: draggedIndex !== null ? "grabbing" : "grab",
+                    userSelect: "none",
+                    touchAction: isReorderingActive ? "none" : "pan-y"
+                  }}
+                >
                   <button
-                    onClick={() => setCurrentTab(item.id)}
+                    onClick={() => {
+                      if (!isReorderingActive) {
+                        setCurrentTab(item.id);
+                      }
+                    }}
                     style={{
                       ...styles.menuItem,
                       ...(isActive ? styles.menuItemActive : {})
