@@ -16,7 +16,9 @@ import {
   TrendingDown,
   DollarSign,
   Users,
-  Edit
+  Edit,
+  Edit2,
+  X
 } from "lucide-react";
 import { formatMoney } from "../utils/storage";
 import { getSupabaseClient, resetSupabaseClient, syncKeyToCloud } from "../utils/supabase";
@@ -136,7 +138,7 @@ export default function SettingsComponent({
 
   // Deduplicated Carwash Presets
   const uniqueCarwashPresets = (carwashPresets || []).filter((p, idx, self) => 
-    p && p.tipo && idx === self.findIndex(t => t && t.tipo && t.tipo.toLowerCase().trim() === p.tipo.toLowerCase().trim())
+    p && p.tipo && idx === self.findIndex(t => t && t.tipo && String(t.tipo).toLowerCase().trim() === String(p.tipo).toLowerCase().trim())
   );
 
   // Local state for adding Workshop parts
