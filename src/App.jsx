@@ -177,6 +177,9 @@ const mergeCollections = (key, localValRaw, cloudValRaw) => {
         const id = (c.telefono && c.telefono.trim()) || (c.nombre && c.nombre.trim()) || `local_c_${idx}`;
         if (!mergedMap.has(id)) {
           mergedMap.set(id, c);
+        } else {
+          const cloudItem = mergedMap.get(id);
+          mergedMap.set(id, { ...cloudItem, ...c });
         }
       });
       return Array.from(mergedMap.values());
@@ -192,6 +195,9 @@ const mergeCollections = (key, localValRaw, cloudValRaw) => {
         const id = (v.placa && v.placa.trim().toUpperCase()) || (v.chasis && v.chasis.trim().toUpperCase()) || `local_v_${idx}`;
         if (!mergedMap.has(id)) {
           mergedMap.set(id, v);
+        } else {
+          const cloudItem = mergedMap.get(id);
+          mergedMap.set(id, { ...cloudItem, ...v });
         }
       });
       return Array.from(mergedMap.values());
@@ -207,6 +213,9 @@ const mergeCollections = (key, localValRaw, cloudValRaw) => {
       const id = item && item.id !== undefined ? String(item.id) : `local_item_${idx}`;
       if (!mergedMap.has(id)) {
         mergedMap.set(id, item);
+      } else {
+        const cloudItem = mergedMap.get(id);
+        mergedMap.set(id, { ...cloudItem, ...item });
       }
     });
     return Array.from(mergedMap.values());

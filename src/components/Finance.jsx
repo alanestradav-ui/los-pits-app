@@ -57,6 +57,17 @@ export default function Finance({
   const [commSubTab, setCommSubTab] = useState("planilla"); // 'planilla' or 'historial'
   const [selectedPayrollUser, setSelectedPayrollUser] = useState(null);
   const [customSueldoBaseInput, setCustomSueldoBaseInput] = useState("");
+  const [selectedCommKeys, setSelectedCommKeys] = useState([]);
+
+  const openPayrollModal = (u) => {
+    const salarioMensual = parseFloat(u.salarioBase) || 0;
+    const sueldoPeriodo = payrollPeriodMode === "mes" ? salarioMensual : (salarioMensual / 2);
+    const { items } = getPayrollUnpaidItems(u.user, u.rol || "Colaborador");
+    const allKeys = items.map(i => `${i.type}_${i.orderId}`);
+    setSelectedCommKeys(allKeys);
+    setCustomSueldoBaseInput(sueldoPeriodo.toString());
+    setSelectedPayrollUser({ user: u.user, rol: u.rol || "Colaborador", salarioBase: u.salarioBase || 0 });
+  };
 
   // Default date ranges for commissions
   const getFirstDayOfMonth = () => {
@@ -1688,10 +1699,7 @@ export default function Finance({
                             </td>
                             <td style={{ ...styles.td, textAlign: "right" }} className="hide-print">
                               <button
-                                onClick={() => {
-                                  setSelectedPayrollUser({ user: u.user, rol: u.rol || "Colaborador", salarioBase: u.salarioBase || 0 });
-                                  setCustomSueldoBaseInput(sueldoPeriodo.toString());
-                                }}
+                                onClick={() => openPayrollModal(u)}
                                 style={{
                                   ...styles.generateReportBtn,
                                   backgroundColor: totalComs > 0 || sueldoPeriodo > 0 ? "var(--color-primary)" : "rgba(255,255,255,0.1)"
@@ -1782,10 +1790,29 @@ export default function Finance({
           {/* PAYROLL LIQUIDATION MODAL */}
           {selectedPayrollUser && createPortal(
             (() => {
-              const { items, totalComs } = getPayrollUnpaidItems(selectedPayrollUser.user, selectedPayrollUser.rol);
+              const { items } = getPayrollUnpaidItems(selectedPayrollUser.user, selectedPayrollUser.rol);
+              const selectedItems = items.filter(i => selectedCommKeys.includes(`${i.type}_${i.orderId}`));
+              const totalSelectedComms = selectedItems.reduce((sum, i) => sum + i.comision, 0);
               const baseSal = parseFloat(customSueldoBaseInput) || 0;
-              const totalLiquido = baseSal + totalComs;
+              const totalLiquido = baseSal + totalSelectedComms;
               const { periodLabel } = getPayrollDateRangeInfo();
+
+              const allItemKeys = items.map(i => `${i.type}_${i.orderId}`);
+              const isAllSelected = items.length > 0 && selectedCommKeys.length === items.length;
+
+              const toggleAll = () => {
+                if (isAllSelected) {
+                  setSelectedCommKeys([]);
+                } else {
+                  setSelectedCommKeys(allItemKeys);
+                }
+              };
+
+              const toggleKey = (key) => {
+                setSelectedCommKeys(prev => 
+                  prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+                );
+              };
 
               return (
                 <div style={{
@@ -1807,7 +1834,7 @@ export default function Finance({
                     padding: "30px",
                     borderRadius: "16px",
                     width: "100%",
-                    maxWidth: "680px",
+                    maxWidth: "720px",
                     maxHeight: "90vh",
                     overflowY: "auto",
                     textAlign: "left",
@@ -1856,17 +1883,42 @@ export default function Finance({
                         />
                       </div>
                       <div style={{ flex: 1, textAlign: "right" }}>
-                        <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Comisiones Acumuladas:</span>
-                        <span style={{ fontSize: "1.2rem", fontWeight: "800", color: "var(--color-warning)" }}>{formatMoney(totalComs)}</span>
+                        <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Comisiones Seleccionadas:</span>
+                        <span style={{ fontSize: "1.2rem", fontWeight: "800", color: "var(--color-warning)" }}>{formatMoney(totalSelectedComms)}</span>
+                        {items.length > selectedItems.length && (
+                          <span style={{ fontSize: "0.75rem", color: "#f87171", display: "block" }}>
+                            ({items.length - selectedItems.length} pendientes se mantendrán por pagar)
+                          </span>
+                        )}
                       </div>
                     </div>
 
                     {/* Unpaid Commissions Items List */}
-                    <h4 style={{ fontSize: "0.95rem", fontWeight: "700", color: "#fff", marginBottom: "10px" }}>
-                      📋 Desglose de Comisiones Incluidas en este Período ({items.length}):
-                    </h4>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                      <h4 style={{ fontSize: "0.95rem", fontWeight: "700", color: "#fff", margin: 0 }}>
+                        📋 Comisiones del Período ({selectedItems.length} de {items.length} seleccionadas):
+                      </h4>
+                      {items.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={toggleAll}
+                          style={{
+                            background: "rgba(255,255,255,0.06)",
+                            border: "1px solid rgba(255,255,255,0.12)",
+                            color: "#fff",
+                            padding: "4px 10px",
+                            borderRadius: "6px",
+                            fontSize: "0.78rem",
+                            cursor: "pointer",
+                            fontWeight: "600"
+                          }}
+                        >
+                          {isAllSelected ? "Deseleccionar Todas" : "Seleccionar Todas"}
+                        </button>
+                      )}
+                    </div>
 
-                    <div style={{ maxHeight: "220px", overflowY: "auto", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "8px", marginBottom: "24px" }}>
+                    <div style={{ maxHeight: "240px", overflowY: "auto", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "8px", marginBottom: "24px" }}>
                       {items.length === 0 ? (
                         <div style={{ padding: "20px", textAlign: "center", color: "var(--text-muted)", fontSize: "0.85rem" }}>
                           No hay comisiones pendientes de pago en este período de fechas.
@@ -1875,26 +1927,55 @@ export default function Finance({
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
                           <thead>
                             <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.1)", backgroundColor: "rgba(0,0,0,0.2)" }}>
+                              <th style={{ padding: "8px 12px", width: "40px", textAlign: "center" }}>
+                                <input
+                                  type="checkbox"
+                                  checked={isAllSelected}
+                                  onChange={toggleAll}
+                                  style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "var(--color-primary)" }}
+                                />
+                              </th>
                               <th style={{ padding: "8px 12px", color: "var(--text-muted)", textAlign: "left" }}>Trabajo / Servicio</th>
                               <th style={{ padding: "8px 12px", color: "var(--text-muted)", textAlign: "left" }}>Fecha</th>
                               <th style={{ padding: "8px 12px", color: "var(--text-muted)", textAlign: "right" }}>Comisión</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {items.map((item, idx) => (
-                              <tr key={idx} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                                <td style={{ padding: "8px 12px" }}>
-                                  <div style={{ fontWeight: "700", color: "#fff" }}>{item.titulo}</div>
-                                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{item.subtitulo}</div>
-                                </td>
-                                <td style={{ padding: "8px 12px", color: "var(--text-muted)" }}>
-                                  {item.fecha ? formatDate(item.fecha) : "-"}
-                                </td>
-                                <td style={{ padding: "8px 12px", textAlign: "right", color: "var(--color-success)", fontWeight: "700" }}>
-                                  {formatMoney(item.comision)}
-                                </td>
-                              </tr>
-                            ))}
+                            {items.map((item, idx) => {
+                              const key = `${item.type}_${item.orderId}`;
+                              const isSelected = selectedCommKeys.includes(key);
+
+                              return (
+                                <tr 
+                                  key={idx} 
+                                  onClick={() => toggleKey(key)}
+                                  style={{ 
+                                    borderBottom: "1px solid rgba(255,255,255,0.04)",
+                                    backgroundColor: isSelected ? "rgba(59, 130, 246, 0.05)" : "transparent",
+                                    cursor: "pointer"
+                                  }}
+                                >
+                                  <td style={{ padding: "8px 12px", textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => toggleKey(key)}
+                                      style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "var(--color-primary)" }}
+                                    />
+                                  </td>
+                                  <td style={{ padding: "8px 12px" }}>
+                                    <div style={{ fontWeight: "700", color: isSelected ? "#fff" : "var(--text-muted)" }}>{item.titulo}</div>
+                                    <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{item.subtitulo}</div>
+                                  </td>
+                                  <td style={{ padding: "8px 12px", color: "var(--text-muted)" }}>
+                                    {item.fecha ? formatDate(item.fecha) : "-"}
+                                  </td>
+                                  <td style={{ padding: "8px 12px", textAlign: "right", color: isSelected ? "var(--color-success)" : "var(--text-muted)", fontWeight: "700" }}>
+                                    {formatMoney(item.comision)}
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       )}
@@ -1913,7 +1994,9 @@ export default function Finance({
                     }}>
                       <div>
                         <span style={{ fontSize: "0.8rem", color: "#34d399", fontWeight: "700", textTransform: "uppercase" }}>TOTAL LÍQUIDO A APLICAR</span>
-                        <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>Sueldo Base (Q{baseSal.toFixed(2)}) + Comisiones (Q{totalComs.toFixed(2)})</div>
+                        <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                          Sueldo Base (Q{baseSal.toFixed(2)}) + Comisiones Seleccionadas (Q{totalSelectedComms.toFixed(2)})
+                        </div>
                       </div>
                       <span style={{ fontSize: "1.8rem", fontWeight: "900", color: "#34d399" }}>
                         {formatMoney(totalLiquido)}
@@ -1939,9 +2022,9 @@ export default function Finance({
                           periodo: periodLabel,
                           fechaPago: new Date().toISOString(),
                           sueldoBase: baseSal,
-                          totalComisiones: totalComs,
+                          totalComisiones: totalSelectedComms,
                           totalPagado: totalLiquido,
-                          detallesComisiones: items,
+                          detallesComisiones: selectedItems,
                           registradoPor: "Gerencia"
                         })}
                         className="btn"
@@ -1951,11 +2034,11 @@ export default function Finance({
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleExecutePayrollPayment(selectedPayrollUser, customSueldoBaseInput, items, totalComs)}
+                        onClick={() => handleExecutePayrollPayment(selectedPayrollUser, customSueldoBaseInput, selectedItems, totalSelectedComms)}
                         className="btn btn-primary"
                         style={{ flex: 1.5, backgroundColor: "var(--color-success)", borderColor: "var(--color-success)", fontWeight: "800" }}
                       >
-                        ✅ Aplicar Pago y Descontar
+                        ✅ Aplicar Pago ({selectedItems.length} Comisiones)
                       </button>
                     </div>
                   </div>
