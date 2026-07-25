@@ -34,6 +34,7 @@ export default function Finance({
   cuentasPorPagar = [],
   carwashConsumption = [],
   compras = [],
+  carwashPresets = [],
   dashboardPeriod,
   setDashboardPeriod,
   customStartDate,
