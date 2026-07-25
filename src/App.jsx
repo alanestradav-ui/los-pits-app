@@ -866,8 +866,15 @@ export default function App() {
   }, [customEndDate]);
 
   useEffect(() => {
-    setLocalStorage("carwashPresets", carwashPresets);
-    syncToCloud("carwashPresets", carwashPresets);
+    const clean = (carwashPresets || []).filter((p, idx, self) => 
+      p && p.tipo && idx === self.findIndex(t => t && t.tipo && t.tipo.toLowerCase().trim() === p.tipo.toLowerCase().trim())
+    );
+    if (clean.length !== (carwashPresets || []).length) {
+      setCarwashPresets(clean);
+    } else {
+      setLocalStorage("carwashPresets", clean);
+      syncToCloud("carwashPresets", clean);
+    }
   }, [carwashPresets]);
 
   useEffect(() => {

@@ -127,6 +127,18 @@ export default function SettingsComponent({
   const [presetPrecio, setPresetPrecio] = useState("");
   const [presetComision, setPresetComision] = useState("");
 
+  // Edit Carwash Preset state
+  const [editingPreset, setEditingPreset] = useState(null);
+  const [editPresetTipo, setEditPresetTipo] = useState("");
+  const [editPresetPrecio, setEditPresetPrecio] = useState("");
+  const [editPresetComision, setEditPresetComision] = useState("");
+  const [showEditPresetModal, setShowEditPresetModal] = useState(false);
+
+  // Deduplicated Carwash Presets
+  const uniqueCarwashPresets = (carwashPresets || []).filter((p, idx, self) => 
+    p && p.tipo && idx === self.findIndex(t => t && t.tipo && t.tipo.toLowerCase().trim() === p.tipo.toLowerCase().trim())
+  );
+
   // Local state for adding Workshop parts
   const [wsCode, setWsCode] = useState("");
   const [wsName, setWsName] = useState("");
@@ -189,13 +201,13 @@ export default function SettingsComponent({
       return;
     }
 
-    const exists = carwashPresets.some(p => p.tipo.toLowerCase().trim() === presetTipo.toLowerCase().trim());
+    const exists = uniqueCarwashPresets.some(p => p.tipo.toLowerCase().trim() === presetTipo.toLowerCase().trim());
     if (exists) {
       alert("Ya existe un servicio con este nombre.");
       return;
     }
 
-    setCarwashPresets([...carwashPresets, { tipo: presetTipo.trim(), precio: price, comision: com }]);
+    setCarwashPresets([...uniqueCarwashPresets, { tipo: presetTipo.trim(), precio: price, comision: com }]);
     setPresetTipo("");
     setPresetPrecio("");
     setPresetComision("");
@@ -205,8 +217,50 @@ export default function SettingsComponent({
   // Remove a Carwash preset
   const handleRemovePreset = (tipo) => {
     if (window.confirm(`¿Seguro que deseas eliminar el servicio "${tipo}"?`)) {
-      setCarwashPresets(carwashPresets.filter(p => p.tipo !== tipo));
+      setCarwashPresets(uniqueCarwashPresets.filter(p => p.tipo !== tipo));
     }
+  };
+
+  // Open Edit Carwash Preset Modal
+  const handleOpenEditPresetModal = (preset) => {
+    setEditingPreset(preset);
+    setEditPresetTipo(preset.tipo || "");
+    setEditPresetPrecio(preset.precio !== undefined ? preset.precio.toString() : "");
+    setEditPresetComision(preset.comision !== undefined ? preset.comision.toString() : "");
+    setShowEditPresetModal(true);
+  };
+
+  // Save Edit Carwash Preset
+  const handleSaveEditPreset = (e) => {
+    e.preventDefault();
+    const newTipo = editPresetTipo.trim();
+    const price = parseFloat(editPresetPrecio);
+    const com = parseFloat(editPresetComision);
+
+    if (!newTipo || isNaN(price) || price < 0 || isNaN(com) || com < 0) {
+      alert("Por favor ingresa un nombre válido, precio y comisión positivos.");
+      return;
+    }
+
+    // Check conflict with another preset
+    const conflict = uniqueCarwashPresets.some(p => 
+      p.tipo !== editingPreset.tipo && p.tipo.toLowerCase().trim() === newTipo.toLowerCase()
+    );
+    if (conflict) {
+      alert("Ya existe otro servicio con ese nombre.");
+      return;
+    }
+
+    const updated = uniqueCarwashPresets.map(p => {
+      if (p.tipo === editingPreset.tipo) {
+        return { tipo: newTipo, precio: price, comision: com };
+      }
+      return p;
+    });
+
+    setCarwashPresets(updated);
+    setShowEditPresetModal(false);
+    alert("Servicio de carwash actualizado correctamente.");
   };
 
   // 2. Add Workshop Part
@@ -1035,19 +1089,28 @@ export default function SettingsComponent({
                       </tr>
                     </thead>
                     <tbody>
-                      {carwashPresets.map((preset, index) => (
+                      {uniqueCarwashPresets.map((preset, index) => (
                         <tr key={index} style={styles.tr}>
                           <td style={{ ...styles.td, fontWeight: "bold", color: "#fff" }}>{preset.tipo}</td>
                           <td style={styles.td}>{formatMoney(preset.precio)}</td>
                           <td style={styles.td}>{formatMoney(preset.comision)}</td>
                           <td style={{ ...styles.td, textAlign: "right" }}>
-                            <button
-                              onClick={() => handleRemovePreset(preset.tipo)}
-                              style={{ background: "none", border: "none", color: "var(--color-danger)", cursor: "pointer" }}
-                              title="Eliminar Servicio"
-                            >
-                              <Trash2 size={16} />
-                            </button>
+                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+                              <button
+                                onClick={() => handleOpenEditPresetModal(preset)}
+                                style={{ background: "none", border: "none", color: "var(--color-primary)", cursor: "pointer", padding: "4px" }}
+                                title="Editar Servicio"
+                              >
+                                <Edit2 size={16} />
+                              </button>
+                              <button
+                                onClick={() => handleRemovePreset(preset.tipo)}
+                                style={{ background: "none", border: "none", color: "var(--color-danger)", cursor: "pointer", padding: "4px" }}
+                                title="Eliminar Servicio"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -2689,6 +2752,98 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.app_data;`}
                 </button>
               </div>
 
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT CARWASH PRESET MODAL */}
+      {showEditPresetModal && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0, 0, 0, 0.75)",
+          backdropFilter: "blur(4px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000
+        }}>
+          <div className="glass-panel" style={{ padding: "30px", borderRadius: "16px", width: "90%", maxWidth: "480px", textAlign: "left" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <h3 style={{ fontSize: "1.2rem", fontWeight: "800", margin: 0, color: "#fff" }}>
+                Editar Servicio de Carwash
+              </h3>
+              <button 
+                onClick={() => setShowEditPresetModal(false)}
+                style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditPreset} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Nombre/Tipo de Servicio *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej. Pulido de Faros, Lavado Motor"
+                  className="input-field"
+                  value={editPresetTipo}
+                  onChange={(e) => setEditPresetTipo(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: "10px" }}>
+                <div style={{ ...styles.inputGroup, flex: 1 }}>
+                  <label style={styles.label}>Precio Venta (Q) *</label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    step="any"
+                    placeholder="150"
+                    className="input-field"
+                    value={editPresetPrecio}
+                    onChange={(e) => setEditPresetPrecio(e.target.value)}
+                  />
+                </div>
+                <div style={{ ...styles.inputGroup, flex: 1 }}>
+                  <label style={styles.label}>Comisión Lavador (Q) *</label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    step="any"
+                    placeholder="25"
+                    className="input-field"
+                    value={editPresetComision}
+                    onChange={(e) => setEditPresetComision(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowEditPresetModal(false)}
+                  className="btn btn-secondary"
+                  style={{ flex: 1 }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ flex: 1, backgroundColor: "var(--color-primary)", borderColor: "var(--color-primary)" }}
+                >
+                  Guardar Cambios
+                </button>
+              </div>
             </form>
           </div>
         </div>
