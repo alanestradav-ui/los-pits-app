@@ -33,6 +33,7 @@ export default function Finance({
   cuentasPorCobrar = [],
   cuentasPorPagar = [],
   carwashConsumption = [],
+  compras = [],
   dashboardPeriod,
   setDashboardPeriod,
   customStartDate,
@@ -271,6 +272,13 @@ export default function Finance({
 
   const totalCarwashSuppliesCost = (filterByPeriod(carwashConsumption || [], "fecha")).reduce((sum, c) => sum + (parseFloat(c.cost) || 0), 0);
 
+  // General Registered Purchases & Operational Expenses in period
+  const filteredCompras = filterByPeriod(compras || [], "fecha");
+  const totalGeneralPurchasesPeriod = filteredCompras.reduce((sum, c) => sum + (parseFloat(c.total) || 0), 0);
+
+  // Short-term Accounts Payable (Liabilities)
+  const totalPendingAccountsPayable = (cuentasPorPagar || []).filter(p => p.estado === "Pendiente").reduce((sum, p) => sum + (parseFloat(p.monto) || 0), 0);
+
   // Period commissions paid on delivered orders
   const periodMechanicComms = billedTaller.reduce((sum, o) => sum + (parseFloat(o.comision) || 0), 0);
   const periodWasherComms = billedCarwash.reduce((sum, c) => sum + (parseFloat(c.comision) || 0), 0);
@@ -307,7 +315,8 @@ export default function Finance({
   }
 
   const periodFixedCosts = totalMonthlyFixed * periodScaleFactor;
-  const netProfitPeriod = totalContributionMarginPeriod - periodFixedCosts;
+  // Net Profit considering Direct Costs, Registered General Purchases, and Fixed Costs
+  const netProfitPeriod = totalContributionMarginPeriod - totalGeneralPurchasesPeriod - periodFixedCosts;
   const isProfitablePeriod = netProfitPeriod >= 0;
 
   // Commissions Calculations per worker
@@ -1057,24 +1066,74 @@ export default function Finance({
             {/* Tienda POS card */}
             <div className="glass-panel" style={styles.breakdownCard}>
               <div style={styles.breakdownCardHeader}>
-                <div style={{ ...styles.iconBg, backgroundColor: "var(--color-secondary-glow)" }}>
-                  <Coins size={20} color="var(--color-secondary)" />
+                <div style={{ ...styles.iconBg, backgroundColor: "rgba(245, 158, 11, 0.15)" }}>
+                  <ShoppingBag size={20} color="var(--color-secondary)" />
                 </div>
                 <h3>Tienda POS</h3>
               </div>
               <div style={styles.breakdownDetails}>
                 <div style={styles.breakdownRow}>
-                  <span>Total Entregado:</span>
+                  <span>Total Ventas:</span>
                   <span style={styles.breakdownVal}>{formatMoney(totalTiendaRevenue)}</span>
                 </div>
                 <div style={styles.breakdownRow}>
-                  <span>Margen (100%):</span>
-                  <span style={{ ...styles.breakdownVal, color: "var(--color-success)" }}>{formatMoney(totalTiendaRevenue)}</span>
+                  <span>Costo Mercadería (COGS):</span>
+                  <span style={styles.breakdownValMut}>{formatMoney(totalTiendaItemCost)}</span>
                 </div>
                 <div style={styles.breakdownRowDivider} />
                 <div style={styles.breakdownRow}>
-                  <strong style={{ color: "#fff" }}>Total General:</strong>
-                  <strong style={{ color: "var(--color-secondary)" }}>{formatMoney(totalTiendaRevenue)}</strong>
+                  <strong style={{ color: "#fff" }}>Utilidad Bruta:</strong>
+                  <strong style={{ color: "var(--color-success)" }}>{formatMoney(totalTiendaRevenue - totalTiendaItemCost)}</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Compras Generales & Gastos Registrados card */}
+            <div className="glass-panel" style={styles.breakdownCard}>
+              <div style={styles.breakdownCardHeader}>
+                <div style={{ ...styles.iconBg, backgroundColor: "rgba(239, 68, 68, 0.15)" }}>
+                  <TrendingDown size={20} color="#f87171" />
+                </div>
+                <h3>Compras y Gastos Registrados</h3>
+              </div>
+              <div style={styles.breakdownDetails}>
+                <div style={styles.breakdownRow}>
+                  <span>Egresos del Período:</span>
+                  <span style={{ ...styles.breakdownVal, color: "#f87171" }}>{formatMoney(totalGeneralPurchasesPeriod)}</span>
+                </div>
+                <div style={styles.breakdownRow}>
+                  <span>Total Registros:</span>
+                  <span style={styles.breakdownValMut}>{filteredCompras.length} compras/gastos</span>
+                </div>
+                <div style={styles.breakdownRowDivider} />
+                <div style={styles.breakdownRow}>
+                  <strong style={{ color: "#fff" }}>Total Egresos Registrados:</strong>
+                  <strong style={{ color: "#f87171" }}>{formatMoney(totalGeneralPurchasesPeriod)}</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Cuentas por Pagar (Pasivo Pendiente) card */}
+            <div className="glass-panel" style={styles.breakdownCard}>
+              <div style={styles.breakdownCardHeader}>
+                <div style={{ ...styles.iconBg, backgroundColor: "rgba(245, 158, 11, 0.15)" }}>
+                  <AlertTriangle size={20} color="var(--color-warning)" />
+                </div>
+                <h3>Cuentas por Pagar (Pasivo)</h3>
+              </div>
+              <div style={styles.breakdownDetails}>
+                <div style={styles.breakdownRow}>
+                  <span>Pendiente a Proveedores:</span>
+                  <span style={{ ...styles.breakdownVal, color: "var(--color-warning)" }}>{formatMoney(totalPendingAccountsPayable)}</span>
+                </div>
+                <div style={styles.breakdownRow}>
+                  <span>Facturas Pendientes:</span>
+                  <span style={styles.breakdownValMut}>{(cuentasPorPagar || []).filter(p => p.estado === "Pendiente").length} cuentas</span>
+                </div>
+                <div style={styles.breakdownRowDivider} />
+                <div style={styles.breakdownRow}>
+                  <strong style={{ color: "#fff" }}>Total Pasivos Pendientes:</strong>
+                  <strong style={{ color: "var(--color-warning)" }}>{formatMoney(totalPendingAccountsPayable)}</strong>
                 </div>
               </div>
             </div>
@@ -1323,6 +1382,7 @@ export default function Finance({
         }, 0);
 
         const carwashSuppliesBE = (filterByBreakevenPeriod(carwashConsumption || [], "fecha")).reduce((sum, c) => sum + (parseFloat(c.cost) || 0), 0);
+        const comprasBE = (filterByBreakevenPeriod(compras || [], "fecha")).reduce((sum, c) => sum + (parseFloat(c.total) || 0), 0);
 
         const commsPaid = periodTaller.reduce((sum, o) => sum + (parseFloat(o.comision) || 0), 0) +
                           periodCarwash.reduce((sum, c) => sum + (parseFloat(c.comision) || 0), 0);
@@ -1354,10 +1414,10 @@ export default function Finance({
         const periodSalaries = salariesMonthly * scale;
 
         // Net Operating Result & BE Cobertura
-        const netProfit = totalContributionMargin - periodFixed;
-        const reachedBE = totalContributionMargin >= periodFixed;
-        const progressPercent = periodFixed > 0 ? Math.min((Math.max(0, totalContributionMargin) / periodFixed) * 100, 100) : 0;
-        const requiredGrossSales = marginRatio > 0 ? (periodFixed / marginRatio) : periodFixed;
+        const netProfit = totalContributionMargin - comprasBE - periodFixed;
+        const reachedBE = totalContributionMargin >= (periodFixed + comprasBE);
+        const progressPercent = (periodFixed + comprasBE) > 0 ? Math.min((Math.max(0, totalContributionMargin) / (periodFixed + comprasBE)) * 100, 100) : 0;
+        const requiredGrossSales = marginRatio > 0 ? ((periodFixed + comprasBE) / marginRatio) : (periodFixed + comprasBE);
 
         return (
           <div style={styles.tabContent}>
@@ -1366,7 +1426,7 @@ export default function Finance({
               <div>
                 <h2 style={{ fontSize: "1.2rem", fontWeight: "700" }}>Punto de Equilibrio Financiero</h2>
                 <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "2px" }}>
-                  Mide si la <strong>Utilidad Bruta (Margen de Contribución)</strong> cubre los <strong>Costos Fijos Operativos</strong>.
+                  Mide si la <strong>Utilidad Bruta (Margen de Contribución)</strong> cubre los <strong>Costos Fijos Operativos y Compras Generales</strong>.
                 </p>
               </div>
               <div style={{ display: "flex", gap: "8px" }}>
@@ -1415,15 +1475,15 @@ export default function Finance({
 
               <div style={{ textAlign: "center" }}>
                 <span style={{ fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: "700", textTransform: "uppercase", letterSpacing: "1px" }}>
-                  Cobertura de Costos Fijos por Utilidad Bruta ({periodName})
+                  Cobertura de Costos y Egresos por Utilidad Bruta ({periodName})
                 </span>
                 <h1 style={{ fontSize: "3.2rem", fontWeight: "900", color: reachedBE ? "#10b981" : "#ef4444", marginTop: "8px", fontFamily: "var(--font-display)" }}>
                   {progressPercent.toFixed(1)}%
                 </h1>
                 <p style={{ color: reachedBE ? "#34d399" : "#f87171", fontSize: "0.95rem", fontWeight: "600", marginTop: "6px" }}>
                   {reachedBE 
-                    ? `🟢 ¡Punto de Equilibrio Alcanzado! Tu Utilidad Bruta (${formatMoney(totalContributionMargin)}) cubre los ${formatMoney(periodFixed)} de costos fijos y genera una Utilidad Neta de ${formatMoney(netProfit)}.` 
-                    : `🔴 En Faltante de Equilibrio. Tu Utilidad Bruta (${formatMoney(totalContributionMargin)}) no cubre los ${formatMoney(periodFixed)} de costos fijos. Faltan ${formatMoney(Math.abs(netProfit))} de Utilidad Bruta para el equilibrio.`
+                    ? `🟢 ¡Punto de Equilibrio Alcanzado! Tu Utilidad Bruta (${formatMoney(totalContributionMargin)}) cubre los ${formatMoney(periodFixed + comprasBE)} de costos fijos y compras, generando una Utilidad Neta de ${formatMoney(netProfit)}.` 
+                    : `🔴 En Faltante de Equilibrio. Tu Utilidad Bruta (${formatMoney(totalContributionMargin)}) no cubre los ${formatMoney(periodFixed + comprasBE)} de egresos totales. Faltan ${formatMoney(Math.abs(netProfit))} de Utilidad Bruta para el equilibrio.`
                   }
                 </p>
               </div>
@@ -1441,7 +1501,7 @@ export default function Finance({
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: "8px", fontSize: "0.82rem", color: "var(--text-muted)" }}>
                   <span>Utilidad Bruta Generada: <strong>{formatMoney(totalContributionMargin)}</strong></span>
-                  <span>Costos Fijos Operativos Meta: <strong>{formatMoney(periodFixed)}</strong></span>
+                  <span>Egresos & Costos Fijos Meta: <strong>{formatMoney(periodFixed + comprasBE)}</strong></span>
                 </div>
               </div>
 
@@ -1464,7 +1524,7 @@ export default function Finance({
                   <span style={{ color: "#fff", fontWeight: "700" }}>Ventas Brutas Totales Requeridas: </span>
                   <span style={{ color: "var(--color-primary)", fontWeight: "800" }}>{formatMoney(requiredGrossSales)}</span>
                   <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "2px" }}>
-                    Con tu margen de utilidad bruta actual del <strong>{(marginRatio * 100).toFixed(1)}%</strong>, necesitas facturar <strong>{formatMoney(requiredGrossSales)}</strong> en ventas para cubrir tus costos fijos de {formatMoney(periodFixed)}.
+                    Con tu margen de utilidad bruta actual del <strong>{(marginRatio * 100).toFixed(1)}%</strong>, necesitas facturar <strong>{formatMoney(requiredGrossSales)}</strong> en ventas para cubrir todos tus egresos y costos de {formatMoney(periodFixed + comprasBE)}.
                   </p>
                 </div>
               </div>
@@ -1543,7 +1603,7 @@ export default function Finance({
               {/* Card 3: Utilidad Bruta & Costos Fijos */}
               <div className="glass-panel" style={{ padding: "20px", textAlign: "left" }}>
                 <h3 style={{ fontSize: "1rem", fontWeight: "700", marginBottom: "14px", color: "#34d399", display: "flex", alignItems: "center", gap: "8px" }}>
-                  <TrendingUp size={18} /> (3) Margen & Costos Fijos
+                  <TrendingUp size={18} /> (3) Margen, Compras y Ganancia Neta
                 </h3>
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.85rem" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "700" }}>
@@ -1556,17 +1616,17 @@ export default function Finance({
                   </div>
                   <div style={{ height: "1px", backgroundColor: "rgba(255,255,255,0.06)", margin: "4px 0" }} />
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span>Gastos Administrativos / Fijos:</span>
-                    <strong>{formatMoney(periodOverhead)}</strong>
+                    <span>(-) Compras/Gastos Registrados:</span>
+                    <strong style={{ color: "#f87171" }}>{formatMoney(comprasBE)}</strong>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span>Planilla Base (Salarios):</span>
-                    <strong>{formatMoney(periodSalaries)}</strong>
+                    <span>(-) Costos Fijos (Planilla/Overhead):</span>
+                    <strong style={{ color: "#ef4444" }}>{formatMoney(periodFixed)}</strong>
                   </div>
                   <div style={{ height: "1px", backgroundColor: "rgba(255,255,255,0.06)", margin: "4px 0" }} />
                   <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "800" }}>
-                    <span>Total Costos Fijos (CF):</span>
-                    <span style={{ color: "#ef4444" }}>{formatMoney(periodFixed)}</span>
+                    <span>(=) Utilidad Neta Final:</span>
+                    <span style={{ color: netProfit >= 0 ? "#34d399" : "#f87171" }}>{formatMoney(netProfit)}</span>
                   </div>
                 </div>
               </div>

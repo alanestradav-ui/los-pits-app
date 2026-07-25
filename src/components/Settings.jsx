@@ -53,6 +53,7 @@ export default function SettingsComponent({
   tiendaSales = [],
   cuentasPorCobrar = [],
   cuentasPorPagar = [],
+  compras = [],
   clientes = [],
   setClientes,
   vehiculos = [],
@@ -755,6 +756,7 @@ export default function SettingsComponent({
   // --- FINANCIAL BREAK-EVEN CALCULATIONS ---
   const totalSalaries = (usuarios || []).reduce((sum, u) => sum + (parseFloat(u.salarioBase) || 0), 0);
   const totalFixedCosts = (fixedCosts || []).reduce((sum, item) => sum + item.amount, 0) + totalSalaries;
+  const totalGeneralCompras = (compras || []).reduce((sum, c) => sum + (parseFloat(c.total) || 0), 0);
 
   // Delivered workshop orders sales & variable costs
   const deliveredOrders = (ordenes || []).filter(o => o.estado === "Entregado");
@@ -785,13 +787,14 @@ export default function SettingsComponent({
   // Totals
   const totalSalesRevenue = wsSalesRevenue + cwSalesRevenue + cafSalesRevenue + tiendaSalesRevenue;
   const totalVariableCosts = wsCommissions + wsPartsCost + cwCommissions + cwSuppliesCost + cafItemsCost + tiendaItemsCost;
+  const totalOperatingEgresses = totalFixedCosts + totalGeneralCompras;
 
-  // Margin ratio & Break even based on Contribution Margin (Utilidad Bruta)
+  // Margin ratio & Break even based on Contribution Margin (Utilidad Bruta) vs Total Operating Outflows (Costos Fijos + Compras)
   const totalContributionMargin = totalSalesRevenue - totalVariableCosts;
   const marginRatio = totalSalesRevenue > 0 ? (totalContributionMargin / totalSalesRevenue) : 0.65;
-  const breakEvenPoint = marginRatio > 0 ? totalFixedCosts / marginRatio : totalFixedCosts;
-  const isBreakEvenMet = totalContributionMargin >= totalFixedCosts;
-  const progressPercent = totalFixedCosts > 0 ? Math.min((Math.max(0, totalContributionMargin) / totalFixedCosts) * 100, 100) : 0;
+  const breakEvenPoint = marginRatio > 0 ? totalOperatingEgresses / marginRatio : totalOperatingEgresses;
+  const isBreakEvenMet = totalContributionMargin >= totalOperatingEgresses;
+  const progressPercent = totalOperatingEgresses > 0 ? Math.min((Math.max(0, totalContributionMargin) / totalOperatingEgresses) * 100, 100) : 0;
 
   return (
     <div style={styles.container} className="animate-fade-in">
