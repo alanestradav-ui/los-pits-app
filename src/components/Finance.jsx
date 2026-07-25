@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import { 
   TrendingUp, 
   Coins, 
@@ -20,20 +21,26 @@ import { formatMoney, formatDate } from "../utils/storage";
 import { jsPDF } from "jspdf";
 
 export default function Finance({ 
-  ordenes, 
-  carwash, 
-  mecanicos, 
-  lavadores, 
+  ordenes = [], 
+  setOrdenes,
+  carwash = [], 
+  setCarwash,
+  mecanicos = [], 
+  lavadores = [], 
   parkingHistory = [], 
   cafeteriaSales = [],
   tiendaSales = [],
   usuarios = [],
   fixedCosts = [],
   vehiculosVenta = [],
+  setVehiculosVenta,
   cuentasPorCobrar = [],
   cuentasPorPagar = [],
   carwashConsumption = [],
   compras = [],
+  setCompras,
+  payrollHistory = [],
+  setPayrollHistory,
   carwashPresets = [],
   dashboardPeriod,
   setDashboardPeriod,
@@ -44,6 +51,12 @@ export default function Finance({
 }) {
   const [activeTab, setActiveTab] = useState("overview");
   const [breakevenPeriod, setBreakevenPeriod] = useState("mes");
+  const [payrollPeriodMode, setPayrollPeriodMode] = useState("q1"); // 'q1', 'q2', 'mes', 'custom'
+  const [payrollYear, setPayrollYear] = useState(new Date().getFullYear());
+  const [payrollMonth, setPayrollMonth] = useState(new Date().getMonth());
+  const [commSubTab, setCommSubTab] = useState("planilla"); // 'planilla' or 'historial'
+  const [selectedPayrollUser, setSelectedPayrollUser] = useState(null);
+  const [customSueldoBaseInput, setCustomSueldoBaseInput] = useState("");
 
   // Default date ranges for commissions
   const getFirstDayOfMonth = () => {
@@ -57,6 +70,38 @@ export default function Finance({
 
   const [commStart, setCommStart] = useState(getFirstDayOfMonth());
   const [commEnd, setCommEnd] = useState(getTodayDate());
+
+  const getPayrollDateRangeInfo = () => {
+    const yr = payrollYear;
+    const mo = payrollMonth;
+    const monthNames = [
+      "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+      "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+    ];
+    const monthName = monthNames[mo] || "";
+    let startDate, endDate, periodLabel;
+
+    if (payrollPeriodMode === "q1") {
+      startDate = new Date(yr, mo, 1, 0, 0, 0, 0);
+      endDate = new Date(yr, mo, 15, 23, 59, 59, 999);
+      periodLabel = `1ra Quincena de ${monthName} ${yr} (1 al 15 de ${monthName})`;
+    } else if (payrollPeriodMode === "q2") {
+      startDate = new Date(yr, mo, 16, 0, 0, 0, 0);
+      const lastDay = new Date(yr, mo + 1, 0).getDate();
+      endDate = new Date(yr, mo, lastDay, 23, 59, 59, 999);
+      periodLabel = `2da Quincena de ${monthName} ${yr} (16 al ${lastDay} de ${monthName})`;
+    } else if (payrollPeriodMode === "mes") {
+      startDate = new Date(yr, mo, 1, 0, 0, 0, 0);
+      const lastDay = new Date(yr, mo + 1, 0).getDate();
+      endDate = new Date(yr, mo, lastDay, 23, 59, 59, 999);
+      periodLabel = `Mes Completo de ${monthName} ${yr}`;
+    } else {
+      startDate = commStart ? new Date(`${commStart}T00:00:00`) : new Date(yr, mo, 1);
+      endDate = commEnd ? new Date(`${commEnd}T23:59:59`) : new Date();
+      periodLabel = `Período Personalizado (${commStart || "Inicio"} a ${commEnd || "Fin"})`;
+    }
+    return { startDate, endDate, periodLabel };
+  };
 
   const isWithinCommDates = (dateVal, fallbackId) => {
     let d = null;
@@ -327,13 +372,12 @@ export default function Finance({
 
   // Commissions Calculations per worker
   const getMechanicCommissions = (name) => {
-    // Calculated from ready or delivered orders
-    const workerOrders = ordenes.filter(o => 
-      (o.mecanico || "").toLowerCase() === name.toLowerCase() &&
+    const workerOrders = (ordenes || []).filter(o => 
+      (o.mecanico || "").toLowerCase().trim() === name.toLowerCase().trim() &&
       isWithinCommDates(o.fecha, o.id)
     );
-    const cobradas = workerOrders.filter(o => o.estado === "Entregado").reduce((sum, o) => sum + o.comision, 0);
-    const pendientes = workerOrders.filter(o => o.estado !== "Entregado").reduce((sum, o) => sum + o.comision, 0);
+    const cobradas = workerOrders.filter(o => o.comisionPagada === true).reduce((sum, o) => sum + (parseFloat(o.comision) || 0), 0);
+    const pendientes = workerOrders.filter(o => o.comisionPagada !== true && o.estado === "Entregado").reduce((sum, o) => sum + (parseFloat(o.comision) || 0), 0);
     return { cobradas, pendientes, total: cobradas + pendientes };
   };
 
@@ -341,20 +385,21 @@ export default function Finance({
     let cobradas = 0;
     let pendientes = 0;
 
-    carwash.forEach(c => {
+    (carwash || []).forEach(c => {
       const list = c.lavadores && c.lavadores.length > 0
         ? c.lavadores 
         : (c.lavador ? c.lavador.split(", ").map(item => item.trim()).filter(Boolean) : []);
       
-      const isAssigned = list.some(l => l.toLowerCase() === name.toLowerCase());
+      const isAssigned = list.some(l => l.toLowerCase().trim() === name.toLowerCase().trim());
       if (isAssigned && isWithinCommDates(c.fecha, c.id)) {
         const isWorkshopWash = c.tallerOrderId || String(c.tipo || "").toLowerCase().trim() === "lavado de taller";
         const matchedPreset = (carwashPresets || []).find(p => p.tipo && String(p.tipo).toLowerCase().trim() === String(c.tipo).toLowerCase().trim());
         const totalComm = isWorkshopWash ? 5.0 : (matchedPreset && matchedPreset.comision !== undefined ? parseFloat(matchedPreset.comision) : (parseFloat(c.comision) || 5.0));
         const splitComision = list.length > 0 ? (totalComm / list.length) : totalComm;
-        if (c.estado === "Entregado") {
+        
+        if (c.comisionPagada === true) {
           cobradas += splitComision;
-        } else {
+        } else if (c.estado === "Entregado") {
           pendientes += splitComision;
         }
       }
@@ -364,19 +409,27 @@ export default function Finance({
   };
 
   const getCashierCommissions = (name) => {
-    const cashierUser = (usuarios || []).find(u => u.user.toLowerCase() === name.toLowerCase());
+    const cashierUser = (usuarios || []).find(u => u.user.toLowerCase().trim() === name.toLowerCase().trim());
     const pctTaller = cashierUser && cashierUser.comisionTaller !== undefined 
       ? cashierUser.comisionTaller / 100 
-      : 0.10; // default 10%
+      : 0.10;
     
-    const cobradas = ordenes
-      .filter(o => o.estado === "Entregado" && o.cajero && o.cajero.toLowerCase() === name.toLowerCase() && o.cajeroComisionApplies === true && isWithinCommDates(o.fecha, o.id))
-      .reduce((sum, o) => {
+    let cobradas = 0;
+    let pendientes = 0;
+
+    (ordenes || [])
+      .filter(o => o.estado === "Entregado" && o.cajero && o.cajero.toLowerCase().trim() === name.toLowerCase().trim() && o.cajeroComisionApplies === true && isWithinCommDates(o.fecha, o.id))
+      .forEach(o => {
         const totalLabor = o.presupuesto?.labor?.reduce((lSum, item) => lSum + (parseFloat(item.price) || 0), 0) || o.total || 0;
-        return sum + (totalLabor * pctTaller);
-      }, 0);
+        const commAmt = totalLabor * pctTaller;
+        if (o.cajeroComisionPagada === true) {
+          cobradas += commAmt;
+        } else {
+          pendientes += commAmt;
+        }
+      });
       
-    return { cobradas, pendientes: 0, total: cobradas };
+    return { cobradas, pendientes, total: cobradas + pendientes };
   };
 
   const getVehicleCommissions = (name) => {
@@ -388,25 +441,311 @@ export default function Finance({
       let isAssigned = false;
       
       if (v.vendedoresAsignados && v.vendedoresAsignados.length > 0) {
-        if (v.vendedoresAsignados.some(s => s.toLowerCase() === name.toLowerCase())) {
+        if (v.vendedoresAsignados.some(s => s.toLowerCase().trim() === name.toLowerCase().trim())) {
           isAssigned = true;
           commAmt = parseFloat(v.comisionTotalCalculada || 0) / v.vendedoresAsignados.length;
         }
-      } else if (v.vendedorAsignado && v.vendedorAsignado.toLowerCase() === name.toLowerCase()) {
+      } else if (v.vendedorAsignado && v.vendedorAsignado.toLowerCase().trim() === name.toLowerCase().trim()) {
         isAssigned = true;
         commAmt = parseFloat(v.comisionTotalCalculada || 0);
       }
       
       if (isAssigned && isWithinCommDates(v.fechaVenta, v.id)) {
-        if (v.estado === "Vendido") {
+        if (v.comisionPagada === true) {
           cobradas += commAmt;
-        } else {
+        } else if (v.estado === "Vendido") {
           pendientes += commAmt;
         }
       }
     });
     
     return { cobradas, pendientes, total: cobradas + pendientes };
+  };
+
+  const getPayrollUnpaidItems = (userName, userRol) => {
+    const { startDate, endDate } = getPayrollDateRangeInfo();
+    const lower = (userName || "").toLowerCase().trim();
+    const items = [];
+    let totalComs = 0;
+
+    // Mechanics
+    if (userRol === "mecanico" || userRol === "jefe de taller" || userRol === "admin" || userRol === "mecánico") {
+      (ordenes || []).forEach(o => {
+        if (o.estado === "Entregado" && o.comisionPagada !== true && (o.mecanico || "").toLowerCase().trim() === lower) {
+          const d = o.fecha ? new Date(o.fecha) : new Date(o.id);
+          if (d >= startDate && d <= endDate) {
+            const amt = parseFloat(o.comision) || 0;
+            totalComs += amt;
+            items.push({
+              type: "taller",
+              orderId: o.id,
+              titulo: `Orden Taller #${o.id}`,
+              subtitulo: `${o.cliente || "Cliente"} - ${o.marca || ""} ${o.linea || ""} (${o.placa || ""})`,
+              fecha: o.fecha,
+              comision: amt
+            });
+          }
+        }
+      });
+    }
+
+    // Washers
+    if (userRol === "lavador" || userRol === "admin") {
+      (carwash || []).forEach(c => {
+        const lavList = c.lavadores && c.lavadores.length > 0 ? c.lavadores : (c.lavador ? c.lavador.split(", ").map(i => i.trim()).filter(Boolean) : []);
+        const isAssigned = lavList.some(l => l.toLowerCase().trim() === lower);
+        if (c.estado === "Entregado" && c.comisionPagada !== true && isAssigned) {
+          const d = c.fecha ? new Date(c.fecha) : new Date(c.id);
+          if (d >= startDate && d <= endDate) {
+            const isWorkshopWash = c.tallerOrderId || String(c.tipo || "").toLowerCase().trim() === "lavado de taller";
+            const matchedPreset = (carwashPresets || []).find(p => p.tipo && String(p.tipo).toLowerCase().trim() === String(c.tipo).toLowerCase().trim());
+            const totalComm = isWorkshopWash ? 5.0 : (matchedPreset && matchedPreset.comision !== undefined ? parseFloat(matchedPreset.comision) : (parseFloat(c.comision) || 5.0));
+            const splitComm = lavList.length > 0 ? (totalComm / lavList.length) : totalComm;
+
+            totalComs += splitComm;
+            items.push({
+              type: "carwash",
+              orderId: c.id,
+              titulo: `Carwash (${c.tipo})`,
+              subtitulo: `${c.cliente || "Cliente"} - ${c.vehiculo?.marca || ""} ${c.vehiculo?.linea || ""} (${c.vehiculo?.placa || ""})`,
+              fecha: c.fecha,
+              comision: splitComm
+            });
+          }
+        }
+      });
+    }
+
+    // Cashiers
+    if (userRol === "cajero" || userRol === "admin") {
+      const cashierUser = (usuarios || []).find(u => u.user.toLowerCase().trim() === lower);
+      const pctTaller = cashierUser && cashierUser.comisionTaller !== undefined ? cashierUser.comisionTaller / 100 : 0.10;
+
+      (ordenes || []).forEach(o => {
+        if (o.estado === "Entregado" && o.cajeroComisionPagada !== true && o.cajero && o.cajero.toLowerCase().trim() === lower && o.cajeroComisionApplies === true) {
+          const d = o.fecha ? new Date(o.fecha) : new Date(o.id);
+          if (d >= startDate && d <= endDate) {
+            const totalLabor = o.presupuesto?.labor?.reduce((lSum, item) => lSum + (parseFloat(item.price) || 0), 0) || o.total || 0;
+            const amt = totalLabor * pctTaller;
+            totalComs += amt;
+            items.push({
+              type: "cajero",
+              orderId: o.id,
+              titulo: `Comisión Cajero (Orden #${o.id})`,
+              subtitulo: `Cliente: ${o.cliente || "Cliente"} - Labor: ${formatMoney(totalLabor)}`,
+              fecha: o.fecha,
+              comision: amt
+            });
+          }
+        }
+      });
+    }
+
+    // Sales
+    if (userRol === "vendedor" || userRol === "admin") {
+      (vehiculosVenta || []).forEach(v => {
+        let isAssigned = false;
+        let commAmt = 0;
+        if (v.vendedoresAsignados && v.vendedoresAsignados.length > 0) {
+          if (v.vendedoresAsignados.some(s => s.toLowerCase().trim() === lower)) {
+            isAssigned = true;
+            commAmt = parseFloat(v.comisionTotalCalculada || 0) / v.vendedoresAsignados.length;
+          }
+        } else if (v.vendedorAsignado && v.vendedorAsignado.toLowerCase().trim() === lower) {
+          isAssigned = true;
+          commAmt = parseFloat(v.comisionTotalCalculada || 0);
+        }
+
+        if (v.estado === "Vendido" && v.comisionPagada !== true && isAssigned) {
+          const d = new Date(v.fechaVenta || v.fecha || v.id);
+          if (d >= startDate && d <= endDate) {
+            totalComs += commAmt;
+            items.push({
+              type: "vehiculo",
+              orderId: v.id,
+              titulo: `Venta Vehículo ${v.marca} ${v.linea}`,
+              subtitulo: `Placa: ${v.placa || "N/A"}`,
+              fecha: v.fechaVenta || v.fecha,
+              comision: commAmt
+            });
+          }
+        }
+      });
+    }
+
+    return { items, totalComs };
+  };
+
+  const handleExecutePayrollPayment = (userObj, baseSalaryOverride, items, totalComm) => {
+    const { periodLabel } = getPayrollDateRangeInfo();
+    const baseSal = parseFloat(baseSalaryOverride) || 0;
+    const totalPaid = baseSal + totalComm;
+    const payrollId = Date.now();
+
+    // Mark orders as comisionPagada = true
+    const orderIds = items.filter(i => i.type === "taller").map(i => i.orderId);
+    if (orderIds.length > 0 && setOrdenes) {
+      setOrdenes(prev => (prev || []).map(o => orderIds.includes(o.id) ? { ...o, comisionPagada: true, fechaPagoComision: new Date().toISOString(), payrollId } : o));
+    }
+
+    // Mark carwash as comisionPagada = true
+    const carwashIds = items.filter(i => i.type === "carwash").map(i => i.orderId);
+    if (carwashIds.length > 0 && setCarwash) {
+      setCarwash(prev => (prev || []).map(c => carwashIds.includes(c.id) ? { ...c, comisionPagada: true, fechaPagoComision: new Date().toISOString(), payrollId } : c));
+    }
+
+    // Mark cajero commissions on orders as cajeroComisionPagada = true
+    const cajeroOrderIds = items.filter(i => i.type === "cajero").map(i => i.orderId);
+    if (cajeroOrderIds.length > 0 && setOrdenes) {
+      setOrdenes(prev => (prev || []).map(o => cajeroOrderIds.includes(o.id) ? { ...o, cajeroComisionPagada: true, fechaPagoComision: new Date().toISOString(), payrollId } : o));
+    }
+
+    // Mark vehicle sales as comisionPagada = true
+    const vehiculoIds = items.filter(i => i.type === "vehiculo").map(i => i.orderId);
+    if (vehiculoIds.length > 0 && setVehiculosVenta) {
+      setVehiculosVenta(prev => (prev || []).map(v => vehiculoIds.includes(v.id) ? { ...v, comisionPagada: true, fechaPagoComision: new Date().toISOString(), payrollId } : v));
+    }
+
+    // Add expense entry in compras/egresos so finance P&L reflects the cash expense
+    if (setCompras) {
+      const newExpense = {
+        id: payrollId,
+        fecha: new Date().toISOString(),
+        proveedor: `Nómina - ${userObj.user}`,
+        categoria: "Nómina / Planilla",
+        total: totalPaid,
+        descripcion: `Pago de Nómina (${periodLabel}) - Sueldo Base: Q${baseSal.toFixed(2)} + Comisiones: Q${totalComm.toFixed(2)}`,
+        formaPago: { efectivo: totalPaid, tarjeta: 0, transferencia: 0, cheque: 0 },
+        estado: "Pagado"
+      };
+      setCompras(prev => [newExpense, ...(prev || [])]);
+    }
+
+    // Record in payroll history
+    const record = {
+      id: payrollId,
+      colaborador: userObj.user,
+      rol: userObj.rol || "Colaborador",
+      periodo: periodLabel,
+      fechaPago: new Date().toISOString(),
+      sueldoBase: baseSal,
+      totalComisiones: totalComm,
+      totalPagado: totalPaid,
+      detallesComisiones: items,
+      registradoPor: "Gerencia"
+    };
+
+    if (setPayrollHistory) {
+      setPayrollHistory(prev => [record, ...(prev || [])]);
+    }
+
+    alert(`¡Nómina y Comisiones aplicadas con éxito!\n\nSe liquidó Q${totalPaid.toFixed(2)} a ${userObj.user}.\nLas comisiones fueron descontadas de la lista por pagar y registradas como egreso.`);
+    setSelectedPayrollUser(null);
+  };
+
+  const imprimirReciboNominaPrint = (rec) => {
+    const printWin = window.open("", "_blank");
+    if (!printWin) {
+      alert("Por favor permite las ventanas emergentes (popups) para ver e imprimir el recibo.");
+      return;
+    }
+
+    const itemsHtml = (rec.detallesComisiones || []).map((item, idx) => `
+      <tr style="border-bottom: 1px solid #e5e7eb;">
+        <td style="padding: 8px;">${idx + 1}</td>
+        <td style="padding: 8px;"><strong>${item.titulo}</strong><br/><small style="color: #6b7280;">${item.subtitulo}</small></td>
+        <td style="padding: 8px;">${item.fecha ? formatDate(item.fecha) : "-"}</td>
+        <td style="padding: 8px; text-align: right; font-weight: bold;">Q${item.comision.toFixed(2)}</td>
+      </tr>
+    `).join("");
+
+    printWin.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Recibo de Nómina y Comisiones - ${rec.colaborador}</title>
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; color: #1f2937; line-height: 1.5; }
+            .header { text-align: center; border-bottom: 2px solid #3b82f6; padding-bottom: 15px; margin-bottom: 20px; }
+            .header h1 { margin: 0; color: #1e3a8a; font-size: 22px; }
+            .header p { margin: 4px 0 0 0; color: #6b7280; font-size: 13px; }
+            .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 20px; }
+            .info-item { font-size: 14px; }
+            .info-item strong { color: #0f172a; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px; }
+            th { background: #f1f5f9; text-align: left; padding: 10px; border-bottom: 2px solid #cbd5e1; color: #334155; }
+            .summary { background: #eff6ff; padding: 15px; border-radius: 8px; border: 1px solid #bfdbfe; margin-bottom: 30px; }
+            .summary-row { display: flex; justify-content: space-between; font-size: 15px; margin-bottom: 6px; }
+            .summary-row.total { font-size: 18px; font-weight: bold; color: #1e40af; border-top: 2px solid #93c5fd; padding-top: 8px; margin-top: 8px; }
+            .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 60px; text-align: center; }
+            .sig-line { border-top: 1px solid #64748b; padding-top: 6px; font-size: 13px; color: #475569; font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>🏁 LOS PITS - COMPROBANTE DE NÓMINA Y COMISIONES</h1>
+            <p>Registro de Pago y Liquidación Quincenal / Mensual</p>
+          </div>
+
+          <div class="info-grid">
+            <div class="info-item"><strong>Colaborador:</strong> ${rec.colaborador}</div>
+            <div class="info-item"><strong>Puesto / Rol:</strong> ${(rec.rol || "").toUpperCase()}</div>
+            <div class="info-item"><strong>Período Pagado:</strong> ${rec.periodo}</div>
+            <div class="info-item"><strong>Fecha de Pago:</strong> ${formatDate(rec.fechaPago)}</div>
+            <div class="info-item"><strong>Correlativo / ID:</strong> #NOM-${rec.id.toString().slice(-6)}</div>
+            <div class="info-item"><strong>Autorizado Por:</strong> ${rec.registradoPor || "Gerencia"}</div>
+          </div>
+
+          <h3>📋 Desglose de Comisiones Liquidadas</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Servicio / Trabajo Realizado</th>
+                <th>Fecha</th>
+                <th style="text-align: right;">Comisión</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHtml.length > 0 ? itemsHtml : '<tr><td colSpan="4" style="text-align:center; padding: 12px; color: #9ca3af;">Sin comisiones adicionales en este período</td></tr>'}
+            </tbody>
+          </table>
+
+          <div class="summary">
+            <div class="summary-row">
+              <span>Sueldo Base (${rec.periodo.includes("1ra") || rec.periodo.includes("2da") ? "Quincenal" : "Mensual"}):</span>
+              <strong>Q${rec.sueldoBase.toFixed(2)}</strong>
+            </div>
+            <div class="summary-row">
+              <span>Total Comisiones Liquidadas:</span>
+              <strong>Q${rec.totalComisiones.toFixed(2)}</strong>
+            </div>
+            <div class="summary-row total">
+              <span>TOTAL LÍQUIDO A RECIBIR:</span>
+              <span>Q${rec.totalPagado.toFixed(2)}</span>
+            </div>
+          </div>
+
+          <div class="signatures">
+            <div>
+              <div style="height: 40px;"></div>
+              <div class="sig-line">Firma del Colaborador (Recibí Conforme)<br/><small style="font-weight:normal; color:#64748b;">${rec.colaborador}</small></div>
+            </div>
+            <div>
+              <div style="height: 40px;"></div>
+              <div class="sig-line">Firma de Gerencia / Administración<br/><small style="font-weight:normal; color:#64748b;">Los Pits App</small></div>
+            </div>
+          </div>
+
+          <script>
+            window.onload = function() {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWin.document.close();
   };
 
   const getCollaboratorCommissionDetails = (name, role) => {
@@ -1147,200 +1486,484 @@ export default function Finance({
         </div>
       )}
 
-      {/* 2. COMMISSIONS TAB */}
+      {/* 2. COMMISSIONS AND PAYROLL TAB */}
       {activeTab === "commissions" && (
         <div style={styles.tabContent}>
+          {/* Main Card */}
           <div className="glass-panel" style={styles.sectionCard}>
-            <h2 style={styles.sectionTitle}>Comisiones por Colaborador</h2>
-            <p style={{ marginBottom: "20px" }}>Control detallado del dinero devengado por cada mecánico, lavador, cajero y vendedor.</p>
-
-            {/* Date Filters Row */}
-            <div style={styles.filterRow} className="hide-print">
-              <div style={styles.filterGroup}>
-                <label style={styles.filterLabel}>Fecha Inicio:</label>
-                <input
-                  type="date"
-                  value={commStart}
-                  onChange={(e) => setCommStart(e.target.value)}
-                  style={styles.dateInput}
-                />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px", marginBottom: "20px" }}>
+              <div>
+                <h2 style={styles.sectionTitle}>Módulo de Nómina & Liquidador de Comisiones Quincenales</h2>
+                <p style={{ margin: 0, color: "var(--text-muted)", fontSize: "0.88rem" }}>
+                  Gestiona el pago de salario base quincenal/mensual y liquida comisiones acumuladas descontándolas automáticamente de pendientes.
+                </p>
               </div>
-              <div style={styles.filterGroup}>
-                <label style={styles.filterLabel}>Fecha Fin:</label>
-                <input
-                  type="date"
-                  value={commEnd}
-                  onChange={(e) => setCommEnd(e.target.value)}
-                  style={styles.dateInput}
-                />
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button
+                  onClick={() => setCommSubTab("planilla")}
+                  className="btn"
+                  style={{
+                    padding: "8px 16px",
+                    fontSize: "0.85rem",
+                    backgroundColor: commSubTab === "planilla" ? "var(--color-primary)" : "rgba(255,255,255,0.05)",
+                    color: "#fff",
+                    borderRadius: "6px",
+                    fontWeight: "600"
+                  }}
+                >
+                  💼 Planilla y Liquidación
+                </button>
+                <button
+                  onClick={() => setCommSubTab("historial")}
+                  className="btn"
+                  style={{
+                    padding: "8px 16px",
+                    fontSize: "0.85rem",
+                    backgroundColor: commSubTab === "historial" ? "var(--color-primary)" : "rgba(255,255,255,0.05)",
+                    color: "#fff",
+                    borderRadius: "6px",
+                    fontWeight: "600"
+                  }}
+                >
+                  📜 Historial de Recibos Pagados ({(payrollHistory || []).length})
+                </button>
               </div>
             </div>
 
-             <h3 style={{ ...styles.subtitle, color: "var(--color-primary)", borderBottom: "1px solid rgba(59, 130, 246, 0.2)", paddingBottom: "8px", marginBottom: "16px", marginTop: "16px" }}>
-              🔧 Mecánicos (Comisión porcentual)
-            </h3>
-            
-            <div style={styles.tableResponsive}>
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>Nombre del Mecánico</th>
-                    <th style={styles.th}>Comisiones Cobradas</th>
-                    <th style={styles.th}>Comisiones Pendientes</th>
-                    <th style={styles.th}>Total Acumulado</th>
-                    <th style={{ ...styles.th, textAlign: "right" }} className="hide-print">Acción</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {mecanicos.map((m, i) => {
-                    const comms = getMechanicCommissions(m);
-                    return (
-                      <tr key={i} style={styles.tr}>
-                        <td style={{ ...styles.td, fontWeight: "700", color: "#fff" }}>{m}</td>
-                        <td style={{ ...styles.td, color: "var(--color-success)" }}>{formatMoney(comms.cobradas)}</td>
-                        <td style={{ ...styles.td, color: "var(--color-warning)" }}>{formatMoney(comms.pendientes)}</td>
-                        <td style={{ ...styles.td, fontWeight: "700", color: "#fff" }}>{formatMoney(comms.total)}</td>
-                        <td style={{ ...styles.td, textAlign: "right" }} className="hide-print">
-                          <button
-                            onClick={() => generarReporteColaborador(m, "mecanico")}
-                            style={styles.generateReportBtn}
+            {commSubTab === "planilla" && (
+              <>
+                {/* Period Selector Card */}
+                <div style={{
+                  backgroundColor: "rgba(0, 0, 0, 0.25)",
+                  padding: "16px 20px",
+                  borderRadius: "12px",
+                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                  marginBottom: "24px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "14px"
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
+                    <span style={{ fontSize: "0.9rem", fontWeight: "700", color: "#fff", display: "flex", alignItems: "center", gap: "6px" }}>
+                      📅 Período de Nómina y Comisiones:
+                    </span>
+                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                      {[
+                        { id: "q1", label: "1ra Quincena (1-15)" },
+                        { id: "q2", label: "2da Quincena (16-Fin)" },
+                        { id: "mes", label: "Mes Completo" },
+                        { id: "custom", label: "Personalizado" }
+                      ].map(p => (
+                        <button
+                          key={p.id}
+                          onClick={() => setPayrollPeriodMode(p.id)}
+                          style={{
+                            padding: "6px 12px",
+                            fontSize: "0.8rem",
+                            borderRadius: "6px",
+                            border: "none",
+                            cursor: "pointer",
+                            fontWeight: "600",
+                            backgroundColor: payrollPeriodMode === p.id ? "var(--color-primary)" : "rgba(255,255,255,0.06)",
+                            color: "#fff"
+                          }}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap" }}>
+                    {payrollPeriodMode !== "custom" && (
+                      <>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <label style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Mes:</label>
+                          <select
+                            className="input-field"
+                            value={payrollMonth}
+                            onChange={(e) => setPayrollMonth(Number(e.target.value))}
+                            style={{ padding: "4px 8px", fontSize: "0.85rem", height: "32px", width: "130px" }}
                           >
-                            Generar Reporte
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                            {["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"].map((m, idx) => (
+                              <option key={idx} value={idx}>{m}</option>
+                            ))}
+                          </select>
+                        </div>
 
-            <h3 style={{ ...styles.subtitle, color: "var(--color-secondary)", borderBottom: "1px solid rgba(168, 85, 247, 0.2)", paddingBottom: "8px", marginTop: "32px", marginBottom: "16px" }}>
-              🧼 Lavadores (Comisión fija por servicio)
-            </h3>
-
-            <div style={styles.tableResponsive}>
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>Nombre del Lavador</th>
-                    <th style={styles.th}>Comisiones Cobradas</th>
-                    <th style={styles.th}>Comisiones Pendientes</th>
-                    <th style={styles.th}>Total Acumulado</th>
-                    <th style={{ ...styles.th, textAlign: "right" }} className="hide-print">Acción</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lavadores.map((l, i) => {
-                    const comms = getWasherCommissions(l);
-                    return (
-                      <tr key={i} style={styles.tr}>
-                        <td style={{ ...styles.td, fontWeight: "700", color: "#fff" }}>{l}</td>
-                        <td style={{ ...styles.td, color: "var(--color-success)" }}>{formatMoney(comms.cobradas)}</td>
-                        <td style={{ ...styles.td, color: "var(--color-warning)" }}>{formatMoney(comms.pendientes)}</td>
-                        <td style={{ ...styles.td, fontWeight: "700", color: "#fff" }}>{formatMoney(comms.total)}</td>
-                        <td style={{ ...styles.td, textAlign: "right" }} className="hide-print">
-                          <button
-                            onClick={() => generarReporteColaborador(l, "lavador")}
-                            style={styles.generateReportBtn}
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <label style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Año:</label>
+                          <select
+                            className="input-field"
+                            value={payrollYear}
+                            onChange={(e) => setPayrollYear(Number(e.target.value))}
+                            style={{ padding: "4px 8px", fontSize: "0.85rem", height: "32px", width: "90px" }}
                           >
-                            Generar Reporte
-                          </button>
-                        </td>
+                            {[2024, 2025, 2026, 2027, 2028].map(y => (
+                              <option key={y} value={y}>{y}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </>
+                    )}
+
+                    {payrollPeriodMode === "custom" && (
+                      <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <label style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Desde:</label>
+                          <input
+                            type="date"
+                            className="input-field"
+                            value={commStart}
+                            onChange={(e) => setCommStart(e.target.value)}
+                            style={{ padding: "4px 8px", fontSize: "0.85rem", height: "32px" }}
+                          />
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <label style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Hasta:</label>
+                          <input
+                            type="date"
+                            className="input-field"
+                            value={commEnd}
+                            onChange={(e) => setCommEnd(e.target.value)}
+                            style={{ padding: "4px 8px", fontSize: "0.85rem", height: "32px" }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ marginLeft: "auto", fontSize: "0.85rem", color: "var(--color-primary)", fontWeight: "700" }}>
+                      📌 Período Seleccionado: {getPayrollDateRangeInfo().periodLabel}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Table 1: Collaborators List */}
+                <h3 style={{ ...styles.subtitle, color: "var(--color-primary)", borderBottom: "1px solid rgba(59, 130, 246, 0.2)", paddingBottom: "8px", marginBottom: "16px" }}>
+                  👥 Planilla de Empleados & Comisiones Pendientes del Período
+                </h3>
+
+                <div style={styles.tableResponsive}>
+                  <table style={styles.table}>
+                    <thead>
+                      <tr>
+                        <th style={styles.th}>Colaborador / Empleado</th>
+                        <th style={styles.th}>Rol / Puesto</th>
+                        <th style={styles.th}>Sueldo Base Período</th>
+                        <th style={styles.th}>Comisiones Pendientes Período</th>
+                        <th style={styles.th}>Total Liquído A Pagar</th>
+                        <th style={{ ...styles.th, textAlign: "right" }} className="hide-print">Acción</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                    </thead>
+                    <tbody>
+                      {(usuarios || []).map((u, i) => {
+                        const { items, totalComs } = getPayrollUnpaidItems(u.user, u.rol);
+                        const salarioMensual = parseFloat(u.salarioBase) || 0;
+                        const sueldoPeriodo = payrollPeriodMode === "mes" ? salarioMensual : (salarioMensual / 2);
+                        const totalLiquido = sueldoPeriodo + totalComs;
 
-            <h3 style={{ ...styles.subtitle, color: "var(--color-primary)", borderBottom: "1px solid rgba(59, 130, 246, 0.2)", paddingBottom: "8px", marginTop: "32px", marginBottom: "16px" }}>
-              💵 Cajeros (Comisión sobre mano de obra en taller)
-            </h3>
+                        return (
+                          <tr key={i} style={styles.tr}>
+                            <td style={{ ...styles.td, fontWeight: "700", color: "#fff" }}>
+                              {u.user}
+                            </td>
+                            <td style={styles.td}>
+                              <span className="badge" style={{ backgroundColor: "rgba(255,255,255,0.06)", color: "#fff", border: "1px solid rgba(255,255,255,0.1)", textTransform: "capitalize" }}>
+                                {u.rol || "Colaborador"}
+                              </span>
+                            </td>
+                            <td style={{ ...styles.td, color: "#fff" }}>
+                              {formatMoney(sueldoPeriodo)}
+                            </td>
+                            <td style={{ ...styles.td, color: totalComs > 0 ? "var(--color-warning)" : "var(--text-muted)", fontWeight: totalComs > 0 ? "bold" : "normal" }}>
+                              {formatMoney(totalComs)}
+                              {items.length > 0 && (
+                                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block" }}>
+                                  ({items.length} trabajos)
+                                </span>
+                              )}
+                            </td>
+                            <td style={{ ...styles.td, fontWeight: "800", color: "var(--color-primary)", fontSize: "0.95rem" }}>
+                              {formatMoney(totalLiquido)}
+                            </td>
+                            <td style={{ ...styles.td, textAlign: "right" }} className="hide-print">
+                              <button
+                                onClick={() => {
+                                  setSelectedPayrollUser({ user: u.user, rol: u.rol || "Colaborador", salarioBase: u.salarioBase || 0 });
+                                  setCustomSueldoBaseInput(sueldoPeriodo.toString());
+                                }}
+                                style={{
+                                  ...styles.generateReportBtn,
+                                  backgroundColor: totalComs > 0 || sueldoPeriodo > 0 ? "var(--color-primary)" : "rgba(255,255,255,0.1)"
+                                }}
+                              >
+                                💼 Liquidar Nómina / Desglose
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
 
-            <div style={styles.tableResponsive}>
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>Nombre del Cajero</th>
-                    <th style={styles.th}>Comisión Taller</th>
-                    <th style={styles.th}>Salario Base</th>
-                    <th style={styles.th}>Total Nómina</th>
-                    <th style={{ ...styles.th, textAlign: "right" }} className="hide-print">Acción</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(usuarios || []).filter(u => u.rol === "cajero").map((c, i) => {
-                    const comms = getCashierCommissions(c.user);
-                    const salario = parseFloat(c.salarioBase) || 0;
-                    return (
-                      <tr key={i} style={styles.tr}>
-                        <td style={{ ...styles.td, fontWeight: "700", color: "#fff" }}>{c.user}</td>
-                        <td style={{ ...styles.td, color: "var(--color-success)" }}>{formatMoney(comms.cobradas)}</td>
-                        <td style={{ ...styles.td, color: "#fff" }}>{formatMoney(salario)}</td>
-                        <td style={{ ...styles.td, fontWeight: "700", color: "var(--color-primary)" }}>{formatMoney(comms.cobradas + salario)}</td>
-                        <td style={{ ...styles.td, textAlign: "right" }} className="hide-print">
-                          <button
-                            onClick={() => generarReporteColaborador(c.user, "cajero")}
-                            style={styles.generateReportBtn}
-                          >
-                            Generar Reporte
-                          </button>
-                        </td>
+            {commSubTab === "historial" && (
+              <>
+                <h3 style={{ ...styles.subtitle, color: "var(--color-secondary)", borderBottom: "1px solid rgba(168, 85, 247, 0.2)", paddingBottom: "8px", marginBottom: "16px" }}>
+                  📜 Historial de Recibos y Nóminas Pagadas
+                </h3>
+
+                <div style={styles.tableResponsive}>
+                  <table style={styles.table}>
+                    <thead>
+                      <tr>
+                        <th style={styles.th}>Recibo #</th>
+                        <th style={styles.th}>Colaborador</th>
+                        <th style={styles.th}>Período Liquidado</th>
+                        <th style={styles.th}>Fecha Pago</th>
+                        <th style={styles.th}>Sueldo Base</th>
+                        <th style={styles.th}>Comisiones</th>
+                        <th style={styles.th}>Total Pagado</th>
+                        <th style={{ ...styles.th, textAlign: "right" }} className="hide-print">Acción</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <h3 style={{ ...styles.subtitle, color: "var(--color-secondary)", borderBottom: "1px solid rgba(168, 85, 247, 0.2)", paddingBottom: "8px", marginTop: "32px", marginBottom: "16px" }}>
-              🚗 Comisiones por Venta de Vehículos (Porcentaje o Monto Fijo)
-            </h3>
-
-            <div style={styles.tableResponsive}>
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>Nombre del Colaborador</th>
-                    <th style={styles.th}>Comisiones Cobradas (Vendido)</th>
-                    <th style={styles.th}>Comisiones Pendientes (Disponible)</th>
-                    <th style={styles.th}>Total Acumulado</th>
-                    <th style={{ ...styles.th, textAlign: "right" }} className="hide-print">Acción</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(usuarios || []).map((u, i) => {
-                    const comms = getVehicleCommissions(u.user);
-                    if (comms.total === 0) return null;
-                    return (
-                      <tr key={i} style={styles.tr}>
-                        <td style={{ ...styles.td, fontWeight: "700", color: "#fff" }}>{u.user}</td>
-                        <td style={{ ...styles.td, color: "var(--color-success)" }}>{formatMoney(comms.cobradas)}</td>
-                        <td style={{ ...styles.td, color: "var(--color-warning)" }}>{formatMoney(comms.pendientes)}</td>
-                        <td style={{ ...styles.td, fontWeight: "700", color: "#fff" }}>{formatMoney(comms.total)}</td>
-                        <td style={{ ...styles.td, textAlign: "right" }} className="hide-print">
-                          <button
-                            onClick={() => generarReporteColaborador(u.user, "vendedor")}
-                            style={styles.generateReportBtn}
-                          >
-                            Generar Reporte
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {!(usuarios || []).some(u => getVehicleCommissions(u.user).total > 0) && (
-                    <tr style={styles.tr}>
-                      <td colSpan="5" style={{ ...styles.td, textAlign: "center", color: "var(--text-muted)", padding: "16px" }}>
-                        No hay comisiones de venta asignadas a colaboradores.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    </thead>
+                    <tbody>
+                      {(payrollHistory || []).length === 0 ? (
+                        <tr>
+                          <td colSpan="8" style={{ ...styles.td, textAlign: "center", padding: "40px", color: "var(--text-muted)" }}>
+                            No hay recibos de nómina liquidados registrados aún.
+                          </td>
+                        </tr>
+                      ) : (
+                        (payrollHistory || []).map((rec) => (
+                          <tr key={rec.id} style={styles.tr}>
+                            <td style={{ ...styles.td, fontWeight: "700", color: "var(--color-primary)" }}>
+                              #NOM-{rec.id.toString().slice(-6)}
+                            </td>
+                            <td style={{ ...styles.td, fontWeight: "700", color: "#fff" }}>
+                              {rec.colaborador}
+                            </td>
+                            <td style={{ ...styles.td, fontSize: "0.82rem" }}>
+                              {rec.periodo}
+                            </td>
+                            <td style={styles.td}>
+                              {formatDate(rec.fechaPago)}
+                            </td>
+                            <td style={styles.td}>
+                              {formatMoney(rec.sueldoBase || 0)}
+                            </td>
+                            <td style={{ ...styles.td, color: "var(--color-success)" }}>
+                              {formatMoney(rec.totalComisiones || 0)}
+                            </td>
+                            <td style={{ ...styles.td, fontWeight: "800", color: "#fff" }}>
+                              {formatMoney(rec.totalPagado || 0)}
+                            </td>
+                            <td style={{ ...styles.td, textAlign: "right" }} className="hide-print">
+                              <button
+                                onClick={() => imprimirReciboNominaPrint(rec)}
+                                className="btn btn-secondary"
+                                style={{ padding: "4px 10px", fontSize: "0.78rem" }}
+                              >
+                                🖨️ Re-imprimir Recibo
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </div>
+
+          {/* PAYROLL LIQUIDATION MODAL */}
+          {selectedPayrollUser && createPortal(
+            (() => {
+              const { items, totalComs } = getPayrollUnpaidItems(selectedPayrollUser.user, selectedPayrollUser.rol);
+              const baseSal = parseFloat(customSueldoBaseInput) || 0;
+              const totalLiquido = baseSal + totalComs;
+              const { periodLabel } = getPayrollDateRangeInfo();
+
+              return (
+                <div style={{
+                  position: "fixed",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  backgroundColor: "rgba(0, 0, 0, 0.8)",
+                  backdropFilter: "blur(6px)",
+                  WebkitBackdropFilter: "blur(6px)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  zIndex: 99999,
+                  padding: "20px"
+                }}>
+                  <div className="glass-panel" style={{
+                    padding: "30px",
+                    borderRadius: "16px",
+                    width: "100%",
+                    maxWidth: "680px",
+                    maxHeight: "90vh",
+                    overflowY: "auto",
+                    textAlign: "left",
+                    boxShadow: "0 25px 50px rgba(0,0,0,0.7)",
+                    border: "1px solid rgba(255, 255, 255, 0.1)",
+                    margin: "auto"
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "12px" }}>
+                      <div>
+                        <h3 style={{ fontSize: "1.3rem", fontWeight: "800", margin: 0, color: "#fff" }}>
+                          💼 Liquidación de Nómina & Comisiones
+                        </h3>
+                        <p style={{ margin: "4px 0 0 0", fontSize: "0.85rem", color: "var(--color-primary)", fontWeight: "600" }}>
+                          Colaborador: {selectedPayrollUser.user} ({selectedPayrollUser.rol.toUpperCase()})
+                        </p>
+                      </div>
+                      <button 
+                        onClick={() => setSelectedPayrollUser(null)}
+                        style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}
+                      >
+                        <XCircle size={22} />
+                      </button>
+                    </div>
+
+                    <div style={{ backgroundColor: "rgba(59, 130, 246, 0.08)", border: "1px solid rgba(59, 130, 246, 0.2)", padding: "12px 16px", borderRadius: "10px", marginBottom: "20px" }}>
+                      <div style={{ fontSize: "0.85rem", color: "#fff", fontWeight: "700" }}>
+                        📌 Período a Liquidar: <span style={{ color: "var(--color-primary)" }}>{periodLabel}</span>
+                      </div>
+                    </div>
+
+                    {/* Base Salary Field */}
+                    <div style={{ display: "flex", gap: "16px", marginBottom: "20px", alignItems: "center" }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: "0.82rem", color: "var(--text-muted)", display: "block", marginBottom: "6px", fontWeight: "600" }}>
+                          Sueldo Base del Período (Q):
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          className="input-field"
+                          value={customSueldoBaseInput}
+                          onChange={(e) => setCustomSueldoBaseInput(e.target.value)}
+                          placeholder="0.00"
+                          style={{ fontSize: "1rem", fontWeight: "700" }}
+                        />
+                      </div>
+                      <div style={{ flex: 1, textAlign: "right" }}>
+                        <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Comisiones Acumuladas:</span>
+                        <span style={{ fontSize: "1.2rem", fontWeight: "800", color: "var(--color-warning)" }}>{formatMoney(totalComs)}</span>
+                      </div>
+                    </div>
+
+                    {/* Unpaid Commissions Items List */}
+                    <h4 style={{ fontSize: "0.95rem", fontWeight: "700", color: "#fff", marginBottom: "10px" }}>
+                      📋 Desglose de Comisiones Incluidas en este Período ({items.length}):
+                    </h4>
+
+                    <div style={{ maxHeight: "220px", overflowY: "auto", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "8px", marginBottom: "24px" }}>
+                      {items.length === 0 ? (
+                        <div style={{ padding: "20px", textAlign: "center", color: "var(--text-muted)", fontSize: "0.85rem" }}>
+                          No hay comisiones pendientes de pago en este período de fechas.
+                        </div>
+                      ) : (
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+                          <thead>
+                            <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.1)", backgroundColor: "rgba(0,0,0,0.2)" }}>
+                              <th style={{ padding: "8px 12px", color: "var(--text-muted)", textAlign: "left" }}>Trabajo / Servicio</th>
+                              <th style={{ padding: "8px 12px", color: "var(--text-muted)", textAlign: "left" }}>Fecha</th>
+                              <th style={{ padding: "8px 12px", color: "var(--text-muted)", textAlign: "right" }}>Comisión</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {items.map((item, idx) => (
+                              <tr key={idx} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                                <td style={{ padding: "8px 12px" }}>
+                                  <div style={{ fontWeight: "700", color: "#fff" }}>{item.titulo}</div>
+                                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{item.subtitulo}</div>
+                                </td>
+                                <td style={{ padding: "8px 12px", color: "var(--text-muted)" }}>
+                                  {item.fecha ? formatDate(item.fecha) : "-"}
+                                </td>
+                                <td style={{ padding: "8px 12px", textAlign: "right", color: "var(--color-success)", fontWeight: "700" }}>
+                                  {formatMoney(item.comision)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+
+                    {/* Total Liquido Summary Box */}
+                    <div style={{
+                      backgroundColor: "rgba(16, 185, 129, 0.1)",
+                      border: "1px solid rgba(16, 185, 129, 0.3)",
+                      padding: "16px",
+                      borderRadius: "12px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: "24px"
+                    }}>
+                      <div>
+                        <span style={{ fontSize: "0.8rem", color: "#34d399", fontWeight: "700", textTransform: "uppercase" }}>TOTAL LÍQUIDO A APLICAR</span>
+                        <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>Sueldo Base (Q{baseSal.toFixed(2)}) + Comisiones (Q{totalComs.toFixed(2)})</div>
+                      </div>
+                      <span style={{ fontSize: "1.8rem", fontWeight: "900", color: "#34d399" }}>
+                        {formatMoney(totalLiquido)}
+                      </span>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPayrollUser(null)}
+                        className="btn btn-secondary"
+                        style={{ flex: 1 }}
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => imprimirReciboNominaPrint({
+                          id: Date.now(),
+                          colaborador: selectedPayrollUser.user,
+                          rol: selectedPayrollUser.rol,
+                          periodo: periodLabel,
+                          fechaPago: new Date().toISOString(),
+                          sueldoBase: baseSal,
+                          totalComisiones: totalComs,
+                          totalPagado: totalLiquido,
+                          detallesComisiones: items,
+                          registradoPor: "Gerencia"
+                        })}
+                        className="btn"
+                        style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.1)", color: "#fff", border: "1px solid rgba(255,255,255,0.2)" }}
+                      >
+                        🖨️ Pre-Ver Recibo
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExecutePayrollPayment(selectedPayrollUser, customSueldoBaseInput, items, totalComs)}
+                        className="btn btn-primary"
+                        style={{ flex: 1.5, backgroundColor: "var(--color-success)", borderColor: "var(--color-success)", fontWeight: "800" }}
+                      >
+                        ✅ Aplicar Pago y Descontar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })(),
+            document.body
+          )}
         </div>
       )}
 

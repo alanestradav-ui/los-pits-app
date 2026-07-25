@@ -515,6 +515,11 @@ export default function App() {
     return Array.isArray(val) ? val : [];
   });
 
+  const [payrollHistory, setPayrollHistory] = useState(() => {
+    const val = getLocalStorage("payrollHistory", []);
+    return Array.isArray(val) ? val : [];
+  });
+
   const [toolsInventory, setToolsInventory] = useState(() => {
     const val = getLocalStorage("toolsInventory", []);
     return Array.isArray(val) ? val : [];
@@ -850,6 +855,11 @@ export default function App() {
     setLocalStorage("vehiculosVenta", vehiculosVenta);
     syncToCloud("vehiculosVenta", vehiculosVenta);
   }, [vehiculosVenta]);
+
+  useEffect(() => {
+    setLocalStorage("payrollHistory", payrollHistory);
+    syncToCloud("payrollHistory", payrollHistory);
+  }, [payrollHistory]);
 
   useEffect(() => {
     setLocalStorage("workshopInventory", workshopInventory);
@@ -1291,7 +1301,9 @@ export default function App() {
         {currentTab === "finanzas" && userHasPermission(usuarioActivo, "finanzas") && (
           <Finance 
             ordenes={ordenes} 
+            setOrdenes={setOrdenes}
             carwash={carwash} 
+            setCarwash={setCarwash}
             mecanicos={mecanicos} 
             lavadores={lavadores} 
             parkingHistory={parkingHistory}
@@ -1300,10 +1312,14 @@ export default function App() {
             usuarios={usuarios}
             fixedCosts={fixedCosts}
             vehiculosVenta={vehiculosVenta}
+            setVehiculosVenta={setVehiculosVenta}
             cuentasPorCobrar={cuentasPorCobrar}
             cuentasPorPagar={cuentasPorPagar}
             carwashConsumption={carwashConsumption}
             compras={compras}
+            setCompras={setCompras}
+            payrollHistory={payrollHistory}
+            setPayrollHistory={setPayrollHistory}
             carwashPresets={carwashPresets}
             dashboardPeriod={dashboardPeriod}
             setDashboardPeriod={setDashboardPeriod}
