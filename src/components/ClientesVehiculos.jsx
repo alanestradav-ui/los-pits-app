@@ -17,7 +17,13 @@ import {
   Mail,
   MapPin,
   Layers,
-  RefreshCw
+  RefreshCw,
+  Link2,
+  Link2Off,
+  ArrowRightLeft,
+  UserPlus,
+  AlertCircle,
+  CheckCircle2
 } from "lucide-react";
 
 const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
@@ -90,6 +96,117 @@ export default function ClientesVehiculos({
   const [vClienteTelefono, setVClienteTelefono] = useState("");
 
   const isManager = usuarioActual?.rol === "admin" || usuarioActual?.rol === "cajero";
+
+  // Assignment and Linking Modal states
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [targetVehicleForAssign, setTargetVehicleForAssign] = useState(null);
+  const [targetClientForAssign, setTargetClientForAssign] = useState(null);
+  const [selectedNewOwnerPhone, setSelectedNewOwnerPhone] = useState("");
+  const [selectedVehicleToLink, setSelectedVehicleToLink] = useState("");
+
+  // Helper to get vehicles linked to a client
+  const getClientVehicles = (clientPhone) => {
+    if (!clientPhone) return [];
+    return (vehiculos || []).filter(v => v && v.clienteTelefono === clientPhone);
+  };
+
+  // Unlink a vehicle from its current client (Desvincular)
+  const handleUnlinkVehicle = (vehicle) => {
+    const vName = `${vehicle.placa || vehicle.chasis || "Vehículo"} (${vehicle.marca} ${vehicle.linea})`;
+    const currentOwner = (clientes || []).find(c => c.telefono === vehicle.clienteTelefono);
+    const ownerName = currentOwner ? currentOwner.nombre : vehicle.clienteTelefono;
+
+    if (window.confirm(`¿Deseas desvincular el vehículo ${vName} del cliente "${ownerName}"?\n\nEl vehículo permanecerá registrado en el sistema pero sin propietario asignado.`)) {
+      const updated = (vehiculos || []).map(v => {
+        const isTarget = (vehicle.placa && v.placa === vehicle.placa) ||
+                         (vehicle.chasis && v.chasis === vehicle.chasis);
+        return isTarget ? { ...v, clienteTelefono: "" } : v;
+      });
+      setVehiculos(updated);
+    }
+  };
+
+  // Open Reassign Modal for a vehicle
+  const handleOpenReassignModal = (vehicle, client = null) => {
+    setTargetVehicleForAssign(vehicle);
+    setTargetClientForAssign(client);
+    setSelectedNewOwnerPhone(vehicle ? (vehicle.clienteTelefono || "") : "");
+    setSelectedVehicleToLink("");
+    setShowAssignModal(true);
+  };
+
+  // Open Link Vehicle Modal for a client
+  const handleOpenLinkForClientModal = (client) => {
+    setTargetClientForAssign(client);
+    setTargetVehicleForAssign(null);
+    setSelectedVehicleToLink("");
+    setSelectedNewOwnerPhone(client.telefono);
+    setShowAssignModal(true);
+  };
+
+  // Execute Link or Reassignment
+  const handleSaveAssignment = (e) => {
+    e.preventDefault();
+    if (targetVehicleForAssign) {
+      const vehicle = targetVehicleForAssign;
+      const prevOwnerPhone = vehicle.clienteTelefono;
+      const newOwnerPhone = selectedNewOwnerPhone;
+
+      if (prevOwnerPhone === newOwnerPhone) {
+        setShowAssignModal(false);
+        return;
+      }
+
+      const prevOwner = (clientes || []).find(c => c.telefono === prevOwnerPhone);
+      const newOwner = (clientes || []).find(c => c.telefono === newOwnerPhone);
+
+      let msg = "";
+      if (newOwnerPhone === "") {
+        msg = `¿Confirmas desvincular el vehículo ${vehicle.placa || vehicle.marca} del cliente actual?`;
+      } else if (prevOwnerPhone) {
+        msg = `¿Confirmas transferir la propiedad del vehículo ${vehicle.placa || vehicle.marca} de "${prevOwner ? prevOwner.nombre : prevOwnerPhone}" a "${newOwner ? newOwner.nombre : newOwnerPhone}" por venta/traspaso?`;
+      } else {
+        msg = `¿Confirmas asignar el vehículo ${vehicle.placa || vehicle.marca} a "${newOwner ? newOwner.nombre : newOwnerPhone}"?`;
+      }
+
+      if (window.confirm(msg)) {
+        const updated = (vehiculos || []).map(v => {
+          const isTarget = (vehicle.placa && v.placa === vehicle.placa) ||
+                           (vehicle.chasis && v.chasis === vehicle.chasis);
+          return isTarget ? { ...v, clienteTelefono: newOwnerPhone } : v;
+        });
+        setVehiculos(updated);
+        setShowAssignModal(false);
+      }
+    } else if (targetClientForAssign) {
+      if (!selectedVehicleToLink) {
+        alert("Por favor selecciona un vehículo de la lista.");
+        return;
+      }
+
+      const client = targetClientForAssign;
+      const vehicleToLink = (vehiculos || []).find(v => (v.placa && v.placa === selectedVehicleToLink) || (v.chasis && v.chasis === selectedVehicleToLink));
+
+      if (!vehicleToLink) return;
+
+      const prevOwnerPhone = vehicleToLink.clienteTelefono;
+      const prevOwner = (clientes || []).find(c => c.telefono === prevOwnerPhone);
+
+      if (prevOwnerPhone && prevOwnerPhone !== client.telefono) {
+        if (!window.confirm(`Este vehículo pertenece actualmente a "${prevOwner ? prevOwner.nombre : prevOwnerPhone}". ¿Deseas transferir la propiedad a "${client.nombre}"?`)) {
+          return;
+        }
+      }
+
+      const updated = (vehiculos || []).map(v => {
+        const isTarget = (vehicleToLink.placa && v.placa === vehicleToLink.placa) ||
+                         (vehicleToLink.chasis && v.chasis === vehicleToLink.chasis);
+        return isTarget ? { ...v, clienteTelefono: client.telefono } : v;
+      });
+      setVehiculos(updated);
+      setShowAssignModal(false);
+    }
+  };
 
   // Handlers
   const handleOpenClientModal = (client = null) => {
@@ -411,40 +528,96 @@ export default function ClientesVehiculos({
                     <th style={styles.th}>Teléfono / Celular</th>
                     <th style={styles.th}>NIT</th>
                     <th style={styles.th}>Nombre Facturación</th>
-                    <th style={styles.th}>Email</th>
-                    <th style={styles.th}>Dirección</th>
+                    <th style={styles.th}>Vehículos Propios</th>
                     {isManager && <th style={{ ...styles.th, textAlign: "center" }}>Acciones</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {filteredClientes.length === 0 ? (
                     <tr>
-                      <td colSpan={isManager ? 7 : 6} style={styles.emptyCell}>
+                      <td colSpan={isManager ? 6 : 5} style={styles.emptyCell}>
                         No hay clientes registrados que coincidan con la búsqueda.
                       </td>
                     </tr>
                   ) : (
                     filteredClientes.map((c, i) => (
                       <tr key={c.telefono || i} style={styles.tr}>
-                        <td style={styles.td}><strong>{c.nombre}</strong></td>
+                        <td style={styles.td}>
+                          <strong>{c.nombre}</strong>
+                          {c.email && <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>{c.email}</div>}
+                        </td>
                         <td style={styles.td}>{c.telefono}</td>
                         <td style={styles.td}>{c.nit || "C/F"}</td>
                         <td style={styles.td}>{c.nombreFacturacion || c.nombre}</td>
-                        <td style={styles.td}>{c.email || <span style={styles.mutedText}>—</span>}</td>
-                        <td style={styles.td}>{c.direccion || <span style={styles.mutedText}>—</span>}</td>
+                        <td style={{ ...styles.td, minWidth: "220px" }}>
+                          {(() => {
+                            const clientVehicles = getClientVehicles(c.telefono);
+                            if (clientVehicles.length === 0) {
+                              return (
+                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                  <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", fontStyle: "italic" }}>Sin vehículos</span>
+                                  {isManager && (
+                                    <button
+                                      onClick={() => handleOpenLinkForClientModal(c)}
+                                      style={{ padding: "2px 8px", fontSize: "0.75rem", borderRadius: "4px", backgroundColor: "rgba(59, 130, 246, 0.15)", color: "#60a5fa", border: "1px solid rgba(59, 130, 246, 0.3)", cursor: "pointer" }}
+                                      title="Vincular Vehículo a este Cliente"
+                                    >
+                                      + Vincular
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            }
+                            return (
+                              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                {clientVehicles.map((v, idx) => (
+                                  <div key={idx} style={{ display: "inline-flex", alignItems: "center", justifyContent: "space-between", gap: "6px", backgroundColor: "rgba(255, 255, 255, 0.05)", padding: "4px 8px", borderRadius: "6px", border: "1px solid rgba(255, 255, 255, 0.08)", fontSize: "0.8rem" }}>
+                                    <span style={{ color: "#fff", fontWeight: "600" }}>🚘 {v.placa || v.chasis} ({v.marca} {v.linea})</span>
+                                    {isManager && (
+                                      <div style={{ display: "flex", gap: "4px" }}>
+                                        <button
+                                          onClick={() => handleOpenReassignModal(v, c)}
+                                          style={{ background: "none", border: "none", color: "#60a5fa", cursor: "pointer", padding: "2px" }}
+                                          title="Reasignar / Transferir propiedad por venta"
+                                        >
+                                          <ArrowRightLeft size={14} />
+                                        </button>
+                                        <button
+                                          onClick={() => handleUnlinkVehicle(v)}
+                                          style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", padding: "2px" }}
+                                          title="Desvincular vehículo de este cliente"
+                                        >
+                                          <Link2Off size={14} />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                                {isManager && (
+                                  <button
+                                    onClick={() => handleOpenLinkForClientModal(c)}
+                                    style={{ alignSelf: "flex-start", padding: "2px 8px", fontSize: "0.75rem", borderRadius: "4px", backgroundColor: "rgba(59, 130, 246, 0.15)", color: "#60a5fa", border: "1px solid rgba(59, 130, 246, 0.3)", cursor: "pointer", marginTop: "2px" }}
+                                  >
+                                    + Vincular otro
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </td>
                         {isManager && (
                           <td style={styles.tdActions}>
                             <button 
                               onClick={() => handleOpenClientModal(c)}
                               style={{...styles.iconBtn, color: "var(--color-primary)"}}
-                              title="Editar"
+                              title="Editar Cliente"
                             >
                               <Edit2 size={16} />
                             </button>
                             <button 
                               onClick={() => handleDeleteClient(c.telefono)}
                               style={{...styles.iconBtn, color: "var(--color-danger)"}}
-                              title="Eliminar"
+                              title="Eliminar Cliente"
                             >
                               <Trash2 size={16} />
                             </button>
@@ -486,18 +659,17 @@ export default function ClientesVehiculos({
                   <tr>
                     <th style={styles.th}>Placa</th>
                     <th style={styles.th}>Chasis / VIN</th>
-                    <th style={styles.th}>Marca</th>
-                    <th style={styles.th}>Línea</th>
+                    <th style={styles.th}>Marca y Línea</th>
                     <th style={styles.th}>Año</th>
                     <th style={styles.th}>Color</th>
-                    <th style={styles.th}>Propietario</th>
+                    <th style={styles.th}>Propietario Asignado</th>
                     {isManager && <th style={{ ...styles.th, textAlign: "center" }}>Acciones</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {filteredVehiculos.length === 0 ? (
                     <tr>
-                      <td colSpan={isManager ? 8 : 7} style={styles.emptyCell}>
+                      <td colSpan={isManager ? 7 : 6} style={styles.emptyCell}>
                         No hay vehículos registrados que coincidan con la búsqueda.
                       </td>
                     </tr>
@@ -508,8 +680,7 @@ export default function ClientesVehiculos({
                           <span style={styles.plateBadge}>{v.placa || "S/P"}</span>
                         </td>
                         <td style={styles.td}>{v.chasis || <span style={styles.mutedText}>—</span>}</td>
-                        <td style={styles.td}><strong>{v.marca}</strong></td>
-                        <td style={styles.td}>{v.linea}</td>
+                        <td style={styles.td}><strong>{v.marca} {v.linea}</strong></td>
                         <td style={styles.td}>{v.anio || <span style={styles.mutedText}>—</span>}</td>
                         <td style={styles.td}>
                           {v.color ? (
@@ -519,20 +690,67 @@ export default function ClientesVehiculos({
                             </span>
                           ) : <span style={styles.mutedText}>—</span>}
                         </td>
-                        <td style={styles.td}>{getOwnerName(v.clienteTelefono)}</td>
+                        <td style={{ ...styles.td, minWidth: "220px" }}>
+                          {(() => {
+                            const owner = (clientes || []).find(c => c.telefono === v.clienteTelefono);
+                            if (owner) {
+                              return (
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                                  <div>
+                                    <div style={{ fontWeight: "700", color: "#fff", fontSize: "0.85rem" }}>👤 {owner.nombre}</div>
+                                    <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>{owner.telefono}</div>
+                                  </div>
+                                  {isManager && (
+                                    <div style={{ display: "flex", gap: "4px" }}>
+                                      <button
+                                        onClick={() => handleOpenReassignModal(v, owner)}
+                                        style={{ background: "none", border: "none", color: "#60a5fa", cursor: "pointer", padding: "4px" }}
+                                        title="Cambiar / Reasignar propietario (Transferir por Venta)"
+                                      >
+                                        <ArrowRightLeft size={16} />
+                                      </button>
+                                      <button
+                                        onClick={() => handleUnlinkVehicle(v)}
+                                        style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", padding: "4px" }}
+                                        title="Desvincular propietario"
+                                      >
+                                        <Link2Off size={16} />
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            }
+                            return (
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                                <span style={{ fontSize: "0.8rem", color: "var(--color-warning)", fontStyle: "italic", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                                  <AlertCircle size={14} /> Sin Propietario
+                                </span>
+                                {isManager && (
+                                  <button
+                                    onClick={() => handleOpenReassignModal(v)}
+                                    style={{ padding: "3px 8px", fontSize: "0.75rem", borderRadius: "4px", backgroundColor: "rgba(16, 185, 129, 0.15)", color: "#34d399", border: "1px solid rgba(16, 185, 129, 0.3)", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                                  >
+                                    <UserPlus size={12} /> Asignar Dueño
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </td>
                         {isManager && (
                           <td style={styles.tdActions}>
                             <button 
                               onClick={() => handleOpenVehicleModal(v)}
                               style={{...styles.iconBtn, color: "var(--color-primary)"}}
-                              title="Editar"
+                              title="Editar Vehículo"
                             >
                               <Edit2 size={16} />
                             </button>
                             <button 
                               onClick={() => handleDeleteVehicle(v)}
                               style={{...styles.iconBtn, color: "var(--color-danger)"}}
-                              title="Eliminar"
+                              title="Eliminar Vehículo"
                             >
                               <Trash2 size={16} />
                             </button>
@@ -832,6 +1050,127 @@ export default function ClientesVehiculos({
                   style={{flex: 1, backgroundColor: "var(--color-primary)", borderColor: "var(--color-primary)"}}
                 >
                   {editingVehicle ? "Actualizar" : "Guardar Vehículo"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* LINK / REASSIGN VEHICLE MODAL */}
+      {showAssignModal && (
+        <div style={styles.modalOverlay}>
+          <div className="glass-panel" style={{ ...styles.modalContent, maxWidth: "520px" }}>
+            <div style={styles.modalHeader}>
+              <h3 style={styles.modalTitle}>
+                {targetVehicleForAssign 
+                  ? "Transferir / Asignar Propietario" 
+                  : `Vincular Vehículo a ${targetClientForAssign?.nombre}`}
+              </h3>
+              <button onClick={() => setShowAssignModal(false)} style={styles.closeBtn}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAssignment} style={styles.form}>
+              {targetVehicleForAssign ? (
+                /* Reassigning targetVehicleForAssign */
+                <>
+                  <div style={{ padding: "14px", borderRadius: "8px", backgroundColor: "rgba(59, 130, 246, 0.08)", border: "1px solid rgba(59, 130, 246, 0.2)", marginBottom: "16px", textAlign: "left" }}>
+                    <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", fontWeight: "600" }}>Vehículo Seleccionado:</div>
+                    <div style={{ fontSize: "1.05rem", fontWeight: "800", color: "#fff", marginTop: "2px" }}>
+                      🚘 {targetVehicleForAssign.placa || targetVehicleForAssign.chasis} — {targetVehicleForAssign.marca} {targetVehicleForAssign.linea} ({targetVehicleForAssign.anio || "Año N/A"})
+                    </div>
+                  </div>
+
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Propietario Asignado (Cliente)</label>
+                    <select
+                      className="select-field"
+                      value={selectedNewOwnerPhone}
+                      onChange={(e) => setSelectedNewOwnerPhone(e.target.value)}
+                      style={styles.select}
+                    >
+                      <option value="">-- Sin Propietario (Desvincular) --</option>
+                      {(clientes || []).map((c, idx) => (
+                        <option key={c.telefono || idx} value={c.telefono}>
+                          {c.nombre} ({c.telefono}) {c.nit ? `- NIT: ${c.nit}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {targetVehicleForAssign.clienteTelefono && targetVehicleForAssign.clienteTelefono !== selectedNewOwnerPhone && selectedNewOwnerPhone !== "" && (
+                    <div style={{ padding: "12px", borderRadius: "8px", backgroundColor: "rgba(245, 158, 11, 0.1)", border: "1px solid rgba(245, 158, 11, 0.25)", color: "#fbbf24", fontSize: "0.82rem", display: "flex", gap: "8px", alignItems: "center", textAlign: "left" }}>
+                      <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                      <span>Al guardar, se actualizará el propietario de este vehículo por venta/traspaso.</span>
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* Linking vehicle to targetClientForAssign */
+                <>
+                  <div style={{ padding: "14px", borderRadius: "8px", backgroundColor: "rgba(59, 130, 246, 0.08)", border: "1px solid rgba(59, 130, 246, 0.2)", marginBottom: "16px", textAlign: "left" }}>
+                    <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", fontWeight: "600" }}>Cliente Destino:</div>
+                    <div style={{ fontSize: "1.05rem", fontWeight: "800", color: "#fff", marginTop: "2px" }}>
+                      👤 {targetClientForAssign?.nombre} ({targetClientForAssign?.telefono})
+                    </div>
+                  </div>
+
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Seleccionar Vehículo Registrado a Vincular</label>
+                    <select
+                      className="select-field"
+                      value={selectedVehicleToLink}
+                      onChange={(e) => setSelectedVehicleToLink(e.target.value)}
+                      style={styles.select}
+                      required
+                    >
+                      <option value="">-- Seleccionar Vehículo --</option>
+                      {(vehiculos || []).map((v, idx) => {
+                        const owner = (clientes || []).find(c => c.telefono === v.clienteTelefono);
+                        const idStr = v.placa || v.chasis;
+                        return (
+                          <option key={idx} value={idStr}>
+                            {idStr} - {v.marca} {v.linea} ({owner ? `Dueño: ${owner.nombre}` : "Sin propietario"})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  <div style={{ textAlign: "center", margin: "14px 0" }}>
+                    <span style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>¿El vehículo aún no está registrado?</span>{" "}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAssignModal(false);
+                        handleOpenVehicleModal();
+                        setVClienteTelefono(targetClientForAssign?.telefono || "");
+                      }}
+                      style={{ background: "none", border: "none", color: "var(--color-primary)", textDecoration: "underline", cursor: "pointer", fontSize: "0.82rem", fontWeight: "700" }}
+                    >
+                      + Registrar Nuevo Vehículo para este cliente
+                    </button>
+                  </div>
+                </>
+              )}
+
+              <div style={styles.modalActions}>
+                <button
+                  type="button"
+                  onClick={() => setShowAssignModal(false)}
+                  className="btn btn-secondary"
+                  style={{ flex: 1 }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ flex: 1, backgroundColor: "var(--color-primary)", borderColor: "var(--color-primary)" }}
+                >
+                  Guardar Asignación
                 </button>
               </div>
             </form>
