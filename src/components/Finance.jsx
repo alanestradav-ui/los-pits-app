@@ -281,7 +281,10 @@ export default function Finance({
 
   // Period commissions paid on delivered orders
   const periodMechanicComms = billedTaller.reduce((sum, o) => sum + (parseFloat(o.comision) || 0), 0);
-  const periodWasherComms = billedCarwash.reduce((sum, c) => sum + (parseFloat(c.comision) || 0), 0);
+  const periodWasherComms = billedCarwash.reduce((sum, c) => {
+    const matchedPreset = (carwashPresets || []).find(p => p.tipo && String(p.tipo).toLowerCase().trim() === String(c.tipo).toLowerCase().trim());
+    return sum + (matchedPreset && matchedPreset.comision !== undefined ? parseFloat(matchedPreset.comision) : (parseFloat(c.comision) || 0));
+  }, 0);
   const periodCashierComms = billedTaller.reduce((sum, o) => {
     if (!o.cajero || !o.cajeroComisionApplies) return sum;
     const cashierUser = (usuarios || []).find(u => u.user.toLowerCase() === o.cajero.toLowerCase());
@@ -342,10 +345,9 @@ export default function Finance({
       
       const isAssigned = list.some(l => l.toLowerCase() === name.toLowerCase());
       if (isAssigned && isWithinCommDates(c.fecha, c.id)) {
-        const washerUser = (usuarios || []).find(u => u.user.toLowerCase() === name.toLowerCase());
-        const splitComision = washerUser && washerUser.comisionCarwash !== undefined 
-          ? parseFloat(washerUser.comisionCarwash) 
-          : (list.length > 0 ? (c.comision / list.length) : 0);
+        const matchedPreset = (carwashPresets || []).find(p => p.tipo && String(p.tipo).toLowerCase().trim() === String(c.tipo).toLowerCase().trim());
+        const totalComm = matchedPreset && matchedPreset.comision !== undefined ? parseFloat(matchedPreset.comision) : (parseFloat(c.comision) || 0);
+        const splitComision = list.length > 0 ? (totalComm / list.length) : totalComm;
         if (c.estado === "Entregado") {
           cobradas += splitComision;
         } else {
@@ -442,10 +444,9 @@ export default function Finance({
         
         const isAssigned = lavadoresList.some(l => l.toLowerCase() === lowerName);
         if (isAssigned && isWithinCommDates(c.fecha, c.id)) {
-          const washerUser = (usuarios || []).find(u => u.user.toLowerCase() === lowerName);
-          const splitComision = washerUser && washerUser.comisionCarwash !== undefined 
-            ? parseFloat(washerUser.comisionCarwash) 
-            : (lavadoresList.length > 0 ? (c.comision / lavadoresList.length) : 0);
+          const matchedPreset = (carwashPresets || []).find(p => p.tipo && String(p.tipo).toLowerCase().trim() === String(c.tipo).toLowerCase().trim());
+          const totalComm = matchedPreset && matchedPreset.comision !== undefined ? parseFloat(matchedPreset.comision) : (parseFloat(c.comision) || 0);
+          const splitComision = lavadoresList.length > 0 ? (totalComm / lavadoresList.length) : totalComm;
           
           if (c.estado === "Entregado") {
             totalCobradas += splitComision;

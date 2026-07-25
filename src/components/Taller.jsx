@@ -772,7 +772,7 @@ export default function Taller({
                   precioBase: s.price || 0,
                   trabajoAdicionalNombre: "",
                   trabajoAdicionalPrecio: 0,
-                  comision: preset ? (preset.comision || 10.0) : 10.0,
+                  comision: preset && preset.comision !== undefined ? parseFloat(preset.comision) : 5.0,
                   lavadores: [],
                   estado: "En proceso",
                   fecha: new Date().toISOString()

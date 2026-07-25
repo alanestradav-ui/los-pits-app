@@ -527,10 +527,7 @@ export default function Carwash({
       lavador: selectedLavadores.join(", "),
       fotos: fotos,
       estado: "En proceso",
-      comision: selectedLavadores.length > 0 ? selectedLavadores.reduce((sum, name) => {
-        const washerUser = (usuarios || []).find(u => u.user.toLowerCase() === name.toLowerCase());
-        return sum + (washerUser && washerUser.comisionCarwash !== undefined ? parseFloat(washerUser.comisionCarwash) : 7);
-      }, 0) : selectedPreset.comision,
+      comision: (selectedPreset && selectedPreset.comision !== undefined) ? parseFloat(selectedPreset.comision) : 5,
       fecha: new Date().toISOString(),
       anio: anio.trim(),
       kilometraje: kilometraje.trim(),
@@ -635,15 +632,13 @@ export default function Carwash({
     setCarwash(
       carwash.map((c) => {
         if (c.id === id) {
-          const newComm = newList.length > 0 ? newList.reduce((sum, name) => {
-            const washerUser = (usuarios || []).find(u => u.user.toLowerCase() === name.toLowerCase());
-            return sum + (washerUser && washerUser.comisionCarwash !== undefined ? parseFloat(washerUser.comisionCarwash) : 7);
-          }, 0) : c.comision;
+          const matched = (carwashPresets || []).find(p => p.tipo && String(p.tipo).toLowerCase().trim() === String(c.tipo).toLowerCase().trim());
+          const totalComm = matched && matched.comision !== undefined ? parseFloat(matched.comision) : (parseFloat(c.comision) || 5);
           return {
             ...c,
             lavadores: newList,
             lavador: newList.join(", "),
-            comision: newComm
+            comision: totalComm
           };
         }
         return c;
@@ -2391,8 +2386,17 @@ export default function Carwash({
                             <span style={styles.infoValTotal}>{formatMoney(c.precio)}</span>
                           </div>
                           <div style={styles.infoRow}>
-                            <span style={styles.infoLabel}>🪙 Comisión Lavador:</span>
-                            <span style={styles.infoValCom}>{formatMoney(c.comision)}</span>
+                            <span style={styles.infoLabel}>🪙 Comisión Lavado:</span>
+                            <span style={styles.infoValCom}>
+                              {formatMoney(c.comision)}
+                              {(() => {
+                                const list = c.lavadores && c.lavadores.length > 0 ? c.lavadores : (c.lavador ? c.lavador.split(", ").map(i => i.trim()).filter(Boolean) : []);
+                                if (list.length > 1) {
+                                  return <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginLeft: "4px" }}>({formatMoney(c.comision / list.length)} c/u)</span>;
+                                }
+                                return null;
+                              })()}
+                            </span>
                           </div>
                         </>
                       )}
