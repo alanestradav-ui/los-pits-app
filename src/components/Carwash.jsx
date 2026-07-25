@@ -632,8 +632,9 @@ export default function Carwash({
     setCarwash(
       carwash.map((c) => {
         if (c.id === id) {
+          const isWorkshopWash = c.tallerOrderId || String(c.tipo || "").toLowerCase().trim() === "lavado de taller";
           const matched = (carwashPresets || []).find(p => p.tipo && String(p.tipo).toLowerCase().trim() === String(c.tipo).toLowerCase().trim());
-          const totalComm = matched && matched.comision !== undefined ? parseFloat(matched.comision) : (parseFloat(c.comision) || 5);
+          const totalComm = isWorkshopWash ? 5.0 : (matched && matched.comision !== undefined ? parseFloat(matched.comision) : (parseFloat(c.comision) || 5.0));
           return {
             ...c,
             lavadores: newList,

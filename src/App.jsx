@@ -806,9 +806,30 @@ export default function App() {
   }, [ordenes]);
 
   useEffect(() => {
-    setLocalStorage("carwash", carwash);
-    syncToCloud("carwash", carwash);
-  }, [carwash]);
+    const normalized = (carwash || []).map(c => {
+      if (!c) return c;
+      const isWorkshopWash = c.tallerOrderId || String(c.tipo || "").toLowerCase().trim() === "lavado de taller";
+      let targetComm = 5.0;
+      if (isWorkshopWash) {
+        targetComm = 5.0;
+      } else {
+        const matched = (carwashPresets || []).find(p => p.tipo && String(p.tipo).toLowerCase().trim() === String(c.tipo).toLowerCase().trim());
+        targetComm = matched && matched.comision !== undefined ? parseFloat(matched.comision) : (parseFloat(c.comision) || 5.0);
+      }
+      if (c.comision !== targetComm) {
+        return { ...c, comision: targetComm };
+      }
+      return c;
+    });
+
+    const changed = normalized.some((c, idx) => c !== carwash[idx]);
+    if (changed) {
+      setCarwash(normalized);
+    } else {
+      setLocalStorage("carwash", carwash);
+      syncToCloud("carwash", carwash);
+    }
+  }, [carwash, carwashPresets]);
 
   useEffect(() => {
     setLocalStorage("parkingEntries", parkingEntries);

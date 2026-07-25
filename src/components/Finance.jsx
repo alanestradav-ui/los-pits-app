@@ -282,8 +282,10 @@ export default function Finance({
   // Period commissions paid on delivered orders
   const periodMechanicComms = billedTaller.reduce((sum, o) => sum + (parseFloat(o.comision) || 0), 0);
   const periodWasherComms = billedCarwash.reduce((sum, c) => {
+    const isWorkshopWash = c.tallerOrderId || String(c.tipo || "").toLowerCase().trim() === "lavado de taller";
     const matchedPreset = (carwashPresets || []).find(p => p.tipo && String(p.tipo).toLowerCase().trim() === String(c.tipo).toLowerCase().trim());
-    return sum + (matchedPreset && matchedPreset.comision !== undefined ? parseFloat(matchedPreset.comision) : (parseFloat(c.comision) || 0));
+    const totalComm = isWorkshopWash ? 5.0 : (matchedPreset && matchedPreset.comision !== undefined ? parseFloat(matchedPreset.comision) : (parseFloat(c.comision) || 5.0));
+    return sum + totalComm;
   }, 0);
   const periodCashierComms = billedTaller.reduce((sum, o) => {
     if (!o.cajero || !o.cajeroComisionApplies) return sum;
@@ -345,8 +347,9 @@ export default function Finance({
       
       const isAssigned = list.some(l => l.toLowerCase() === name.toLowerCase());
       if (isAssigned && isWithinCommDates(c.fecha, c.id)) {
+        const isWorkshopWash = c.tallerOrderId || String(c.tipo || "").toLowerCase().trim() === "lavado de taller";
         const matchedPreset = (carwashPresets || []).find(p => p.tipo && String(p.tipo).toLowerCase().trim() === String(c.tipo).toLowerCase().trim());
-        const totalComm = matchedPreset && matchedPreset.comision !== undefined ? parseFloat(matchedPreset.comision) : (parseFloat(c.comision) || 0);
+        const totalComm = isWorkshopWash ? 5.0 : (matchedPreset && matchedPreset.comision !== undefined ? parseFloat(matchedPreset.comision) : (parseFloat(c.comision) || 5.0));
         const splitComision = list.length > 0 ? (totalComm / list.length) : totalComm;
         if (c.estado === "Entregado") {
           cobradas += splitComision;
@@ -444,8 +447,9 @@ export default function Finance({
         
         const isAssigned = lavadoresList.some(l => l.toLowerCase() === lowerName);
         if (isAssigned && isWithinCommDates(c.fecha, c.id)) {
+          const isWorkshopWash = c.tallerOrderId || String(c.tipo || "").toLowerCase().trim() === "lavado de taller";
           const matchedPreset = (carwashPresets || []).find(p => p.tipo && String(p.tipo).toLowerCase().trim() === String(c.tipo).toLowerCase().trim());
-          const totalComm = matchedPreset && matchedPreset.comision !== undefined ? parseFloat(matchedPreset.comision) : (parseFloat(c.comision) || 0);
+          const totalComm = isWorkshopWash ? 5.0 : (matchedPreset && matchedPreset.comision !== undefined ? parseFloat(matchedPreset.comision) : (parseFloat(c.comision) || 5.0));
           const splitComision = lavadoresList.length > 0 ? (totalComm / lavadoresList.length) : totalComm;
           
           if (c.estado === "Entregado") {

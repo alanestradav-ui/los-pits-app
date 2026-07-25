@@ -796,7 +796,7 @@ export default function Taller({
                 precioBase: 0,
                 trabajoAdicionalNombre: "",
                 trabajoAdicionalPrecio: 0,
-                comision: 10.0, // Fixed Q10 commission for workshop washes
+                comision: 5.0, // Fixed Q5 commission for workshop washes
                 lavadores: [],
                 estado: "En proceso",
                 fecha: new Date().toISOString()
