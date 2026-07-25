@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import { 
   Settings, 
   Coins, 
@@ -2760,21 +2761,32 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.app_data;`}
       )}
 
       {/* EDIT CARWASH PRESET MODAL */}
-      {showEditPresetModal && (
+      {showEditPresetModal && createPortal(
         <div style={{
           position: "fixed",
           top: 0,
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: "rgba(0, 0, 0, 0.75)",
-          backdropFilter: "blur(4px)",
+          backgroundColor: "rgba(0, 0, 0, 0.8)",
+          backdropFilter: "blur(6px)",
+          WebkitBackdropFilter: "blur(6px)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          zIndex: 1000
+          zIndex: 99999,
+          padding: "20px"
         }}>
-          <div className="glass-panel" style={{ padding: "30px", borderRadius: "16px", width: "90%", maxWidth: "480px", textAlign: "left" }}>
+          <div className="glass-panel" style={{
+            padding: "30px",
+            borderRadius: "16px",
+            width: "100%",
+            maxWidth: "480px",
+            textAlign: "left",
+            boxShadow: "0 25px 50px rgba(0,0,0,0.7)",
+            border: "1px solid rgba(255, 255, 255, 0.1)",
+            margin: "auto"
+          }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
               <h3 style={{ fontSize: "1.2rem", fontWeight: "800", margin: 0, color: "#fff" }}>
                 Editar Servicio de Carwash
@@ -2848,7 +2860,8 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.app_data;`}
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
