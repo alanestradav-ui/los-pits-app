@@ -409,6 +409,30 @@ export default function Carwash({
       .filter(Boolean)
   ]));
 
+  const presetsList = (Array.isArray(carwashPresets) && carwashPresets.length > 0)
+    ? carwashPresets
+    : [
+        { tipo: "Pequeño", precio: 70, comision: 5 },
+        { tipo: "Mediano", precio: 90, comision: 7 },
+        { tipo: "Grande", precio: 110, comision: 10 }
+      ];
+
+  // Inventory Metrics & Filtering
+  const totalInvItems = (carwashInventory || []).length;
+  const totalInvValue = (carwashInventory || []).reduce((sum, item) => sum + ((parseFloat(item.quantity) || 0) * (parseFloat(item.purchasePrice) || 0)), 0);
+  const totalCostConsumed = (carwashConsumption || []).reduce((sum, log) => sum + (parseFloat(log.cost) || 0), 0);
+  const totalWashesCount = (carwash || []).filter(c => c && c.estado === "Entregado").length || 1;
+  const averageCostPerWash = totalCostConsumed / totalWashesCount;
+
+  const filteredInvProducts = (carwashInventory || []).filter(item => {
+    if (!invSearchQuery.trim()) return true;
+    const q = invSearchQuery.toLowerCase().trim();
+    return (
+      (item.name && item.name.toLowerCase().includes(q)) ||
+      (item.presentation && item.presentation.toLowerCase().includes(q))
+    );
+  });
+
   const [washFilterTab, setWashFilterTab] = useState("activos"); // 'activos' or 'entregados'
   const [editingBilledCarwash, setEditingBilledCarwash] = useState(null);
 
@@ -2007,7 +2031,7 @@ export default function Carwash({
                   Tipo de Lavado:
                 </label>
                 <div style={styles.presetButtonsRow}>
-                  {presets.map((p, idx) => {
+                  {presetsList.map((p, idx) => {
                     const isSelected = selectedPreset?.tipo === p.tipo;
                     return (
                       <button
