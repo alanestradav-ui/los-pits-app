@@ -328,9 +328,10 @@ export default function Taller({
   const [orderFilterTab, setOrderFilterTab] = useState("activos"); // 'activos' or 'entregados'
   const [editingBilledOrder, setEditingBilledOrder] = useState(null);
 
-  const isWorker = usuarioActual?.rol === "mecanico";
-  const isManager = usuarioActual?.rol === "admin" || usuarioActual?.rol === "cajero" || usuarioActual?.rol === "jefe de taller";
-  const isAdmin = usuarioActual?.rol === "admin";
+  const userRolLower = String(usuarioActual?.rol || "").toLowerCase().trim();
+  const isWorker = userRolLower === "mecanico" || userRolLower === "mecánico";
+  const isAdmin = !usuarioActual || !usuarioActual.rol || userRolLower.includes("admin") || userRolLower.includes("gerente") || userRolLower.includes("jefe");
+  const isManager = isAdmin || userRolLower.includes("cajero") || userRolLower.includes("taller");
 
   const guardarBilledOrderEdit = (updatedObj) => {
     if (!updatedObj) return;
@@ -366,10 +367,15 @@ export default function Taller({
 
   // Filter orders by search query, tab and role
   const filteredOrdenes = ordenes.filter(o => {
-    if (orderFilterTab === "activos") {
-      if (o.estado === "Entregado") return false;
-    } else {
-      if (o.estado !== "Entregado") return false;
+    const query = searchQuery.toLowerCase().trim();
+
+    // If user is searching with text, include BOTH active and delivered orders!
+    if (!query) {
+      if (orderFilterTab === "activos") {
+        if (o.estado === "Entregado") return false;
+      } else {
+        if (o.estado !== "Entregado") return false;
+      }
     }
 
     // If mechanic role, show only their assigned orders
@@ -377,13 +383,16 @@ export default function Taller({
       return false;
     }
     
-    // Global search
-    const query = searchQuery.toLowerCase();
+    if (!query) return true;
+
     const matchesSearch = 
       (o.cliente || "").toLowerCase().includes(query) ||
       formatVehicleText(o.vehiculo).toLowerCase().includes(query) ||
       (o.mecanico || "").toLowerCase().includes(query) ||
-      (o.placa || "").toLowerCase().includes(query);
+      (o.placa || "").toLowerCase().includes(query) ||
+      (o.nit || "").toLowerCase().includes(query) ||
+      (o.telefono || "").toLowerCase().includes(query) ||
+      String(o.id).includes(query);
       
     return matchesSearch;
   });

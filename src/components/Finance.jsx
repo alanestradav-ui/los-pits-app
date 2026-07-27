@@ -61,7 +61,9 @@ export default function Finance({
   const [editingBilledOrderFromFinance, setEditingBilledOrderFromFinance] = useState(null);
   const [editingBilledCarwashFromFinance, setEditingBilledCarwashFromFinance] = useState(null);
 
-  const isManager = usuarioActual?.rol === "admin" || usuarioActual?.rol === "cajero";
+  const userRolLower = String(usuarioActual?.rol || "").toLowerCase().trim();
+  const isAdmin = !usuarioActual || !usuarioActual.rol || userRolLower.includes("admin") || userRolLower.includes("gerente") || userRolLower.includes("jefe");
+  const isManager = isAdmin || userRolLower.includes("cajero") || userRolLower.includes("finanzas");
 
   const guardarBilledOrderEditFinance = (updatedObj) => {
     if (!updatedObj) return;

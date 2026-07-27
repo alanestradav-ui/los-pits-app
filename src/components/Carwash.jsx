@@ -393,45 +393,13 @@ export default function Carwash({
     setShowSuggestions(false);
   };
 
-  const isWorker = usuarioActual?.rol === "lavador";
-  const isManager = usuarioActual?.rol === "admin" || usuarioActual?.rol === "cajero";
-
-  // Wash type presets from config (Deduplicated by tipo)
-  const presetsMap = new Map();
-  (carwashPresets || []).forEach(p => {
-    if (p && p.tipo) {
-      const key = String(p.tipo).trim().toLowerCase();
-      if (!presetsMap.has(key)) {
-        presetsMap.set(key, p);
-      }
-    }
-  });
-  const presets = Array.from(presetsMap.values());
-
-  // Deduplicated washers list
-  const lavadoresList = Array.from(
-    new Set((lavadores || []).map(l => (typeof l === "string" ? l.trim() : "")).filter(Boolean))
-  );
-  if (lavadoresList.length === 0) {
-    lavadoresList.push("Luis", "Carlos");
-  }
-
-  // Filter carwash supplies
-  const filteredInvProducts = (carwashInventory || []).filter(p => {
-    return p.name.toLowerCase().includes(invSearchQuery.toLowerCase()) ||
-           (p.presentation && p.presentation.toLowerCase().includes(invSearchQuery.toLowerCase()));
-  });
-
-  const totalWashesEntregados = carwash.filter(c => c.estado === "Entregado").length;
-  const totalCostConsumed = (carwashConsumption || []).reduce((sum, c) => sum + c.cost, 0);
-  const averageCostPerWash = totalWashesEntregados > 0 ? (totalCostConsumed / totalWashesEntregados) : 0;
-
-  const totalInvValue = (carwashInventory || []).reduce((sum, p) => sum + (p.quantity * p.purchasePrice), 0);
-  const totalInvItems = (carwashInventory || []).length;
+  const userRolLower = String(usuarioActual?.rol || "").toLowerCase().trim();
+  const isWorker = userRolLower === "lavador";
+  const isAdmin = !usuarioActual || !usuarioActual.rol || userRolLower.includes("admin") || userRolLower.includes("gerente") || userRolLower.includes("jefe");
+  const isManager = isAdmin || userRolLower.includes("cajero") || userRolLower.includes("carwash");
 
   const [washFilterTab, setWashFilterTab] = useState("activos"); // 'activos' or 'entregados'
   const [editingBilledCarwash, setEditingBilledCarwash] = useState(null);
-  const isAdmin = usuarioActual?.rol === "admin";
 
   const guardarBilledCarwashEdit = (updatedObj) => {
     if (!updatedObj) return;
@@ -443,27 +411,33 @@ export default function Carwash({
 
   // Filter washes by search query, tab and role
   const filteredCarwash = carwash.filter(c => {
-    if (washFilterTab === "activos") {
-      if (c.estado === "Entregado") return false;
-    } else {
-      if (c.estado !== "Entregado") return false;
+    const query = searchQuery.toLowerCase().trim();
+
+    if (!query) {
+      if (washFilterTab === "activos") {
+        if (c.estado === "Entregado") return false;
+      } else {
+        if (c.estado !== "Entregado") return false;
+      }
     }
 
     // If washer role, show only their assigned washes
-    if (isWorker && c.lavador.toLowerCase() !== usuarioActual.user.toLowerCase()) {
+    if (isWorker && c.lavador.toLowerCase() !== (usuarioActual?.user || "").toLowerCase()) {
       return false;
     }
     
-    // Global search
-    const query = searchQuery.toLowerCase();
+    if (!query) return true;
+
     const matchesSearch = 
       (c.cliente && c.cliente.toLowerCase().includes(query)) ||
       (c.telefono && c.telefono.toLowerCase().includes(query)) ||
       (c.vehiculo?.placa && c.vehiculo.placa.toLowerCase().includes(query)) ||
       (c.vehiculo?.marca && c.vehiculo.marca.toLowerCase().includes(query)) ||
       (c.vehiculo?.linea && c.vehiculo.linea.toLowerCase().includes(query)) ||
-      c.tipo.toLowerCase().includes(query) ||
-      c.lavador.toLowerCase().includes(query);
+      (c.nit && c.nit.toLowerCase().includes(query)) ||
+      (c.tipo && c.tipo.toLowerCase().includes(query)) ||
+      (c.lavador && c.lavador.toLowerCase().includes(query)) ||
+      String(c.id).includes(query);
       
     return matchesSearch;
   });
