@@ -325,12 +325,52 @@ export default function Taller({
       )
     : [];
 
+  const [orderFilterTab, setOrderFilterTab] = useState("activos"); // 'activos' or 'entregados'
+  const [editingBilledOrder, setEditingBilledOrder] = useState(null);
+
   const isWorker = usuarioActual?.rol === "mecanico";
   const isManager = usuarioActual?.rol === "admin" || usuarioActual?.rol === "cajero" || usuarioActual?.rol === "jefe de taller";
+  const isAdmin = usuarioActual?.rol === "admin";
 
-  // Filter orders by search query and role
+  const guardarBilledOrderEdit = (updatedObj) => {
+    if (!updatedObj) return;
+
+    const newComision = calculateOrderCommission(updatedObj);
+    const updatedWithComm = { ...updatedObj, comision: newComision };
+
+    setOrdenes(prev => (prev || []).map(o => o.id === updatedWithComm.id ? updatedWithComm : o));
+
+    // Also sync linked carwash entry if any
+    setCarwash(prev => (prev || []).map(c => {
+      if (c.tallerOrderId === updatedWithComm.id) {
+        return {
+          ...c,
+          cliente: updatedWithComm.cliente,
+          telefono: updatedWithComm.telefono,
+          nit: updatedWithComm.nit,
+          nombreFacturacion: updatedWithComm.nombreFacturacion,
+          vehiculo: {
+            placa: updatedWithComm.placa,
+            marca: updatedWithComm.marca,
+            linea: updatedWithComm.linea,
+            color: updatedWithComm.color
+          }
+        };
+      }
+      return c;
+    }));
+
+    setEditingBilledOrder(null);
+    alert("¡Orden facturada actualizada con éxito por Administración!");
+  };
+
+  // Filter orders by search query, tab and role
   const filteredOrdenes = ordenes.filter(o => {
-    if (o.estado === "Entregado") return false; // Ocultar vehículos ya entregados de las listas activas
+    if (orderFilterTab === "activos") {
+      if (o.estado === "Entregado") return false;
+    } else {
+      if (o.estado !== "Entregado") return false;
+    }
 
     // If mechanic role, show only their assigned orders
     if (isWorker && (o.mecanico || "").toLowerCase() !== (usuarioActual?.user || "").toLowerCase()) {
@@ -338,10 +378,12 @@ export default function Taller({
     }
     
     // Global search
+    const query = searchQuery.toLowerCase();
     const matchesSearch = 
-      (o.cliente || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      formatVehicleText(o.vehiculo).toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (o.mecanico || "").toLowerCase().includes(searchQuery.toLowerCase());
+      (o.cliente || "").toLowerCase().includes(query) ||
+      formatVehicleText(o.vehiculo).toLowerCase().includes(query) ||
+      (o.mecanico || "").toLowerCase().includes(query) ||
+      (o.placa || "").toLowerCase().includes(query);
       
     return matchesSearch;
   });
@@ -3372,12 +3414,52 @@ export default function Taller({
 
         {/* Right Column: Search and Interactive List */}
         <div style={styles.listColumn}>
+          {/* Filter Tabs: Activos vs Historial Entregados */}
+          <div style={{ display: "flex", gap: "10px", marginBottom: "12px" }}>
+            <button
+              type="button"
+              onClick={() => setOrderFilterTab("activos")}
+              style={{
+                flex: 1,
+                padding: "10px 14px",
+                fontSize: "0.85rem",
+                fontWeight: "700",
+                borderRadius: "8px",
+                border: "none",
+                cursor: "pointer",
+                backgroundColor: orderFilterTab === "activos" ? "var(--color-primary)" : "rgba(255,255,255,0.06)",
+                color: "#fff",
+                transition: "all 0.2s ease"
+              }}
+            >
+              🚗 Trabajos en Proceso ({ordenes.filter(o => o.estado !== "Entregado").length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setOrderFilterTab("entregados")}
+              style={{
+                flex: 1,
+                padding: "10px 14px",
+                fontSize: "0.85rem",
+                fontWeight: "700",
+                borderRadius: "8px",
+                border: "none",
+                cursor: "pointer",
+                backgroundColor: orderFilterTab === "entregados" ? "var(--color-primary)" : "rgba(255,255,255,0.06)",
+                color: "#fff",
+                transition: "all 0.2s ease"
+              }}
+            >
+              📜 Historial Entregados ({ordenes.filter(o => o.estado === "Entregado").length})
+            </button>
+          </div>
+
           {/* Search Box */}
           <div className="glass-panel" style={styles.searchCard}>
             <Search size={18} style={styles.searchIcon} />
             <input
               type="text"
-              placeholder="Buscar por cliente, vehículo o mecánico..."
+              placeholder="Buscar por cliente, vehículo, placa o mecánico..."
               style={styles.searchInput}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -5756,6 +5838,199 @@ export default function Taller({
                   style={{ flex: 1, backgroundColor: "var(--color-primary)", borderColor: "var(--color-primary)" }}
                 >
                   Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ADMIN EDIT BILLED ORDER MODAL */}
+      {editingBilledOrder && createPortal(
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0, 0, 0, 0.8)",
+          backdropFilter: "blur(6px)",
+          WebkitBackdropFilter: "blur(6px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 99999,
+          padding: "20px"
+        }}>
+          <div className="glass-panel" style={{
+            padding: "30px",
+            borderRadius: "16px",
+            width: "100%",
+            maxWidth: "680px",
+            maxHeight: "90vh",
+            overflowY: "auto",
+            textAlign: "left",
+            boxShadow: "0 25px 50px rgba(0,0,0,0.7)",
+            border: "1px solid rgba(255, 255, 255, 0.1)",
+            margin: "auto"
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "12px" }}>
+              <div>
+                <h3 style={{ fontSize: "1.3rem", fontWeight: "800", margin: 0, color: "#fff" }}>
+                  ✏️ Editar Trabajo Facturado / Historial
+                </h3>
+                <p style={{ margin: "4px 0 0 0", fontSize: "0.85rem", color: "var(--color-primary)", fontWeight: "600" }}>
+                  Orden Taller #{editingBilledOrder.id} - Edición de Administrador
+                </p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setEditingBilledOrder(null)}
+                style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}
+              >
+                <X size={22} />
+              </button>
+            </div>
+
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              guardarBilledOrderEdit(editingBilledOrder);
+            }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Nombre del Cliente:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledOrder.cliente || ""}
+                    onChange={(e) => setEditingBilledOrder({ ...editingBilledOrder, cliente: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Teléfono:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledOrder.telefono || ""}
+                    onChange={(e) => setEditingBilledOrder({ ...editingBilledOrder, telefono: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>NIT:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledOrder.nit || "C/F"}
+                    onChange={(e) => setEditingBilledOrder({ ...editingBilledOrder, nit: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Nombre Facturación:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledOrder.nombreFacturacion || ""}
+                    onChange={(e) => setEditingBilledOrder({ ...editingBilledOrder, nombreFacturacion: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Placa:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledOrder.placa || ""}
+                    onChange={(e) => setEditingBilledOrder({ ...editingBilledOrder, placa: e.target.value.toUpperCase() })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Marca:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledOrder.marca || ""}
+                    onChange={(e) => setEditingBilledOrder({ ...editingBilledOrder, marca: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Línea / Modelo:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledOrder.linea || ""}
+                    onChange={(e) => setEditingBilledOrder({ ...editingBilledOrder, linea: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Mecánico Asignado:</label>
+                  <select
+                    className="select-field"
+                    value={editingBilledOrder.mecanico || ""}
+                    onChange={(e) => setEditingBilledOrder({ ...editingBilledOrder, mecanico: e.target.value })}
+                  >
+                    <option value="">Sin mecánico</option>
+                    {mecanicos.map((m, idx) => (
+                      <option key={idx} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Total Cobrado (Q):</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    className="input-field"
+                    value={editingBilledOrder.total || 0}
+                    onChange={(e) => setEditingBilledOrder({ ...editingBilledOrder, total: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Estado del Trabajo:</label>
+                  <select
+                    className="select-field"
+                    value={editingBilledOrder.estado || "Entregado"}
+                    onChange={(e) => setEditingBilledOrder({ ...editingBilledOrder, estado: e.target.value })}
+                  >
+                    {TALLER_STATUSES.map((st, idx) => (
+                      <option key={idx} value={st}>{st}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: "20px" }}>
+                <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Motivo de Ingreso / Descripción:</label>
+                <textarea
+                  className="input-field"
+                  rows="2"
+                  value={editingBilledOrder.motivoIngreso || editingBilledOrder.trabajo || ""}
+                  onChange={(e) => setEditingBilledOrder({ ...editingBilledOrder, motivoIngreso: e.target.value, trabajo: e.target.value })}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  onClick={() => setEditingBilledOrder(null)}
+                  className="btn btn-secondary"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ backgroundColor: "var(--color-success)", borderColor: "var(--color-success)", fontWeight: "800" }}
+                >
+                  💾 Guardar Cambios
                 </button>
               </div>
             </form>

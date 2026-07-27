@@ -429,9 +429,25 @@ export default function Carwash({
   const totalInvValue = (carwashInventory || []).reduce((sum, p) => sum + (p.quantity * p.purchasePrice), 0);
   const totalInvItems = (carwashInventory || []).length;
 
-  // Filter washes by search query and role
+  const [washFilterTab, setWashFilterTab] = useState("activos"); // 'activos' or 'entregados'
+  const [editingBilledCarwash, setEditingBilledCarwash] = useState(null);
+  const isAdmin = usuarioActual?.rol === "admin";
+
+  const guardarBilledCarwashEdit = (updatedObj) => {
+    if (!updatedObj) return;
+
+    setCarwash(prev => (prev || []).map(c => c.id === updatedObj.id ? updatedObj : c));
+    setEditingBilledCarwash(null);
+    alert("¡Lavado facturado actualizado con éxito por Administración!");
+  };
+
+  // Filter washes by search query, tab and role
   const filteredCarwash = carwash.filter(c => {
-    if (c.estado === "Entregado") return false;
+    if (washFilterTab === "activos") {
+      if (c.estado === "Entregado") return false;
+    } else {
+      if (c.estado !== "Entregado") return false;
+    }
 
     // If washer role, show only their assigned washes
     if (isWorker && c.lavador.toLowerCase() !== usuarioActual.user.toLowerCase()) {
@@ -2201,6 +2217,46 @@ export default function Carwash({
 
         {/* Right Column: Search and Interactive List */}
         <div style={styles.listColumn}>
+          {/* Tab Filter: Activos vs Historial Entregados */}
+          <div style={{ display: "flex", gap: "10px", marginBottom: "12px" }}>
+            <button
+              type="button"
+              onClick={() => setWashFilterTab("activos")}
+              style={{
+                flex: 1,
+                padding: "10px 14px",
+                fontSize: "0.85rem",
+                fontWeight: "700",
+                borderRadius: "8px",
+                border: "none",
+                cursor: "pointer",
+                backgroundColor: washFilterTab === "activos" ? "var(--color-primary)" : "rgba(255,255,255,0.06)",
+                color: "#fff",
+                transition: "all 0.2s ease"
+              }}
+            >
+              🧼 Lavados Activos ({carwash.filter(c => c.estado !== "Entregado").length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setWashFilterTab("entregados")}
+              style={{
+                flex: 1,
+                padding: "10px 14px",
+                fontSize: "0.85rem",
+                fontWeight: "700",
+                borderRadius: "8px",
+                border: "none",
+                cursor: "pointer",
+                backgroundColor: washFilterTab === "entregados" ? "var(--color-primary)" : "rgba(255,255,255,0.06)",
+                color: "#fff",
+                transition: "all 0.2s ease"
+              }}
+            >
+              📜 Historial Entregados ({carwash.filter(c => c.estado === "Entregado").length})
+            </button>
+          </div>
+
           {/* Search Box */}
           <div className="glass-panel" style={styles.searchCard}>
             <Search size={18} style={styles.searchIcon} />
@@ -2467,6 +2523,29 @@ export default function Carwash({
                         </button>
                       )}
                     </div>
+                    {isManager && (
+                      <button
+                        type="button"
+                        onClick={() => setEditingBilledCarwash({ ...c })}
+                        className="btn btn-secondary"
+                        style={{
+                          padding: "6px 12px",
+                          fontSize: "0.78rem",
+                          marginTop: "8px",
+                          width: "100%",
+                          backgroundColor: "rgba(245, 158, 11, 0.15)",
+                          borderColor: "rgba(245, 158, 11, 0.4)",
+                          color: "#fde047",
+                          fontWeight: "700",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: "6px"
+                        }}
+                      >
+                        ✏️ Editar Lavado Facturado (Administración)
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -2941,6 +3020,188 @@ export default function Carwash({
             <button style={styles.lightboxCloseBtn} onClick={() => setSelectedFullPhoto(null)}>
               &times;
             </button>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ADMIN EDIT BILLED CARWASH MODAL */}
+      {editingBilledCarwash && createPortal(
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0, 0, 0, 0.8)",
+          backdropFilter: "blur(6px)",
+          WebkitBackdropFilter: "blur(6px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 99999,
+          padding: "20px"
+        }}>
+          <div className="glass-panel" style={{
+            padding: "30px",
+            borderRadius: "16px",
+            width: "100%",
+            maxWidth: "650px",
+            maxHeight: "90vh",
+            overflowY: "auto",
+            textAlign: "left",
+            boxShadow: "0 25px 50px rgba(0,0,0,0.7)",
+            border: "1px solid rgba(255, 255, 255, 0.1)",
+            margin: "auto"
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "12px" }}>
+              <div>
+                <h3 style={{ fontSize: "1.3rem", fontWeight: "800", margin: 0, color: "#fff" }}>
+                  ✏️ Editar Lavado Facturado / Historial
+                </h3>
+                <p style={{ margin: "4px 0 0 0", fontSize: "0.85rem", color: "var(--color-primary)", fontWeight: "600" }}>
+                  Carwash #{editingBilledCarwash.id} - Edición de Administrador
+                </p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setEditingBilledCarwash(null)}
+                style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "1.4rem" }}
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              guardarBilledCarwashEdit(editingBilledCarwash);
+            }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Nombre del Cliente:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledCarwash.cliente || ""}
+                    onChange={(e) => setEditingBilledCarwash({ ...editingBilledCarwash, cliente: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Teléfono:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledCarwash.telefono || ""}
+                    onChange={(e) => setEditingBilledCarwash({ ...editingBilledCarwash, telefono: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Placa:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledCarwash.vehiculo?.placa || ""}
+                    onChange={(e) => setEditingBilledCarwash({
+                      ...editingBilledCarwash,
+                      vehiculo: { ...(editingBilledCarwash.vehiculo || {}), placa: e.target.value.toUpperCase() }
+                    })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Marca:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledCarwash.vehiculo?.marca || ""}
+                    onChange={(e) => setEditingBilledCarwash({
+                      ...editingBilledCarwash,
+                      vehiculo: { ...(editingBilledCarwash.vehiculo || {}), marca: e.target.value }
+                    })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Línea / Modelo:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledCarwash.vehiculo?.linea || ""}
+                    onChange={(e) => setEditingBilledCarwash({
+                      ...editingBilledCarwash,
+                      vehiculo: { ...(editingBilledCarwash.vehiculo || {}), linea: e.target.value }
+                    })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Tipo de Lavado:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledCarwash.tipo || ""}
+                    onChange={(e) => setEditingBilledCarwash({ ...editingBilledCarwash, tipo: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Precio Cobrado (Q):</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    className="input-field"
+                    value={editingBilledCarwash.precio || 0}
+                    onChange={(e) => setEditingBilledCarwash({ ...editingBilledCarwash, precio: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Comisión Lavadores (Q):</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    className="input-field"
+                    value={editingBilledCarwash.comision || 0}
+                    onChange={(e) => setEditingBilledCarwash({ ...editingBilledCarwash, comision: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: "16px" }}>
+                <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Lavador(es) Asignado(s):</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  placeholder="Ej. Luis, Carlos"
+                  value={editingBilledCarwash.lavador || ""}
+                  onChange={(e) => setEditingBilledCarwash({
+                    ...editingBilledCarwash,
+                    lavador: e.target.value,
+                    lavadores: e.target.value.split(",").map(s => s.trim()).filter(Boolean)
+                  })}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  onClick={() => setEditingBilledCarwash(null)}
+                  className="btn btn-secondary"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ backgroundColor: "var(--color-success)", borderColor: "var(--color-success)", fontWeight: "800" }}
+                >
+                  💾 Guardar Cambios
+                </button>
+              </div>
+            </form>
           </div>
         </div>,
         document.body

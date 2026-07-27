@@ -1309,6 +1309,7 @@ export default function App() {
 
         {currentTab === "finanzas" && userHasPermission(usuarioActivo, "finanzas") && (
           <Finance 
+            usuarioActual={usuarioActivo}
             ordenes={ordenes} 
             setOrdenes={setOrdenes}
             carwash={carwash} 

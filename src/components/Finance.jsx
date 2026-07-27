@@ -58,6 +58,24 @@ export default function Finance({
   const [selectedPayrollUser, setSelectedPayrollUser] = useState(null);
   const [customSueldoBaseInput, setCustomSueldoBaseInput] = useState("");
   const [selectedCommKeys, setSelectedCommKeys] = useState([]);
+  const [editingBilledOrderFromFinance, setEditingBilledOrderFromFinance] = useState(null);
+  const [editingBilledCarwashFromFinance, setEditingBilledCarwashFromFinance] = useState(null);
+
+  const isManager = usuarioActual?.rol === "admin" || usuarioActual?.rol === "cajero";
+
+  const guardarBilledOrderEditFinance = (updatedObj) => {
+    if (!updatedObj) return;
+    setOrdenes(prev => (prev || []).map(o => o.id === updatedObj.id ? updatedObj : o));
+    setEditingBilledOrderFromFinance(null);
+    alert("¡Orden facturada actualizada con éxito en Finanzas!");
+  };
+
+  const guardarBilledCarwashEditFinance = (updatedObj) => {
+    if (!updatedObj) return;
+    setCarwash(prev => (prev || []).map(c => c.id === updatedObj.id ? updatedObj : c));
+    setEditingBilledCarwashFromFinance(null);
+    alert("¡Lavado facturado actualizado con éxito en Finanzas!");
+  };
 
   const openPayrollModal = (u) => {
     const salarioMensual = parseFloat(u.salarioBase) || 0;
@@ -1084,6 +1102,8 @@ export default function Finance({
   const allTransactions = [
     ...billedTaller.map(o => ({
       id: o.id,
+      rawId: o.id,
+      rawType: "taller",
       tipo: "Taller",
       titulo: o.cliente,
       subtitulo: o.vehiculo,
@@ -1095,6 +1115,8 @@ export default function Finance({
     })),
     ...billedCarwash.map(c => ({
       id: c.id,
+      rawId: c.id,
+      rawType: "carwash",
       tipo: "Carwash",
       titulo: c.cliente || `Lavado ${c.tipo}`,
       subtitulo: c.vehiculo ? `${c.vehiculo.marca} ${c.vehiculo.linea} (${c.vehiculo.placa})${c.tallerOrderId ? " [Taller]" : ""}` : "",
@@ -2365,12 +2387,13 @@ export default function Finance({
                     <th style={styles.th}>Método de Pago</th>
                     <th style={styles.th}>Comisión</th>
                     <th style={styles.th}>Total Entregado</th>
+                    {isManager && <th style={styles.th}>Acción Admin</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {allTransactions.length === 0 ? (
                     <tr>
-                      <td colSpan="7" style={{ ...styles.td, textAlign: "center", padding: "40px", color: "var(--text-muted)" }}>
+                      <td colSpan={isManager ? 8 : 7} style={{ ...styles.td, textAlign: "center", padding: "40px", color: "var(--text-muted)" }}>
                         No hay servicios entregados registrados en el historial de caja.
                       </td>
                     </tr>
@@ -2397,6 +2420,35 @@ export default function Finance({
                           {tx.comision > 0 ? formatMoney(tx.comision) : "-"}
                         </td>
                         <td style={{ ...styles.td, fontWeight: "700", color: "#fff" }}>{formatMoney(tx.total)}</td>
+                        {isManager && (
+                          <td style={styles.td}>
+                            {(tx.rawType === "taller" || tx.rawType === "carwash") && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (tx.rawType === "taller") {
+                                    const ord = (ordenes || []).find(o => String(o.id) === String(tx.rawId));
+                                    if (ord) setEditingBilledOrderFromFinance({ ...ord });
+                                  } else if (tx.rawType === "carwash") {
+                                    const cw = (carwash || []).find(c => String(c.id) === String(tx.rawId));
+                                    if (cw) setEditingBilledCarwashFromFinance({ ...cw });
+                                  }
+                                }}
+                                className="btn btn-secondary"
+                                style={{
+                                  padding: "4px 8px",
+                                  fontSize: "0.75rem",
+                                  backgroundColor: "rgba(245, 158, 11, 0.15)",
+                                  borderColor: "rgba(245, 158, 11, 0.4)",
+                                  color: "#fde047",
+                                  fontWeight: "700"
+                                }}
+                              >
+                                ✏️ Editar
+                              </button>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     ))
                   )}
@@ -2454,6 +2506,380 @@ export default function Finance({
           }
         }
       `}</style>
+
+      {/* ADMIN EDIT BILLED ORDER MODAL FROM FINANCE */}
+      {editingBilledOrderFromFinance && createPortal(
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0, 0, 0, 0.8)",
+          backdropFilter: "blur(6px)",
+          WebkitBackdropFilter: "blur(6px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 99999,
+          padding: "20px"
+        }}>
+          <div className="glass-panel" style={{
+            padding: "30px",
+            borderRadius: "16px",
+            width: "100%",
+            maxWidth: "680px",
+            maxHeight: "90vh",
+            overflowY: "auto",
+            textAlign: "left",
+            boxShadow: "0 25px 50px rgba(0,0,0,0.7)",
+            border: "1px solid rgba(255, 255, 255, 0.1)",
+            margin: "auto"
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "12px" }}>
+              <div>
+                <h3 style={{ fontSize: "1.3rem", fontWeight: "800", margin: 0, color: "#fff" }}>
+                  ✏️ Editar Orden Taller Facturada (Finanzas)
+                </h3>
+                <p style={{ margin: "4px 0 0 0", fontSize: "0.85rem", color: "var(--color-primary)", fontWeight: "600" }}>
+                  Orden Taller #{editingBilledOrderFromFinance.id} - Edición de Administrador
+                </p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setEditingBilledOrderFromFinance(null)}
+                style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "1.4rem" }}
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              guardarBilledOrderEditFinance(editingBilledOrderFromFinance);
+            }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Nombre del Cliente:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledOrderFromFinance.cliente || ""}
+                    onChange={(e) => setEditingBilledOrderFromFinance({ ...editingBilledOrderFromFinance, cliente: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Teléfono:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledOrderFromFinance.telefono || ""}
+                    onChange={(e) => setEditingBilledOrderFromFinance({ ...editingBilledOrderFromFinance, telefono: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>NIT:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledOrderFromFinance.nit || "C/F"}
+                    onChange={(e) => setEditingBilledOrderFromFinance({ ...editingBilledOrderFromFinance, nit: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Nombre Facturación:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledOrderFromFinance.nombreFacturacion || ""}
+                    onChange={(e) => setEditingBilledOrderFromFinance({ ...editingBilledOrderFromFinance, nombreFacturacion: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Placa:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledOrderFromFinance.placa || ""}
+                    onChange={(e) => setEditingBilledOrderFromFinance({ ...editingBilledOrderFromFinance, placa: e.target.value.toUpperCase() })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Marca:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledOrderFromFinance.marca || ""}
+                    onChange={(e) => setEditingBilledOrderFromFinance({ ...editingBilledOrderFromFinance, marca: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Línea / Modelo:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledOrderFromFinance.linea || ""}
+                    onChange={(e) => setEditingBilledOrderFromFinance({ ...editingBilledOrderFromFinance, linea: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Mecánico Asignado:</label>
+                  <select
+                    className="select-field"
+                    value={editingBilledOrderFromFinance.mecanico || ""}
+                    onChange={(e) => setEditingBilledOrderFromFinance({ ...editingBilledOrderFromFinance, mecanico: e.target.value })}
+                  >
+                    <option value="">Sin mecánico</option>
+                    {mecanicos.map((m, idx) => (
+                      <option key={idx} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Total Cobrado (Q):</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    className="input-field"
+                    value={editingBilledOrderFromFinance.total || 0}
+                    onChange={(e) => setEditingBilledOrderFromFinance({ ...editingBilledOrderFromFinance, total: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Comisión (Q):</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    className="input-field"
+                    value={editingBilledOrderFromFinance.comision || 0}
+                    onChange={(e) => setEditingBilledOrderFromFinance({ ...editingBilledOrderFromFinance, comision: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: "20px" }}>
+                <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Motivo de Ingreso / Descripción:</label>
+                <textarea
+                  className="input-field"
+                  rows="2"
+                  value={editingBilledOrderFromFinance.motivoIngreso || editingBilledOrderFromFinance.trabajo || ""}
+                  onChange={(e) => setEditingBilledOrderFromFinance({ ...editingBilledOrderFromFinance, motivoIngreso: e.target.value, trabajo: e.target.value })}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  onClick={() => setEditingBilledOrderFromFinance(null)}
+                  className="btn btn-secondary"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ backgroundColor: "var(--color-success)", borderColor: "var(--color-success)", fontWeight: "800" }}
+                >
+                  💾 Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ADMIN EDIT BILLED CARWASH MODAL FROM FINANCE */}
+      {editingBilledCarwashFromFinance && createPortal(
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0, 0, 0, 0.8)",
+          backdropFilter: "blur(6px)",
+          WebkitBackdropFilter: "blur(6px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 99999,
+          padding: "20px"
+        }}>
+          <div className="glass-panel" style={{
+            padding: "30px",
+            borderRadius: "16px",
+            width: "100%",
+            maxWidth: "650px",
+            maxHeight: "90vh",
+            overflowY: "auto",
+            textAlign: "left",
+            boxShadow: "0 25px 50px rgba(0,0,0,0.7)",
+            border: "1px solid rgba(255, 255, 255, 0.1)",
+            margin: "auto"
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "12px" }}>
+              <div>
+                <h3 style={{ fontSize: "1.3rem", fontWeight: "800", margin: 0, color: "#fff" }}>
+                  ✏️ Editar Servicio Carwash Facturado (Finanzas)
+                </h3>
+                <p style={{ margin: "4px 0 0 0", fontSize: "0.85rem", color: "var(--color-primary)", fontWeight: "600" }}>
+                  Carwash #{editingBilledCarwashFromFinance.id} - Edición de Administrador
+                </p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setEditingBilledCarwashFromFinance(null)}
+                style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "1.4rem" }}
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              guardarBilledCarwashEditFinance(editingBilledCarwashFromFinance);
+            }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Nombre del Cliente:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledCarwashFromFinance.cliente || ""}
+                    onChange={(e) => setEditingBilledCarwashFromFinance({ ...editingBilledCarwashFromFinance, cliente: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Teléfono:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledCarwashFromFinance.telefono || ""}
+                    onChange={(e) => setEditingBilledCarwashFromFinance({ ...editingBilledCarwashFromFinance, telefono: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Placa:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledCarwashFromFinance.vehiculo?.placa || ""}
+                    onChange={(e) => setEditingBilledCarwashFromFinance({
+                      ...editingBilledCarwashFromFinance,
+                      vehiculo: { ...(editingBilledCarwashFromFinance.vehiculo || {}), placa: e.target.value.toUpperCase() }
+                    })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Marca:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledCarwashFromFinance.vehiculo?.marca || ""}
+                    onChange={(e) => setEditingBilledCarwashFromFinance({
+                      ...editingBilledCarwashFromFinance,
+                      vehiculo: { ...(editingBilledCarwashFromFinance.vehiculo || {}), marca: e.target.value }
+                    })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Línea / Modelo:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledCarwashFromFinance.vehiculo?.linea || ""}
+                    onChange={(e) => setEditingBilledCarwashFromFinance({
+                      ...editingBilledCarwashFromFinance,
+                      vehiculo: { ...(editingBilledCarwashFromFinance.vehiculo || {}), linea: e.target.value }
+                    })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Tipo de Lavado:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingBilledCarwashFromFinance.tipo || ""}
+                    onChange={(e) => setEditingBilledCarwashFromFinance({ ...editingBilledCarwashFromFinance, tipo: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Precio Cobrado (Q):</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    className="input-field"
+                    value={editingBilledCarwashFromFinance.precio || 0}
+                    onChange={(e) => setEditingBilledCarwashFromFinance({ ...editingBilledCarwashFromFinance, precio: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Comisión Lavadores (Q):</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    className="input-field"
+                    value={editingBilledCarwashFromFinance.comision || 0}
+                    onChange={(e) => setEditingBilledCarwashFromFinance({ ...editingBilledCarwashFromFinance, comision: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: "16px" }}>
+                <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Lavador(es) Asignado(s):</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  placeholder="Ej. Luis, Carlos"
+                  value={editingBilledCarwashFromFinance.lavador || ""}
+                  onChange={(e) => setEditingBilledCarwashFromFinance({
+                    ...editingBilledCarwashFromFinance,
+                    lavador: e.target.value,
+                    lavadores: e.target.value.split(",").map(s => s.trim()).filter(Boolean)
+                  })}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  onClick={() => setEditingBilledCarwashFromFinance(null)}
+                  className="btn btn-secondary"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ backgroundColor: "var(--color-success)", borderColor: "var(--color-success)", fontWeight: "800" }}
+                >
+                  💾 Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
