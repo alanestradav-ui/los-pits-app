@@ -1302,7 +1302,11 @@ export default function App() {
         {currentTab === "historial" && userHasPermission(usuarioActivo, "historial") && (
           <VehicleHistory 
             ordenes={ordenes}
+            setOrdenes={setOrdenes}
             carwash={carwash}
+            setCarwash={setCarwash}
+            workshopInventory={workshopInventory}
+            mecanicos={mecanicos}
             usuarioActual={usuarioActivo}
           />
         )}

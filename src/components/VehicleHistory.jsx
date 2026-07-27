@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import { 
   Search, 
   Car, 
@@ -21,7 +22,8 @@ import {
   TrendingUp,
   X,
   ShieldCheck,
-  FileCheck
+  FileCheck,
+  Plus
 } from "lucide-react";
 import { formatMoney } from "../utils/storage";
 
@@ -83,7 +85,15 @@ const FinancialPieChart = ({ costoRepuestos = 0, costoManoObra = 0, costoServici
   );
 };
 
-export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActual }) {
+export default function VehicleHistory({ 
+  ordenes = [], 
+  setOrdenes, 
+  carwash = [], 
+  setCarwash, 
+  workshopInventory = [], 
+  mecanicos = [],
+  usuarioActual 
+}) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedPlaca, setSelectedPlaca] = useState(null);
   const [expandedOrders, setExpandedOrders] = useState({});
@@ -93,6 +103,18 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
   const [clientReportModal, setClientReportModal] = useState({ isOpen: false, item: null, vehicle: null });
   const [financialReportModal, setFinancialReportModal] = useState({ isOpen: false, item: null, vehicle: null });
   const [diagnosticReportModal, setDiagnosticReportModal] = useState({ isOpen: false, item: null, vehicle: null });
+
+  // Admin Edit History Modal State
+  const [editingHistoryItem, setEditingHistoryItem] = useState(null);
+  const [inputNewPartDesc, setInputNewPartDesc] = useState("");
+  const [inputNewPartQty, setInputNewPartQty] = useState("1");
+  const [inputNewPartSalePrice, setInputNewPartSalePrice] = useState("");
+  const [inputNewPartCost, setInputNewPartCost] = useState("");
+  const [partSuggestions, setPartSuggestions] = useState([]);
+  const [showPartSuggestions, setShowPartSuggestions] = useState(false);
+
+  const [inputNewLaborDesc, setInputNewLaborDesc] = useState("");
+  const [inputNewLaborPrice, setInputNewLaborPrice] = useState("");
 
 
 
@@ -191,6 +213,7 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
 
       vehiclesMap[placaClean].history.push({
         id: o.id,
+        originalOrder: o,
         tipo: "Taller",
         fecha: getString(o.fecha, new Date().toISOString()),
         estado: getString(o.estado, "Registrado"),
@@ -257,6 +280,7 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
 
       vehiclesMap[placaClean].history.push({
         id: c.id,
+        originalWash: c,
         tipo: "Carwash",
         fecha: getString(c.fecha, new Date().toISOString()),
         estado: getString(c.estado, "Completado"),
@@ -297,7 +321,83 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
     ? vehiclesMap[selectedPlaca]
     : null;
 
-  const isStaff = !usuarioActual || ["admin", "cajero", "jefe de taller", "jefe", "administrador"].includes((usuarioActual.rol || "").toLowerCase().trim());
+  const userRolLower = String(usuarioActual?.rol || "").toLowerCase().trim();
+  const isStaff = !usuarioActual || !usuarioActual.rol || userRolLower.includes("admin") || userRolLower.includes("gerente") || userRolLower.includes("jefe") || userRolLower.includes("cajero");
+
+  const guardarEdicionHistorial = (e) => {
+    if (e) e.preventDefault();
+    if (!editingHistoryItem) return;
+
+    if (editingHistoryItem.tipo === "Taller") {
+      const budget = editingHistoryItem.presupuesto || { labor: [], parts: [], services: [], discount: 0 };
+      const laborList = budget.labor || [];
+      const partsList = budget.parts || [];
+      const servicesList = budget.services || [];
+
+      const totalLabor = laborList.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
+      const totalParts = partsList.reduce((sum, item) => sum + ((parseFloat(item.qty) || 1) * (parseFloat(item.salePrice !== undefined ? item.salePrice : item.price) || 0)), 0);
+      const totalServices = servicesList.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
+      const subTotal = totalLabor + totalParts + totalServices;
+      const discountPct = parseFloat(budget.discount) || 0;
+      const granTotal = subTotal - (subTotal * (discountPct / 100));
+      const comision = granTotal * 0.10;
+
+      const updatedOrder = {
+        ...(editingHistoryItem.originalOrder || {}),
+        id: editingHistoryItem.id,
+        cliente: editingHistoryItem.cliente,
+        telefono: editingHistoryItem.telefono,
+        nit: editingHistoryItem.nit || "C/F",
+        nombreFacturacion: editingHistoryItem.nombreFacturacion || "",
+        placa: editingHistoryItem.placa,
+        marca: editingHistoryItem.marca,
+        linea: editingHistoryItem.linea,
+        anio: editingHistoryItem.anio,
+        mecanico: editingHistoryItem.mecanico,
+        motivoIngreso: editingHistoryItem.trabajo,
+        trabajo: editingHistoryItem.trabajo,
+        kilometraje: editingHistoryItem.kilometraje,
+        estado: editingHistoryItem.estado || "Entregado",
+        presupuesto: {
+          ...budget,
+          labor: laborList,
+          parts: partsList,
+          services: servicesList
+        },
+        total: granTotal,
+        comision
+      };
+
+      if (setOrdenes) {
+        setOrdenes(prev => (prev || []).map(o => String(o.id) === String(updatedOrder.id) ? updatedOrder : o));
+      }
+      alert("¡Trabajo e historial de Taller actualizado con éxito!");
+    } else if (editingHistoryItem.tipo === "Carwash") {
+      const updatedWash = {
+        ...(editingHistoryItem.originalWash || {}),
+        id: editingHistoryItem.id,
+        cliente: editingHistoryItem.cliente,
+        telefono: editingHistoryItem.telefono,
+        tipo: editingHistoryItem.tipoLavado || editingHistoryItem.tipo,
+        precio: parseFloat(editingHistoryItem.total) || 0,
+        comision: parseFloat(editingHistoryItem.comision) || 0,
+        lavador: editingHistoryItem.lavador,
+        vehiculo: {
+          ...(editingHistoryItem.originalWash?.vehiculo || {}),
+          placa: editingHistoryItem.placa,
+          marca: editingHistoryItem.marca,
+          linea: editingHistoryItem.linea
+        }
+      };
+
+      if (setCarwash) {
+        setCarwash(prev => (prev || []).map(c => String(c.id) === String(updatedWash.id) ? updatedWash : c));
+      }
+      alert("¡Lavado de Carwash actualizado con éxito en el historial!");
+    }
+
+    setEditingHistoryItem(null);
+  };
 
   const toggleOrderExpand = (orderId) => {
     setExpandedOrders(prev => ({
@@ -755,6 +855,53 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
 
                               {/* Action Buttons Row */}
                               <div style={{ display: "flex", gap: "10px", marginTop: "12px", flexWrap: "wrap" }}>
+                                {isStaff && (
+                                  <button
+                                    onClick={() => {
+                                      const orig = item.originalOrder || {};
+                                      const budget = item.presupuesto || orig.presupuesto || { labor: [], parts: [], services: [], discount: 0 };
+                                      setEditingHistoryItem({
+                                        ...item,
+                                        originalOrder: orig,
+                                        cliente: selectedVehicle.cliente || orig.cliente || "",
+                                        telefono: selectedVehicle.telefono || orig.telefono || "",
+                                        nit: orig.nit || "C/F",
+                                        nombreFacturacion: orig.nombreFacturacion || "",
+                                        placa: selectedVehicle.placa || item.placa || "",
+                                        marca: selectedVehicle.marca || "",
+                                        linea: selectedVehicle.linea || "",
+                                        anio: selectedVehicle.anio || "",
+                                        mecanico: item.mecanico || orig.mecanico || "",
+                                        kilometraje: item.kilometraje || orig.kilometraje || "",
+                                        estado: item.estado || orig.estado || "Entregado",
+                                        trabajo: item.trabajo || orig.trabajo || orig.motivoIngreso || "",
+                                        presupuesto: {
+                                          labor: Array.isArray(budget.labor) ? [...budget.labor] : [],
+                                          parts: Array.isArray(budget.parts) ? [...budget.parts] : [],
+                                          services: Array.isArray(budget.services) ? [...budget.services] : [],
+                                          discount: budget.discount || 0
+                                        }
+                                      });
+                                    }}
+                                    style={{
+                                      backgroundColor: "rgba(245, 158, 11, 0.2)",
+                                      color: "#fde047",
+                                      border: "1px solid rgba(245, 158, 11, 0.6)",
+                                      padding: "6px 12px",
+                                      borderRadius: "6px",
+                                      fontSize: "0.78rem",
+                                      fontWeight: "800",
+                                      cursor: "pointer",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: "6px"
+                                    }}
+                                    type="button"
+                                  >
+                                    ✏️ Editar Trabajo / Repuestos y Costos
+                                  </button>
+                                )}
+
                                 <button
                                   onClick={() => setClientReportModal({ isOpen: true, vehicle: selectedVehicle, item })}
                                   style={{
@@ -1068,6 +1215,43 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
                               </div>
 
                               <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                                {isStaff && (
+                                  <button
+                                    onClick={() => {
+                                      const orig = item.originalWash || {};
+                                      setEditingHistoryItem({
+                                        ...item,
+                                        originalWash: orig,
+                                        cliente: selectedVehicle.cliente || orig.cliente || "",
+                                        telefono: selectedVehicle.telefono || orig.telefono || "",
+                                        placa: selectedVehicle.placa || "",
+                                        marca: selectedVehicle.marca || "",
+                                        linea: selectedVehicle.linea || "",
+                                        tipoLavado: item.tipoLavado || orig.tipo || "General",
+                                        total: item.total || orig.precio || 0,
+                                        comision: orig.comision || 0,
+                                        lavador: item.lavador || orig.lavador || ""
+                                      });
+                                    }}
+                                    style={{
+                                      backgroundColor: "rgba(245, 158, 11, 0.2)",
+                                      color: "#fde047",
+                                      border: "1px solid rgba(245, 158, 11, 0.6)",
+                                      padding: "6px 12px",
+                                      borderRadius: "6px",
+                                      fontSize: "0.78rem",
+                                      fontWeight: "800",
+                                      cursor: "pointer",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: "6px"
+                                    }}
+                                    type="button"
+                                  >
+                                    ✏️ Editar Lavado Facturado
+                                  </button>
+                                )}
+
                                 <button
                                   onClick={() => setClientReportModal({ isOpen: true, vehicle: selectedVehicle, item })}
                                   style={{
@@ -1905,6 +2089,555 @@ export default function VehicleHistory({ ordenes = [], carwash = [], usuarioActu
             </div>
           </div>
         </div>
+      )}
+
+      {/* ADMIN EDIT HISTORY ITEM MODAL (TALLER & CARWASH) */}
+      {editingHistoryItem && createPortal(
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0, 0, 0, 0.85)",
+          backdropFilter: "blur(6px)",
+          WebkitBackdropFilter: "blur(6px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 99999,
+          padding: "20px"
+        }}>
+          <div className="glass-panel" style={{
+            padding: "28px",
+            borderRadius: "16px",
+            width: "100%",
+            maxWidth: "780px",
+            maxHeight: "90vh",
+            overflowY: "auto",
+            textAlign: "left",
+            boxShadow: "0 25px 50px rgba(0,0,0,0.8)",
+            border: "1px solid rgba(255, 255, 255, 0.12)",
+            margin: "auto"
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "12px" }}>
+              <div>
+                <h3 style={{ fontSize: "1.3rem", fontWeight: "800", margin: 0, color: "#fff" }}>
+                  ✏️ Editar Registro de Historial ({editingHistoryItem.tipo})
+                </h3>
+                <p style={{ margin: "4px 0 0 0", fontSize: "0.85rem", color: "var(--color-primary)", fontWeight: "600" }}>
+                  Vehículo: {editingHistoryItem.placa} | Cliente: {editingHistoryItem.cliente}
+                </p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setEditingHistoryItem(null)}
+                style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}
+              >
+                <X size={22} />
+              </button>
+            </div>
+
+            <form onSubmit={guardarEdicionHistorial}>
+              {/* General Fields */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Propietario / Cliente:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingHistoryItem.cliente || ""}
+                    onChange={(e) => setEditingHistoryItem({ ...editingHistoryItem, cliente: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Teléfono:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingHistoryItem.telefono || ""}
+                    onChange={(e) => setEditingHistoryItem({ ...editingHistoryItem, telefono: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Placa:</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingHistoryItem.placa || ""}
+                    onChange={(e) => setEditingHistoryItem({ ...editingHistoryItem, placa: e.target.value.toUpperCase() })}
+                    required
+                  />
+                </div>
+              </div>
+
+              {editingHistoryItem.tipo === "Taller" && (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+                    <div>
+                      <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Mecánico Asignado:</label>
+                      <select
+                        className="select-field"
+                        value={editingHistoryItem.mecanico || ""}
+                        onChange={(e) => setEditingHistoryItem({ ...editingHistoryItem, mecanico: e.target.value })}
+                      >
+                        <option value="">Sin mecánico</option>
+                        {(mecanicos || []).map((m, idx) => (
+                          <option key={idx} value={m}>{m}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Kilometraje:</label>
+                      <input
+                        type="text"
+                        className="input-field"
+                        value={editingHistoryItem.kilometraje || ""}
+                        onChange={(e) => setEditingHistoryItem({ ...editingHistoryItem, kilometraje: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Estado:</label>
+                      <input
+                        type="text"
+                        className="input-field"
+                        value={editingHistoryItem.estado || "Entregado"}
+                        onChange={(e) => setEditingHistoryItem({ ...editingHistoryItem, estado: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ marginBottom: "16px" }}>
+                    <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Motivo de Ingreso / Trabajos Realizados:</label>
+                    <textarea
+                      className="input-field"
+                      rows="2"
+                      value={editingHistoryItem.trabajo || ""}
+                      onChange={(e) => setEditingHistoryItem({ ...editingHistoryItem, trabajo: e.target.value })}
+                    />
+                  </div>
+
+                  {/* ⚙️ SECTION: REPUESTOS Y MATERIALES */}
+                  <div style={{
+                    backgroundColor: "rgba(255, 255, 255, 0.02)",
+                    border: "1px solid rgba(168, 85, 247, 0.3)",
+                    borderRadius: "10px",
+                    padding: "16px",
+                    marginBottom: "16px"
+                  }}>
+                    <h4 style={{ margin: "0 0 12px 0", fontSize: "0.95rem", color: "var(--color-secondary)", display: "flex", alignItems: "center", gap: "6px" }}>
+                      ⚙️ Repuestos & Materiales Cargados
+                    </h4>
+
+                    {/* Parts Table */}
+                    {(editingHistoryItem.presupuesto?.parts || []).length === 0 ? (
+                      <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", fontStyle: "italic", margin: "0 0 12px 0" }}>
+                        No hay repuestos registrados en esta orden aún. Podés agregarlos abajo.
+                      </p>
+                    ) : (
+                      <div style={{ overflowX: "auto", marginBottom: "14px" }}>
+                        <table style={{ width: "100%", fontSize: "0.8rem", borderCollapse: "collapse" }}>
+                          <thead>
+                            <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.1)", color: "var(--text-muted)" }}>
+                              <th style={{ textAlign: "left", padding: "6px" }}>Descripción / Código</th>
+                              <th style={{ textAlign: "center", padding: "6px", width: "65px" }}>Cant.</th>
+                              <th style={{ textAlign: "right", padding: "6px", width: "110px" }}>P. Venta (Q)</th>
+                              <th style={{ textAlign: "right", padding: "6px", width: "110px" }}>Costo Compra (Q)</th>
+                              <th style={{ textAlign: "center", padding: "6px", width: "40px" }}></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(editingHistoryItem.presupuesto?.parts || []).map((pt, pIdx) => (
+                              <tr key={pIdx} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                                <td style={{ padding: "6px", color: "#fff" }}>
+                                  <input
+                                    type="text"
+                                    className="input-field"
+                                    style={{ padding: "4px 6px", fontSize: "0.8rem" }}
+                                    value={pt.desc || ""}
+                                    onChange={(e) => {
+                                      const newParts = [...(editingHistoryItem.presupuesto.parts || [])];
+                                      newParts[pIdx] = { ...newParts[pIdx], desc: e.target.value };
+                                      setEditingHistoryItem({
+                                        ...editingHistoryItem,
+                                        presupuesto: { ...editingHistoryItem.presupuesto, parts: newParts }
+                                      });
+                                    }}
+                                  />
+                                </td>
+                                <td style={{ padding: "6px" }}>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    className="input-field"
+                                    style={{ padding: "4px 6px", fontSize: "0.8rem", textAlign: "center" }}
+                                    value={pt.qty || 1}
+                                    onChange={(e) => {
+                                      const newParts = [...(editingHistoryItem.presupuesto.parts || [])];
+                                      newParts[pIdx] = { ...newParts[pIdx], qty: parseInt(e.target.value) || 1 };
+                                      setEditingHistoryItem({
+                                        ...editingHistoryItem,
+                                        presupuesto: { ...editingHistoryItem.presupuesto, parts: newParts }
+                                      });
+                                    }}
+                                  />
+                                </td>
+                                <td style={{ padding: "6px" }}>
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    min="0"
+                                    className="input-field"
+                                    style={{ padding: "4px 6px", fontSize: "0.8rem", textAlign: "right", color: "var(--color-secondary)" }}
+                                    value={pt.salePrice !== undefined ? pt.salePrice : (pt.price || 0)}
+                                    onChange={(e) => {
+                                      const val = parseFloat(e.target.value) || 0;
+                                      const newParts = [...(editingHistoryItem.presupuesto.parts || [])];
+                                      newParts[pIdx] = { ...newParts[pIdx], salePrice: val, price: val };
+                                      setEditingHistoryItem({
+                                        ...editingHistoryItem,
+                                        presupuesto: { ...editingHistoryItem.presupuesto, parts: newParts }
+                                      });
+                                    }}
+                                  />
+                                </td>
+                                <td style={{ padding: "6px" }}>
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    min="0"
+                                    className="input-field"
+                                    style={{ padding: "4px 6px", fontSize: "0.8rem", textAlign: "right", color: "#f87171" }}
+                                    value={pt.purchasePrice !== undefined ? pt.purchasePrice : (pt.unitCost !== undefined ? pt.unitCost : 0)}
+                                    onChange={(e) => {
+                                      const val = parseFloat(e.target.value) || 0;
+                                      const newParts = [...(editingHistoryItem.presupuesto.parts || [])];
+                                      newParts[pIdx] = { ...newParts[pIdx], purchasePrice: val, unitCost: val };
+                                      setEditingHistoryItem({
+                                        ...editingHistoryItem,
+                                        presupuesto: { ...editingHistoryItem.presupuesto, parts: newParts }
+                                      });
+                                    }}
+                                  />
+                                </td>
+                                <td style={{ padding: "6px", textAlign: "center" }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const newParts = (editingHistoryItem.presupuesto.parts || []).filter((_, i) => i !== pIdx);
+                                      setEditingHistoryItem({
+                                        ...editingHistoryItem,
+                                        presupuesto: { ...editingHistoryItem.presupuesto, parts: newParts }
+                                      });
+                                    }}
+                                    style={{ background: "none", border: "none", color: "var(--color-danger)", cursor: "pointer", fontSize: "1.2rem" }}
+                                  >
+                                    &times;
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* Add New Part Form */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: "8px", borderTop: "1px dashed rgba(255,255,255,0.1)", paddingTop: "10px" }}>
+                      <span style={{ fontSize: "0.8rem", fontWeight: "800", color: "#fff" }}>➕ Cargar Repuesto o Costo Adicional:</span>
+                      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1.2fr 1.2fr auto", gap: "8px", alignItems: "end" }}>
+                        <div style={{ position: "relative" }}>
+                          <label style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>Repuesto / Descripción</label>
+                          <input
+                            type="text"
+                            placeholder="Ej. Filtro de Aceite"
+                            className="input-field"
+                            style={{ padding: "6px 8px", fontSize: "0.8rem" }}
+                            value={inputNewPartDesc}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setInputNewPartDesc(val);
+                              if (val.trim()) {
+                                const matches = (workshopInventory || []).filter(inv =>
+                                  (inv.name || "").toLowerCase().includes(val.toLowerCase()) ||
+                                  (inv.code || "").toLowerCase().includes(val.toLowerCase())
+                                );
+                                setPartSuggestions(matches.slice(0, 5));
+                                setShowPartSuggestions(true);
+                              } else {
+                                setPartSuggestions([]);
+                                setShowPartSuggestions(false);
+                              }
+                            }}
+                          />
+                          {showPartSuggestions && partSuggestions.length > 0 && (
+                            <div style={{
+                              position: "absolute",
+                              top: "100%",
+                              left: 0,
+                              right: 0,
+                              backgroundColor: "var(--bg-surface)",
+                              border: "1px solid rgba(255,255,255,0.15)",
+                              borderRadius: "6px",
+                              zIndex: 10,
+                              maxHeight: "140px",
+                              overflowY: "auto"
+                            }}>
+                              {partSuggestions.map((item, idx) => (
+                                <div
+                                  key={idx}
+                                  style={{ padding: "6px 8px", cursor: "pointer", fontSize: "0.75rem", borderBottom: "1px solid rgba(255,255,255,0.03)" }}
+                                  onMouseDown={() => {
+                                    setInputNewPartDesc(item.name || "");
+                                    setInputNewPartSalePrice((item.salePrice || 0).toString());
+                                    setInputNewPartCost((item.costPrice || item.purchasePrice || 0).toString());
+                                    setShowPartSuggestions(false);
+                                  }}
+                                >
+                                  <strong>{item.code} - {item.name}</strong> (Stock: {item.quantity} | Venta: Q{item.salePrice})
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <label style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>Cant.</label>
+                          <input
+                            type="number"
+                            min="1"
+                            className="input-field"
+                            style={{ padding: "6px 8px", fontSize: "0.8rem", textAlign: "center" }}
+                            value={inputNewPartQty}
+                            onChange={(e) => setInputNewPartQty(e.target.value)}
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>Precio Venta (Q)</label>
+                          <input
+                            type="number"
+                            step="any"
+                            placeholder="0.00"
+                            className="input-field"
+                            style={{ padding: "6px 8px", fontSize: "0.8rem", textAlign: "right" }}
+                            value={inputNewPartSalePrice}
+                            onChange={(e) => setInputNewPartSalePrice(e.target.value)}
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>Costo Compra (Q)</label>
+                          <input
+                            type="number"
+                            step="any"
+                            placeholder="0.00"
+                            className="input-field"
+                            style={{ padding: "6px 8px", fontSize: "0.8rem", textAlign: "right" }}
+                            value={inputNewPartCost}
+                            onChange={(e) => setInputNewPartCost(e.target.value)}
+                          />
+                        </div>
+
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          style={{ padding: "6px 12px", fontSize: "0.8rem", backgroundColor: "var(--color-secondary)", borderColor: "var(--color-secondary)", fontWeight: "800" }}
+                          onClick={() => {
+                            if (!inputNewPartDesc.trim()) return;
+                            const qty = parseInt(inputNewPartQty) || 1;
+                            const salePrice = parseFloat(inputNewPartSalePrice) || 0;
+                            const purchasePrice = parseFloat(inputNewPartCost) || 0;
+
+                            const newPart = {
+                              desc: inputNewPartDesc.trim(),
+                              qty,
+                              salePrice,
+                              price: salePrice,
+                              purchasePrice,
+                              unitCost: purchasePrice
+                            };
+
+                            const currentParts = editingHistoryItem.presupuesto?.parts || [];
+                            setEditingHistoryItem({
+                              ...editingHistoryItem,
+                              presupuesto: {
+                                ...(editingHistoryItem.presupuesto || {}),
+                                parts: [...currentParts, newPart]
+                              }
+                            });
+
+                            setInputNewPartDesc("");
+                            setInputNewPartQty("1");
+                            setInputNewPartSalePrice("");
+                            setInputNewPartCost("");
+                          }}
+                        >
+                          ➕ Cargar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 🛠️ SECTION: MANO DE OBRA */}
+                  <div style={{
+                    backgroundColor: "rgba(255, 255, 255, 0.02)",
+                    border: "1px solid rgba(59, 130, 246, 0.3)",
+                    borderRadius: "10px",
+                    padding: "16px",
+                    marginBottom: "16px"
+                  }}>
+                    <h4 style={{ margin: "0 0 12px 0", fontSize: "0.95rem", color: "var(--color-primary)", display: "flex", alignItems: "center", gap: "6px" }}>
+                      🛠️ Mano de Obra & Servicios Taller
+                    </h4>
+
+                    {(editingHistoryItem.presupuesto?.labor || []).map((lb, lIdx) => (
+                      <div key={lIdx} style={{ display: "flex", gap: "8px", marginBottom: "6px", alignItems: "center" }}>
+                        <input
+                          type="text"
+                          className="input-field"
+                          style={{ flex: 3, padding: "4px 8px", fontSize: "0.8rem" }}
+                          value={lb.desc || ""}
+                          onChange={(e) => {
+                            const newLabor = [...(editingHistoryItem.presupuesto.labor || [])];
+                            newLabor[lIdx] = { ...newLabor[lIdx], desc: e.target.value };
+                            setEditingHistoryItem({
+                              ...editingHistoryItem,
+                              presupuesto: { ...editingHistoryItem.presupuesto, labor: newLabor }
+                            });
+                          }}
+                        />
+                        <input
+                          type="number"
+                          step="any"
+                          className="input-field"
+                          placeholder="Precio Q"
+                          style={{ flex: 1, padding: "4px 8px", fontSize: "0.8rem", textAlign: "right" }}
+                          value={lb.price || 0}
+                          onChange={(e) => {
+                            const newLabor = [...(editingHistoryItem.presupuesto.labor || [])];
+                            newLabor[lIdx] = { ...newLabor[lIdx], price: parseFloat(e.target.value) || 0 };
+                            setEditingHistoryItem({
+                              ...editingHistoryItem,
+                              presupuesto: { ...editingHistoryItem.presupuesto, labor: newLabor }
+                            });
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newLabor = (editingHistoryItem.presupuesto.labor || []).filter((_, i) => i !== lIdx);
+                            setEditingHistoryItem({
+                              ...editingHistoryItem,
+                              presupuesto: { ...editingHistoryItem.presupuesto, labor: newLabor }
+                            });
+                          }}
+                          style={{ background: "none", border: "none", color: "var(--color-danger)", cursor: "pointer", fontSize: "1.2rem" }}
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    ))}
+
+                    <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
+                      <input
+                        type="text"
+                        placeholder="Descripción de la mano de obra"
+                        className="input-field"
+                        style={{ flex: 3, padding: "6px 8px", fontSize: "0.8rem" }}
+                        value={inputNewLaborDesc}
+                        onChange={(e) => setInputNewLaborDesc(e.target.value)}
+                      />
+                      <input
+                        type="number"
+                        step="any"
+                        placeholder="Precio Q"
+                        className="input-field"
+                        style={{ flex: 1, padding: "6px 8px", fontSize: "0.8rem", textAlign: "right" }}
+                        value={inputNewLaborPrice}
+                        onChange={(e) => setInputNewLaborPrice(e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        style={{ padding: "6px 12px", fontSize: "0.8rem" }}
+                        onClick={() => {
+                          if (!inputNewLaborDesc.trim()) return;
+                          const price = parseFloat(inputNewLaborPrice) || 0;
+                          const newLabor = { desc: inputNewLaborDesc.trim(), price };
+                          const currentLabor = editingHistoryItem.presupuesto?.labor || [];
+                          setEditingHistoryItem({
+                            ...editingHistoryItem,
+                            presupuesto: { ...(editingHistoryItem.presupuesto || {}), labor: [...currentLabor, newLabor] }
+                          });
+                          setInputNewLaborDesc("");
+                          setInputNewLaborPrice("");
+                        }}
+                      >
+                        ➕ Agregar M.O.
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {editingHistoryItem.tipo === "Carwash" && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+                  <div>
+                    <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Tipo de Lavado:</label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      value={editingHistoryItem.tipoLavado || ""}
+                      onChange={(e) => setEditingHistoryItem({ ...editingHistoryItem, tipoLavado: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Precio Cobrado (Q):</label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      className="input-field"
+                      value={editingHistoryItem.total || 0}
+                      onChange={(e) => setEditingHistoryItem({ ...editingHistoryItem, total: parseFloat(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Comisión Lavadores (Q):</label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      className="input-field"
+                      value={editingHistoryItem.comision || 0}
+                      onChange={(e) => setEditingHistoryItem({ ...editingHistoryItem, comision: parseFloat(e.target.value) || 0 })}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "20px" }}>
+                <button
+                  type="button"
+                  onClick={() => setEditingHistoryItem(null)}
+                  className="btn btn-secondary"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ backgroundColor: "var(--color-success)", borderColor: "var(--color-success)", fontWeight: "800" }}
+                >
+                  💾 Guardar Cambios en Historial
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
