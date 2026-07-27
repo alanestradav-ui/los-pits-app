@@ -362,7 +362,7 @@ export default function Carwash({
 
   const handlePlacaChange = (e) => {
     const val = e.target.value;
-    setPlaca(val);
+    setPlateNumber(val);
     setShowSuggestions(true);
   };
 

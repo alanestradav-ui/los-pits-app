@@ -21,6 +21,7 @@ import { formatMoney, formatDate } from "../utils/storage";
 import { jsPDF } from "jspdf";
 
 export default function Finance({ 
+  usuarioActual,
   ordenes = [], 
   setOrdenes,
   carwash = [], 
