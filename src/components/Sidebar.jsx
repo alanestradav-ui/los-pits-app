@@ -118,6 +118,12 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
       icon: History,
       roles: ["admin", "cajero", "mecanico", "jefe de taller"]
     },
+    {
+      id: "cotizacionesVendedores",
+      label: "Cotizar Repuestos",
+      icon: ShoppingBag,
+      roles: ["admin", "cajero", "jefe de taller", "jefe", "vendedor", "vendedor_repuestos"]
+    },
     { 
       id: "finanzas", 
       label: "Finanzas & Reportes", 
@@ -146,6 +152,9 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
   // Sync menu list with permissions and saved order
   useEffect(() => {
     const visible = menuItems.filter(item => {
+      if (rol === "vendedor" || rol === "vendedor_repuestos") {
+        return item.id === "cotizacionesVendedores";
+      }
       if (rol === "admin") return true;
       if (item.id === "finanzas" || item.id === "configuracion") {
         if (rol === "admin" || rol === "cajero") return true;

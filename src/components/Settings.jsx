@@ -1825,6 +1825,7 @@ export default function SettingsComponent({
                         <option value="mecanico">Mecánico</option>
                         <option value="lavador">Lavador</option>
                         <option value="jefe de taller">Jefe de Taller</option>
+                        <option value="vendedor">Vendedor de Repuestos (Proveedor)</option>
                         <option value="custom">Otro (Rol personalizado)...</option>
                       </select>
                     </div>
@@ -2032,6 +2033,7 @@ export default function SettingsComponent({
                         { id: "compras", label: "🛍️ Compras & Gastos" },
                         { id: "historial", label: "⏳ Historial Vehículos" },
                         { id: "accesorios", label: "💎 Accesorios" },
+                        { id: "cotizacionesVendedores", label: "📦 Cotizaciones Vendedores" },
                         { id: "finanzas", label: "📈 Finanzas" },
                         { id: "configuracion", label: "⚙️ Configuración" }
                       ].map((perm) => {

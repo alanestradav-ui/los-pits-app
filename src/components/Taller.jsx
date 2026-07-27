@@ -15,7 +15,8 @@ import {
   X,
   CheckCircle2,
   AlertTriangle,
-  Pencil
+  Pencil,
+  ShoppingBag
 } from "lucide-react";
 import { formatMoney, getLocalStorage, setLocalStorage } from "../utils/storage";
 import { jsPDF } from "jspdf";
@@ -153,11 +154,13 @@ export default function Taller({
   cuentasPorPagar = [],
   setCuentasPorPagar,
   clientes = [],
-  setClientes,
   vehiculos = [],
   setVehiculos,
-  carwashPresets = []
+  carwashPresets = [],
+  cotizacionesRepuestos = [],
+  setCotizacionesRepuestos
 }) {
+  const [viewingVendorQuotesOrder, setViewingVendorQuotesOrder] = useState(null);
   const [cliente, setCliente] = useState("");
   const [telefono, setTelefono] = useState("");
   const [platePrefix, setPlatePrefix] = useState("P");
@@ -231,6 +234,59 @@ export default function Taller({
     }
     
     return laborComm + repuestosComm;
+  };
+
+  const aceptarCotizacionVendedor = (orderId, cotizacion) => {
+    if (!cotizacion || !cotizacion.ofertas) return;
+
+    const currentOrder = (ordenes || []).find(o => String(o.id) === String(orderId));
+    if (!currentOrder) return;
+
+    const budget = currentOrder.presupuesto || { labor: [], parts: [], services: [], discount: 0 };
+    const currentParts = budget.parts || [];
+
+    // Update budget parts with vendor prices and specs
+    const updatedParts = currentParts.map((p, idx) => {
+      const matchingOferta = cotizacion.ofertas.find(o => o.repuestoId === `p_${idx}` || o.repuestoDesc?.toLowerCase() === p.desc?.toLowerCase());
+      if (matchingOferta && matchingOferta.disponible) {
+        const vendorPrice = parseFloat(matchingOferta.precio) || 0;
+        const currentSalePrice = parseFloat(p.salePrice || p.price) || 0;
+        const newSalePrice = currentSalePrice > vendorPrice ? currentSalePrice : (vendorPrice * 1.35);
+
+        return {
+          ...p,
+          brand: matchingOferta.marcaRepuesto || p.brand || cotizacion.vendedorNombre || "Proveedor",
+          purchasePrice: vendorPrice,
+          unitCost: vendorPrice,
+          salePrice: newSalePrice,
+          price: newSalePrice
+        };
+      }
+      return p;
+    });
+
+    const updatedBudget = {
+      ...budget,
+      parts: updatedParts
+    };
+
+    // Recalculate order total
+    const totalLabor = (updatedBudget.labor || []).reduce((sum, i) => sum + (parseFloat(i.price) || 0), 0);
+    const totalParts = updatedParts.reduce((sum, i) => sum + ((parseFloat(i.qty) || 1) * (parseFloat(i.salePrice || i.price) || 0)), 0);
+    const totalServices = (updatedBudget.services || []).reduce((sum, i) => sum + (parseFloat(i.price) || 0), 0);
+    const subTotal = totalLabor + totalParts + totalServices;
+    const discountPct = parseFloat(updatedBudget.discount) || 0;
+    const granTotal = subTotal - (subTotal * (discountPct / 100));
+
+    const updatedOrder = {
+      ...currentOrder,
+      presupuesto: updatedBudget,
+      total: granTotal
+    };
+
+    setOrdenes(prev => (prev || []).map(o => String(o.id) === String(orderId) ? updatedOrder : o));
+    setViewingVendorQuotesOrder(null);
+    alert(`¡Cotización de ${cotizacion.vendedorNombre} aceptada con éxito e integrada al presupuesto del taller!`);
   };
 
   // Multiple motives
@@ -3724,6 +3780,32 @@ export default function Taller({
                               </span>
                             </div>
                           )}
+
+                          {isManager && (o.presupuesto?.parts || []).length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setViewingVendorQuotesOrder(o)}
+                              style={{
+                                backgroundColor: "rgba(99, 102, 241, 0.15)",
+                                color: "var(--color-primary)",
+                                border: "1px solid rgba(99, 102, 241, 0.4)",
+                                padding: "4px 8px",
+                                borderRadius: "6px",
+                                fontSize: "0.74rem",
+                                fontWeight: "800",
+                                cursor: "pointer",
+                                marginTop: "6px",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: "5px"
+                              }}
+                            >
+                              <ShoppingBag size={13} /> Cotizaciones Vendedores ({
+                                ((cotizacionesRepuestos || []).find(c => String(c.tallerOrderId) === String(o.id))?.cotizacionesRecibidas || []).length
+                              })
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => setRecepcionFormalOrder(o)}
@@ -3999,6 +4081,168 @@ export default function Taller({
           <div style={styles.lightboxContent} onClick={(e) => e.stopPropagation()}>
             <img src={selectedFullPhoto} alt="Vista Completa" style={styles.lightboxImage} />
             <button style={styles.lightboxCloseBtn} onClick={() => setSelectedFullPhoto(null)}>&times;</button>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* VENDOR QUOTES COMPARISON MODAL FOR TALLER */}
+      {viewingVendorQuotesOrder && createPortal(
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0, 0, 0, 0.85)",
+          backdropFilter: "blur(6px)",
+          WebkitBackdropFilter: "blur(6px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 99999,
+          padding: "20px"
+        }}>
+          <div className="glass-panel" style={{
+            padding: "26px",
+            borderRadius: "16px",
+            width: "100%",
+            maxWidth: "850px",
+            maxHeight: "90vh",
+            overflowY: "auto",
+            textAlign: "left",
+            boxShadow: "0 25px 50px rgba(0,0,0,0.8)",
+            border: "1px solid rgba(255, 255, 255, 0.12)",
+            margin: "auto"
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "12px" }}>
+              <div>
+                <h3 style={{ fontSize: "1.3rem", fontWeight: "800", margin: 0, color: "#fff" }}>
+                  📦 Cotizaciones de Vendedores Recibidas
+                </h3>
+                <p style={{ margin: "4px 0 0 0", fontSize: "0.85rem", color: "var(--color-primary)", fontWeight: "600" }}>
+                  Orden #{viewingVendorQuotesOrder.id} - Cliente: {viewingVendorQuotesOrder.cliente} ({formatVehicleText(viewingVendorQuotesOrder.vehiculo)})
+                </p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setViewingVendorQuotesOrder(null)}
+                style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}
+              >
+                <X size={22} />
+              </button>
+            </div>
+
+            {/* List of Quotes Received for this Order */}
+            {(() => {
+              const req = (cotizacionesRepuestos || []).find(c => String(c.tallerOrderId) === String(viewingVendorQuotesOrder.id));
+              const cotizaciones = req?.cotizacionesRecibidas || [];
+
+              if (cotizaciones.length === 0) {
+                return (
+                  <div style={{ padding: "40px", textAlign: "center", color: "var(--text-muted)" }}>
+                    <Clock size={48} style={{ opacity: 0.3, marginBottom: "12px" }} />
+                    <p style={{ fontSize: "0.95rem" }}>Aún no se han recibido cotizaciones de vendedores externos para esta orden.</p>
+                    <span style={{ fontSize: "0.8rem", color: "var(--color-primary)" }}>
+                      💡 La solicitud está visible en el Portal de Cotizaciones de Vendedores.
+                    </span>
+                  </div>
+                );
+              }
+
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                  {cotizaciones.map((cot, idx) => (
+                    <div key={idx} style={{
+                      backgroundColor: "rgba(255, 255, 255, 0.02)",
+                      border: "1px solid rgba(99, 102, 241, 0.3)",
+                      borderRadius: "12px",
+                      padding: "18px"
+                    }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", borderBottom: "1px solid rgba(255,255,255,0.06)", paddingBottom: "10px" }}>
+                        <div>
+                          <strong style={{ fontSize: "1.1rem", color: "#fff", display: "flex", alignItems: "center", gap: "6px" }}>
+                            🏬 {cot.vendedorNombre}
+                          </strong>
+                          <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                            Fecha envío: {new Date(cot.fechaCotizacion).toLocaleString()}
+                          </span>
+                        </div>
+
+                        <div style={{ textAlign: "right" }}>
+                          <span style={{ fontSize: "0.78rem", color: "var(--text-muted)", display: "block" }}>Total Ofertado:</span>
+                          <strong style={{ fontSize: "1.25rem", color: "var(--color-success)" }}>
+                            {formatMoney(cot.totalCotizado)}
+                          </strong>
+                        </div>
+                      </div>
+
+                      {/* Offers Table */}
+                      <div style={{ overflowX: "auto", marginBottom: "14px" }}>
+                        <table style={{ width: "100%", fontSize: "0.82rem", borderCollapse: "collapse" }}>
+                          <thead>
+                            <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.1)", color: "var(--text-muted)", textAlign: "left" }}>
+                              <th style={{ padding: "6px" }}>Repuesto Solicitado</th>
+                              <th style={{ padding: "6px" }}>Marca / Calidad Ofertada</th>
+                              <th style={{ padding: "6px", textAlign: "right" }}>Precio (Q)</th>
+                              <th style={{ padding: "6px", textAlign: "center" }}>Fotos Repuesto</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(cot.ofertas || []).map((of, oIdx) => (
+                              <tr key={oIdx} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                                <td style={{ padding: "8px", color: "#fff", fontWeight: "600" }}>📦 {of.repuestoDesc} (x{of.qty || 1})</td>
+                                <td style={{ padding: "8px", color: of.disponible ? "var(--color-secondary)" : "var(--color-danger)" }}>
+                                  {of.disponible ? (of.marcaRepuesto || "Ofertado") : "❌ No disponible"}
+                                </td>
+                                <td style={{ padding: "8px", textAlign: "right", color: "var(--color-success)", fontWeight: "700" }}>
+                                  {of.disponible ? formatMoney(of.precio) : "-"}
+                                </td>
+                                <td style={{ padding: "8px", textAlign: "center" }}>
+                                  {(of.fotos || []).length > 0 ? (
+                                    <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
+                                      {of.fotos.map((img, imgIdx) => (
+                                        <img
+                                          key={imgIdx}
+                                          src={img}
+                                          alt="Foto"
+                                          style={{ width: "36px", height: "36px", objectFit: "cover", borderRadius: "4px", border: "1px solid rgba(255,255,255,0.2)", cursor: "pointer" }}
+                                          onClick={() => setSelectedFullPhoto(img)}
+                                          title="Ver foto en tamaño completo"
+                                        />
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Sin fotos</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {cot.notasGenerales && (
+                        <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", backgroundColor: "rgba(0,0,0,0.2)", padding: "8px 12px", borderRadius: "6px", marginBottom: "14px" }}>
+                          💬 <strong>Notas del Vendedor:</strong> {cot.notasGenerales}
+                        </div>
+                      )}
+
+                      <div style={{ textAlign: "right" }}>
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          style={{ backgroundColor: "var(--color-success)", borderColor: "var(--color-success)", fontWeight: "800", padding: "8px 16px" }}
+                          onClick={() => aceptarCotizacionVendedor(viewingVendorQuotesOrder.id, cot)}
+                        >
+                          ✅ Aceptar Cotización e Integrar Presupuesto
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         </div>,
         document.body

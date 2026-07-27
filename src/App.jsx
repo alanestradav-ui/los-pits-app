@@ -18,6 +18,7 @@ import ClientesVehiculos from "./components/ClientesVehiculos";
 import Compras from "./components/Compras";
 import Accesorios from "./components/Accesorios";
 import Pantalla from "./components/Pantalla";
+import VendorQuotes from "./components/VendorQuotes";
 import { getLocalStorage, setLocalStorage } from "./utils/storage";
 import { getSupabaseClient, syncKeyToCloud, safeParseJSON } from "./utils/supabase";
 
@@ -233,7 +234,8 @@ export default function App() {
       { user: "cajero", pass: "1234", rol: "cajero", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"], salarioBase: 3000, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 0 },
       { user: "mecanico", pass: "1234", rol: "mecanico", permissions: ["taller", "historial"], salarioBase: 2500, comisionTaller: 10, comisionCarwash: 0, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: false, comisionRepuestos: 0 },
       { user: "lavador", pass: "1234", rol: "lavador", permissions: ["carwash"], salarioBase: 2000, comisionTaller: 0, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 0 },
-      { user: "jefe", pass: "1234", rol: "jefe de taller", permissions: ["dashboard", "taller", "repuestosFaltantes", "historial"], salarioBase: 4000, comisionTaller: 10, comisionCarwash: 0, comisionarLabor: true, comisionarRepuestos: true, comisionarCarwash: false, comisionRepuestos: 5 }
+      { user: "jefe", pass: "1234", rol: "jefe de taller", permissions: ["dashboard", "taller", "repuestosFaltantes", "historial"], salarioBase: 4000, comisionTaller: 10, comisionCarwash: 0, comisionarLabor: true, comisionarRepuestos: true, comisionarCarwash: false, comisionRepuestos: 5 },
+      { user: "vendedor", pass: "1234", rol: "vendedor", permissions: ["cotizacionesVendedores"], salarioBase: 0, comisionTaller: 0, comisionCarwash: 0 }
     ];
     const val = getLocalStorage("usuarios", defaultUsers);
     const loaded = deduplicateUsers(Array.isArray(val) ? val : defaultUsers);
@@ -441,6 +443,11 @@ export default function App() {
 
   const [comisionMecanico, setComisionMecanico] = useState(() => {
     return getLocalStorage("comisionMecanico", 0.10);
+  });
+
+  const [cotizacionesRepuestos, setCotizacionesRepuestos] = useState(() => {
+    const val = getLocalStorage("cotizacionesRepuestos", []);
+    return Array.isArray(val) ? val : [];
   });
 
   const [dashboardPeriod, setDashboardPeriod] = useState(() => {
@@ -1053,6 +1060,11 @@ export default function App() {
     syncToCloud("accesoriosInventory", accesoriosInventory);
   }, [accesoriosInventory]);
 
+  useEffect(() => {
+    setLocalStorage("cotizacionesRepuestos", cotizacionesRepuestos);
+    syncToCloud("cotizacionesRepuestos", cotizacionesRepuestos);
+  }, [cotizacionesRepuestos]);
+
   const usuarioActivo = usuarios.find(u => (u.user || "").toLowerCase().trim() === (usuarioActual?.user || "").toLowerCase().trim()) || usuarioActual;
 
   const userHasPermission = (user, tabId) => {
@@ -1060,6 +1072,11 @@ export default function App() {
     if (tabId === "pantalla") return true; // Pantalla de monitoreo accesible para todos los usuarios registrados
     const activeUser = usuarios.find(u => (u.user || "").toLowerCase().trim() === ((typeof user === "string" ? user : user.user) || "").toLowerCase().trim()) || user;
     const activeRol = (typeof activeUser === "string" ? activeUser : (activeUser.rol || "")).toLowerCase().trim();
+
+    if (activeRol === "vendedor" || activeRol === "vendedor_repuestos") {
+      return tabId === "cotizacionesVendedores";
+    }
+
     if (activeRol === "admin" || activeRol === "administrador") return true;
     if (tabId === "historial" && activeRol !== "lavador") return true;
 
@@ -1069,11 +1086,11 @@ export default function App() {
 
     // Fallbacks
     if (activeRol === "cajero") {
-      return ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"].includes(tabId);
+      return ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios", "cotizacionesVendedores"].includes(tabId);
     }
     if (activeRol === "mecanico") return ["taller", "historial"].includes(tabId);
     if (activeRol === "lavador") return tabId === "carwash";
-    if (activeRol === "jefe de taller" || activeRol === "jefe") return ["dashboard", "taller", "repuestosFaltantes", "historial"].includes(tabId);
+    if (activeRol === "jefe de taller" || activeRol === "jefe") return ["dashboard", "taller", "repuestosFaltantes", "historial", "cotizacionesVendedores"].includes(tabId);
     return false;
   };
 
@@ -1169,6 +1186,8 @@ export default function App() {
             vehiculos={vehiculos}
             setVehiculos={setVehiculos}
             carwashPresets={carwashPresets}
+            cotizacionesRepuestos={cotizacionesRepuestos}
+            setCotizacionesRepuestos={setCotizacionesRepuestos}
           />
         )}
 
@@ -1307,6 +1326,15 @@ export default function App() {
             setCarwash={setCarwash}
             workshopInventory={workshopInventory}
             mecanicos={mecanicos}
+            usuarioActual={usuarioActivo}
+          />
+        )}
+
+        {currentTab === "cotizacionesVendedores" && userHasPermission(usuarioActivo, "cotizacionesVendedores") && (
+          <VendorQuotes 
+            ordenes={ordenes}
+            cotizacionesRepuestos={cotizacionesRepuestos}
+            setCotizacionesRepuestos={setCotizacionesRepuestos}
             usuarioActual={usuarioActivo}
           />
         )}
