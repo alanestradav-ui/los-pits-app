@@ -60,21 +60,21 @@ const defaultChecklistItems = [
 ];
 
 export default function Carwash({ 
-  carwash, 
+  carwash = [], 
   setCarwash, 
   usuarioActual, 
-  lavadores, 
-  ordenes, 
+  lavadores = [], 
+  ordenes = [], 
   setOrdenes,
-  carwashPresets,
-  carwashInventory,
+  carwashPresets = [],
+  carwashInventory = [],
   setCarwashInventory,
   accesoriosInventory = [],
   setAccesoriosInventory,
-  carwashConsumption,
+  carwashConsumption = [],
   setCarwashConsumption,
   usuarios = [],
-  cuentasPorCobrar,
+  cuentasPorCobrar = [],
   setCuentasPorCobrar,
   cuentasPorPagar = [],
   setCuentasPorPagar,
@@ -398,6 +398,17 @@ export default function Carwash({
   const isAdmin = !usuarioActual || !usuarioActual.rol || userRolLower.includes("admin") || userRolLower.includes("gerente") || userRolLower.includes("jefe");
   const isManager = isAdmin || userRolLower.includes("cajero") || userRolLower.includes("carwash");
 
+  const lavadoresList = Array.from(new Set([
+    ...(Array.isArray(lavadores) ? lavadores : []),
+    ...(Array.isArray(usuarios) ? usuarios : [])
+      .filter(u => {
+        const r = String(u.rol || "").toLowerCase().trim();
+        return r === "lavador" || r === "carwash";
+      })
+      .map(u => u.user)
+      .filter(Boolean)
+  ]));
+
   const [washFilterTab, setWashFilterTab] = useState("activos"); // 'activos' or 'entregados'
   const [editingBilledCarwash, setEditingBilledCarwash] = useState(null);
 
@@ -410,7 +421,8 @@ export default function Carwash({
   };
 
   // Filter washes by search query, tab and role
-  const filteredCarwash = carwash.filter(c => {
+  const filteredCarwash = (carwash || []).filter(c => {
+    if (!c) return false;
     const query = searchQuery.toLowerCase().trim();
 
     if (!query) {
@@ -422,21 +434,27 @@ export default function Carwash({
     }
 
     // If washer role, show only their assigned washes
-    if (isWorker && c.lavador.toLowerCase() !== (usuarioActual?.user || "").toLowerCase()) {
+    const washLavadores = Array.isArray(c.lavadores) 
+      ? c.lavadores.map(l => String(l).toLowerCase()) 
+      : String(c.lavador || "").toLowerCase().split(",").map(l => l.trim());
+
+    const activeUserStr = String(usuarioActual?.user || "").toLowerCase().trim();
+
+    if (isWorker && !washLavadores.includes(activeUserStr)) {
       return false;
     }
     
     if (!query) return true;
 
     const matchesSearch = 
-      (c.cliente && c.cliente.toLowerCase().includes(query)) ||
-      (c.telefono && c.telefono.toLowerCase().includes(query)) ||
-      (c.vehiculo?.placa && c.vehiculo.placa.toLowerCase().includes(query)) ||
-      (c.vehiculo?.marca && c.vehiculo.marca.toLowerCase().includes(query)) ||
-      (c.vehiculo?.linea && c.vehiculo.linea.toLowerCase().includes(query)) ||
-      (c.nit && c.nit.toLowerCase().includes(query)) ||
-      (c.tipo && c.tipo.toLowerCase().includes(query)) ||
-      (c.lavador && c.lavador.toLowerCase().includes(query)) ||
+      (c.cliente && String(c.cliente).toLowerCase().includes(query)) ||
+      (c.telefono && String(c.telefono).toLowerCase().includes(query)) ||
+      (c.vehiculo?.placa && String(c.vehiculo.placa).toLowerCase().includes(query)) ||
+      (c.vehiculo?.marca && String(c.vehiculo.marca).toLowerCase().includes(query)) ||
+      (c.vehiculo?.linea && String(c.vehiculo.linea).toLowerCase().includes(query)) ||
+      (c.nit && String(c.nit).toLowerCase().includes(query)) ||
+      (c.tipo && String(c.tipo).toLowerCase().includes(query)) ||
+      (c.lavador && String(c.lavador).toLowerCase().includes(query)) ||
       String(c.id).includes(query);
       
     return matchesSearch;
@@ -2209,7 +2227,7 @@ export default function Carwash({
                 transition: "all 0.2s ease"
               }}
             >
-              🧼 Lavados Activos ({carwash.filter(c => c.estado !== "Entregado").length})
+              🧼 Lavados Activos ({(carwash || []).filter(c => c.estado !== "Entregado").length})
             </button>
             <button
               type="button"
@@ -2227,7 +2245,7 @@ export default function Carwash({
                 transition: "all 0.2s ease"
               }}
             >
-              📜 Historial Entregados ({carwash.filter(c => c.estado === "Entregado").length})
+              📜 Historial Entregados ({(carwash || []).filter(c => c.estado === "Entregado").length})
             </button>
           </div>
 
