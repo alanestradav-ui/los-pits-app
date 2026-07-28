@@ -901,7 +901,7 @@ export default function App() {
         targetComm = 5.0;
       } else {
         const matched = (carwashPresets || []).find(p => p.tipo && String(p.tipo).toLowerCase().trim() === String(c.tipo).toLowerCase().trim());
-        targetComm = matched && matched.comision !== undefined ? parseFloat(matched.comision) : (parseFloat(c.comision) || 5.0);
+        targetComm = matched && matched.comision !== undefined ? parseFloat(matched.comision) : (c.comision !== undefined ? parseFloat(c.comision) : 0);
       }
       if (c.comision !== targetComm) {
         return { ...c, comision: targetComm };

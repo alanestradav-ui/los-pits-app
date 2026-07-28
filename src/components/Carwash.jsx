@@ -526,16 +526,36 @@ export default function Carwash({
   const registrarLavado = (e) => {
     e.preventDefault();
     const cleanNum = plateNumber.trim().toUpperCase();
-    if (!cliente.trim() || !telefono.trim() || !cleanNum || !marca.trim() || !linea.trim() || !selectedPreset) {
-      alert("Completa todos los campos obligatorios (Placa, Cliente, Teléfono, Marca, Línea y tipo de lavado).");
+    if (!cliente.trim() || !telefono.trim() || !cleanNum || !marca.trim() || !linea.trim()) {
+      alert("Completa todos los campos obligatorios (Placa, Cliente, Teléfono, Marca y Línea).");
       return;
     }
+
+    const hasPreset = !!selectedPreset;
+    const hasTrabajoAdicional = !!(trabajoAdicionalNombre.trim() || (parseFloat(trabajoAdicionalPrecio) || 0) > 0);
+    const hasAccesorios = selectedAccesorios && selectedAccesorios.length > 0;
+
+    if (!hasPreset && !hasTrabajoAdicional && !hasAccesorios) {
+      alert("Debes seleccionar un tipo de lavado o ingresar un servicio adicional / accesorio.");
+      return;
+    }
+
     const fullPlaca = platePrefix === "Extranjera" ? cleanNum : `${platePrefix}-${cleanNum}`;
 
-    const pBase = customPriceEnabled ? (parseFloat(precioLavado) || selectedPreset.precio) : selectedPreset.precio;
+    const pBase = hasPreset 
+      ? (customPriceEnabled ? (parseFloat(precioLavado) || selectedPreset.precio) : selectedPreset.precio)
+      : 0;
     const pAdd = parseFloat(trabajoAdicionalPrecio) || 0;
     const pAccesorios = selectedAccesorios.reduce((sum, item) => sum + (item.salePrice * item.qty), 0);
     const totalPrecio = pBase + pAdd + pAccesorios;
+
+    const tipoLavado = hasPreset 
+      ? selectedPreset.tipo 
+      : (trabajoAdicionalNombre.trim() || (hasAccesorios ? "Solo Accesorios" : "Servicio Adicional"));
+
+    const comisionVal = hasPreset && selectedPreset.comision !== undefined 
+      ? parseFloat(selectedPreset.comision) 
+      : 0;
 
     const nuevo = {
       id: Date.now(),
@@ -549,7 +569,7 @@ export default function Carwash({
         linea: linea.trim(),
         color: color.trim()
       },
-      tipo: selectedPreset.tipo,
+      tipo: tipoLavado,
       precio: totalPrecio,
       precioBase: pBase,
       trabajoAdicionalNombre: trabajoAdicionalNombre.trim(),
@@ -559,7 +579,7 @@ export default function Carwash({
       lavador: selectedLavadores.join(", "),
       fotos: fotos,
       estado: "En proceso",
-      comision: (selectedPreset && selectedPreset.comision !== undefined) ? parseFloat(selectedPreset.comision) : 5,
+      comision: comisionVal,
       fecha: new Date().toISOString(),
       anio: anio.trim(),
       kilometraje: kilometraje.trim(),
@@ -893,14 +913,14 @@ export default function Carwash({
     const checklistCount = defaultChecklistItems.length;
     const rowHeight = 35;
 
-    const basePriceStr = o.precioBase !== undefined ? formatMoney(o.precioBase) : formatMoney(o.precio);
+    const basePriceStr = (o.precioBase !== undefined && o.precioBase > 0) ? ` (${formatMoney(o.precioBase)})` : "";
     const addWorkStr = o.trabajoAdicionalNombre 
       ? ` + Trabajo Adicional: ${o.trabajoAdicionalNombre} (${formatMoney(o.trabajoAdicionalPrecio || 0)})` 
       : "";
     const accListStr = o.accesoriosCargados && o.accesoriosCargados.length > 0
       ? ` + Accesorios: ${o.accesoriosCargados.map(a => `${a.name} (x${a.qty})`).join(", ")}`
       : "";
-    const motString = `Servicio de Carwash: ${o.tipo} (${basePriceStr})${addWorkStr}${accListStr}. Lavado y aspirado del vehículo. Total: ${formatMoney(o.precio)}.`;
+    const motString = `Servicio de Carwash: ${o.tipo}${basePriceStr}${addWorkStr}${accListStr}. Lavado y aspirado del vehículo. Total: ${formatMoney(o.precio)}.`;
     const dummyCanvas = document.createElement("canvas");
     const dummyCtx = dummyCanvas.getContext("2d");
     dummyCtx.font = "13px 'Plus Jakarta Sans', sans-serif";
@@ -2027,9 +2047,31 @@ export default function Carwash({
               </div>
 
               <div style={styles.presetSection}>
-                <label style={{ ...styles.label, marginBottom: "8px", display: "block" }}>
-                  Tipo de Lavado:
-                </label>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                  <label style={{ ...styles.label, margin: 0 }}>
+                    Tipo de Lavado (Opcional):
+                  </label>
+                  {selectedPreset && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedPreset(null);
+                        setPrecioLavado("");
+                        setCustomPriceEnabled(false);
+                      }}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "var(--color-danger)",
+                        fontSize: "0.8rem",
+                        cursor: "pointer",
+                        fontWeight: "600"
+                      }}
+                    >
+                      ✕ Quitar selección
+                    </button>
+                  )}
+                </div>
                 <div style={styles.presetButtonsRow}>
                   {presetsList.map((p, idx) => {
                     const isSelected = selectedPreset?.tipo === p.tipo;
@@ -2038,9 +2080,15 @@ export default function Carwash({
                         key={idx}
                         type="button"
                         onClick={() => {
-                          setSelectedPreset(p);
-                          setPrecioLavado(p.precio.toString());
-                          setCustomPriceEnabled(false);
+                          if (isSelected) {
+                            setSelectedPreset(null);
+                            setPrecioLavado("");
+                            setCustomPriceEnabled(false);
+                          } else {
+                            setSelectedPreset(p);
+                            setPrecioLavado(p.precio.toString());
+                            setCustomPriceEnabled(false);
+                          }
                         }}
                         className={`btn btn-preset-wash ${isSelected ? 'active-preset' : ''}`}
                         style={{
