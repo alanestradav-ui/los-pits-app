@@ -206,19 +206,76 @@ const mergeCollections = (key, localValRaw, cloudValRaw) => {
 
     // For all other array keys (ordenes, carwash, parkingHistory, workshopInventory, etc.)
     const mergedMap = new Map();
+
+    const normalizeStatus = (item) => {
+      if (!item || typeof item !== "object") return item;
+      let est = item.estado;
+      if (est === "Cobrado") est = "Entregado";
+      if (key === "ordenes" && est === "En proceso") est = "En proceso de reparación";
+      if (est === "Listo") est = "Listo para entrega";
+      return { ...item, estado: est };
+    };
+
+    const getItemId = (item, idx, prefix) => {
+      if (item && item.id !== undefined && item.id !== null) {
+        return String(item.id);
+      }
+      return `${prefix}_item_${idx}`;
+    };
+
+    const mergeSingleItem = (cloudItem, localItem) => {
+      const cNorm = normalizeStatus(cloudItem);
+      const lNorm = normalizeStatus(localItem);
+
+      const isDeliveredC = cNorm?.estado === "Entregado";
+      const isDeliveredL = lNorm?.estado === "Entregado";
+
+      let finalBase = { ...cNorm, ...lNorm };
+
+      // If EITHER version is Entregado, the merged item MUST be Entregado!
+      if (isDeliveredC || isDeliveredL) {
+        const deliveredSource = isDeliveredL ? lNorm : cNorm;
+        const otherSource = isDeliveredL ? cNorm : lNorm;
+
+        finalBase = {
+          ...otherSource,
+          ...deliveredSource,
+          estado: "Entregado",
+          total: (deliveredSource.total !== undefined && deliveredSource.total > 0)
+            ? deliveredSource.total
+            : (otherSource.total || 0),
+          nit: (deliveredSource.nit && deliveredSource.nit !== "C/F")
+            ? deliveredSource.nit
+            : (otherSource.nit || deliveredSource.nit || "C/F"),
+          nombreFacturacion: deliveredSource.nombreFacturacion || otherSource.nombreFacturacion || deliveredSource.cliente || otherSource.cliente,
+          formaPago: deliveredSource.formaPago || otherSource.formaPago,
+          formaPagoDesc: deliveredSource.formaPagoDesc || otherSource.formaPagoDesc,
+          cajero: deliveredSource.cajero || otherSource.cajero,
+          comision: deliveredSource.comision !== undefined ? deliveredSource.comision : otherSource.comision,
+          fecha: deliveredSource.fecha || otherSource.fecha
+        };
+      }
+
+      return finalBase;
+    };
+
     cloudVal.forEach((item, idx) => {
-      const id = item && item.id !== undefined ? String(item.id) : `cloud_item_${idx}`;
-      mergedMap.set(id, item);
+      const norm = normalizeStatus(item);
+      const id = getItemId(norm, idx, "cloud");
+      mergedMap.set(id, norm);
     });
+
     localVal.forEach((item, idx) => {
-      const id = item && item.id !== undefined ? String(item.id) : `local_item_${idx}`;
+      const norm = normalizeStatus(item);
+      const id = getItemId(norm, idx, "local");
       if (!mergedMap.has(id)) {
-        mergedMap.set(id, item);
+        mergedMap.set(id, norm);
       } else {
         const cloudItem = mergedMap.get(id);
-        mergedMap.set(id, { ...cloudItem, ...item });
+        mergedMap.set(id, mergeSingleItem(cloudItem, norm));
       }
     });
+
     return Array.from(mergedMap.values());
   }
 
@@ -685,8 +742,12 @@ export default function App() {
       return; // Already in sync, avoid loops
     }
     
-    globalLastSynced[key] = valueStr;
-    await syncKeyToCloud(key, cleanVal);
+    const ok = await syncKeyToCloud(key, cleanVal);
+    if (ok) {
+      globalLastSynced[key] = valueStr;
+    } else {
+      console.warn(`[Sync] Falló la sincronización para la llave "${key}". Se reintentará en la próxima actualización.`);
+    }
   };
 
   const forcePullFromCloud = async () => {
@@ -789,18 +850,23 @@ export default function App() {
             }
           }
 
-          const sanitizedValStr = JSON.stringify(sanitizedValue);
+          const currentLocalVal = (stateRef.current && stateRef.current[key] !== undefined)
+            ? stateRef.current[key]
+            : getLocalStorage(key, null);
+
+          const mergedValue = mergeCollections(key, currentLocalVal, sanitizedValue);
+          const mergedValStr = JSON.stringify(mergedValue);
           const localValStr = stateRef.current ? JSON.stringify(stateRef.current[key]) : "";
-          
-          if (localValStr === sanitizedValStr) {
+
+          if (localValStr === mergedValStr) {
             return; // No actual change, skip to avoid loop
           }
 
           const activeSetter = globalActiveSetters[key];
           if (activeSetter) {
-            globalLastSynced[key] = sanitizedValStr;
-            activeSetter(sanitizedValue);
-            setLocalStorage(key, sanitizedValue);
+            globalLastSynced[key] = mergedValStr;
+            activeSetter(mergedValue);
+            setLocalStorage(key, mergedValue);
           }
         }
       )

@@ -44,7 +44,7 @@ export const safeParseJSON = (val) => {
 
 export const syncKeyToCloud = async (key, value) => {
   const client = getSupabaseClient();
-  if (!client) return;
+  if (!client) return false;
   try {
     const cleanValue = safeParseJSON(value);
     const { error } = await client
@@ -53,9 +53,12 @@ export const syncKeyToCloud = async (key, value) => {
     
     if (error) {
       console.error(`Error uploading key "${key}" to Supabase:`, error.message);
+      return false;
     }
+    return true;
   } catch (err) {
     console.error(`Error syncing key "${key}" to Supabase:`, err);
+    return false;
   }
 };
 
