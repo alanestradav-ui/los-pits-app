@@ -84,26 +84,13 @@ const ARRAY_KEYS = [
   "accesoriosInventory"
 ];
 
-const MOCK_CLIENT_NAMES = ["mariana estévez", "mariana estevez", "carlos mendoza", "alejandro ruiz"];
-const MOCK_VEHICLE_PLATES = ["P-984FLB", "P-420DSK", "P-112HJD", "P-456GBD", "P-789DKS"];
-
 const filterOutMockItems = (key, list) => {
   if (!Array.isArray(list)) return list;
   return list.filter(item => {
     if (!item) return false;
-    if (key === "clientes") {
-      const name = (item.nombre || "").toLowerCase().trim();
-      if (MOCK_CLIENT_NAMES.includes(name)) return false;
-    }
-    if (key === "vehiculos") {
-      const placa = (item.placa || "").toUpperCase().trim();
-      if (MOCK_VEHICLE_PLATES.includes(placa)) return false;
-    }
     if (key === "ordenes" || key === "carwash") {
       const mockIds = [1716301200000, 1716304800000, 1716308400000, 1716312000000, 1716315600000];
       if (mockIds.includes(item.id)) return false;
-      const clienteStr = typeof item.cliente === "string" ? item.cliente.toLowerCase() : "";
-      if (MOCK_CLIENT_NAMES.some(m => clienteStr.includes(m))) return false;
     }
     return true;
   });
@@ -227,16 +214,27 @@ const mergeCollections = (key, localValRaw, cloudValRaw) => {
       const cNorm = normalizeStatus(cloudItem);
       const lNorm = normalizeStatus(localItem);
 
-      const isDeliveredC = cNorm?.estado === "Entregado";
-      const isDeliveredL = lNorm?.estado === "Entregado";
+      const stateWeight = (st) => {
+        if (st === "Entregado") return 3;
+        if (st === "Listo para entrega" || st === "Listo") return 2;
+        if (st === "En proceso de reparación" || st === "En proceso") return 1;
+        return 0;
+      };
 
-      let finalBase = { ...cNorm, ...lNorm };
+      const cWeight = stateWeight(cNorm?.estado);
+      const lWeight = stateWeight(lNorm?.estado);
 
-      // If EITHER version is Entregado, the merged item MUST be Entregado!
-      if (isDeliveredC || isDeliveredL) {
-        const deliveredSource = isDeliveredL ? lNorm : cNorm;
-        const otherSource = isDeliveredL ? cNorm : lNorm;
+      let finalBase = (lWeight >= cWeight) ? { ...cNorm, ...lNorm } : { ...lNorm, ...cNorm };
 
+      if (cWeight > lWeight) {
+        finalBase.estado = cNorm.estado;
+      } else if (lWeight > cWeight) {
+        finalBase.estado = lNorm.estado;
+      }
+
+      if (cNorm?.estado === "Entregado" || lNorm?.estado === "Entregado") {
+        const deliveredSource = (lNorm?.estado === "Entregado") ? lNorm : cNorm;
+        const otherSource = (lNorm?.estado === "Entregado") ? cNorm : lNorm;
         finalBase = {
           ...otherSource,
           ...deliveredSource,
@@ -726,16 +724,11 @@ export default function App() {
 
   // Sync a key-value pair to cloud if it has actually changed
   const syncToCloud = async (key, value) => {
-    if (!isInitialPullDone) return; // Guard: prevent syncing local states before initial pull completes
+    if (!isInitialPullDone) return; // Guard: prevent syncing local states before initial setup completes
     
     const client = getSupabaseClient();
     if (!client) return;
 
-    if (!globalSyncFlags.isInitialPullSucceeded) {
-      console.warn(`[Sync] Sincronización bloqueada para la llave "${key}" porque la descarga inicial de la nube no ha sido completada con éxito en este ciclo de vida.`);
-      return;
-    }
-    
     const cleanVal = filterOutMockItems(key, safeParseJSON(value));
     const valueStr = JSON.stringify(cleanVal);
     if (globalLastSynced[key] === valueStr) {
@@ -789,6 +782,9 @@ export default function App() {
             globalLastSynced[item.key] = mergedValStr;
             if (activeSetter) activeSetter(mergedValue);
             setLocalStorage(item.key, mergedValue);
+
+            // Re-sync merged dataset back to cloud so Supabase is guaranteed to have all local & cloud items
+            syncKeyToCloud(item.key, mergedValue);
           }
         });
       }
@@ -809,9 +805,26 @@ export default function App() {
     }
   };
 
-  // Initial Sync from Cloud on mount
+  // Initial Sync from Cloud on mount + Periodic Background Sync (every 60s & when coming online)
   useEffect(() => {
     forcePullFromCloud();
+
+    const handleOnline = () => {
+      console.log("[Sync] Conexión restablecida. Ejecutando sincronización de respaldo...");
+      forcePullFromCloud();
+    };
+    window.addEventListener("online", handleOnline);
+
+    const interval = setInterval(() => {
+      if (navigator.onLine) {
+        forcePullFromCloud();
+      }
+    }, 60000);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      clearInterval(interval);
+    };
   }, []);
 
   // Subscribe to Realtime Postgres changes once initial pull is complete
