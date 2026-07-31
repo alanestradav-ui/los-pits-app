@@ -21,6 +21,8 @@ import Pantalla from "./components/Pantalla";
 import VendorQuotes from "./components/VendorQuotes";
 import { getLocalStorage, setLocalStorage } from "./utils/storage";
 import { getSupabaseClient, syncKeyToCloud, safeParseJSON } from "./utils/supabase";
+import { initHourlyBackupScheduler, checkAndCreateHourlyBackup } from "./services/backupService";
+import { autoPurgeTrash } from "./services/trashService";
 
 // ☁️ GLOBAL CLOUD SYNC STATE (Saves data across React remounts/Strict Mode)
 const globalLastSynced = {};
@@ -910,6 +912,15 @@ export default function App() {
     return () => {
       window.removeEventListener("online", handleOnline);
       clearInterval(interval);
+    };
+  }, []);
+
+  // ⏰ HOURLY BACKUP SCHEDULER & AUTO-PURGE TRASH ENGINE
+  useEffect(() => {
+    autoPurgeTrash();
+    const cleanupScheduler = initHourlyBackupScheduler();
+    return () => {
+      if (cleanupScheduler) cleanupScheduler();
     };
   }, []);
 

@@ -22,7 +22,10 @@ import {
   X
 } from "lucide-react";
 import { formatMoney } from "../utils/storage";
-import { getSupabaseClient, resetSupabaseClient, syncKeyToCloud } from "../utils/supabase";
+import { getSupabaseClient, resetSupabaseClient, syncKeyToCloud, testSupabaseConnection } from "../utils/supabase";
+import PapeleraModal from "./PapeleraModal";
+import { createBackup, exportBackupToFile, restoreFromBackup, getBackupsList } from "../services/backupService";
+import { getTrashItems, softDelete as trashSoftDelete } from "../services/trashService";
 
 export default function SettingsComponent({
   comisionMecanico,
@@ -72,6 +75,45 @@ export default function SettingsComponent({
 }) {
   const [activeTab, setActiveTab] = useState("general");
   const [trashFilter, setTrashFilter] = useState("todos");
+  const [showPapeleraModal, setShowPapeleraModal] = useState(false);
+  const [isBackupCreating, setIsBackupCreating] = useState(false);
+
+  const handleManualBackup = async () => {
+    try {
+      setIsBackupCreating(true);
+      const newBackup = await createBackup('manual', `Respaldo manual creado por ${usuarioActual?.user || 'usuario'}`);
+      const updatedBackups = getBackupsList();
+      if (setSystemSnapshots) setSystemSnapshots(updatedBackups);
+      alert(`✅ Respaldo manual creado exitosamente.`);
+    } catch (err) {
+      alert(`❌ Error creando respaldo: ${err.message}`);
+    } finally {
+      setIsBackupCreating(false);
+    }
+  };
+
+  const handleImportBackupFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const parsed = JSON.parse(event.target.result);
+        if (!parsed.snapshot && !parsed.data) {
+          alert("El archivo seleccionado no es un formato de respaldo válido.");
+          return;
+        }
+        if (window.confirm("⚠️ ¿Deseas restaurar todo el sistema con este archivo de respaldo?\n\nLos datos actuales se actualizarán con la información del archivo.")) {
+          await restoreFromBackup(parsed.snapshot ? parsed : { snapshot: parsed });
+          alert("✅ Sistema restaurado exitosamente desde archivo JSON. Recargando...");
+          window.location.reload();
+        }
+      } catch (err) {
+        alert("❌ Error al procesar el archivo JSON: " + err.message);
+      }
+    };
+    reader.readAsText(file);
+  };
 
   // Local state for User Management
   const [uUser, setUUser] = useState("");
@@ -2454,30 +2496,60 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.app_data;`}
         {activeTab === "papelera" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "30px" }} className="animate-fade-in">
             {/* Header / Summary Card */}
-            <div className="glass-panel" style={{ padding: "24px", borderRadius: "16px", border: "1px solid rgba(168, 85, 247, 0.25)", display: "flex", flexDirection: "column", gap: "10px" }}>
+            <div className="glass-panel" style={{ padding: "24px", borderRadius: "16px", border: "1px solid rgba(168, 85, 247, 0.25)", display: "flex", flexDirection: "column", gap: "16px" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                   <Trash2 size={24} color="var(--color-secondary)" />
                   <div>
                     <h3 style={{ fontSize: "1.2rem", fontWeight: "800", color: "#fff", margin: 0 }}>
-                      Papelera de Reciclaje del Sistema & Respaldos Horarios
+                      Papelera Avanzada & Respaldos Horarios del Sistema
                     </h3>
                     <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: "4px 0 0 0" }}>
-                      Los elementos eliminados se conservan protegidos por 30 días. Puedes restituir cualquier orden, cliente o inventario a su módulo original, o restaurar todo el sistema a una hora específica.
+                      Gestión integral de puntos de restauración en el tiempo y protección contra borrados accidentales con soft-delete de 30 días.
                     </p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const res = await testSupabaseConnection();
-                    alert(res.message);
-                  }}
-                  className="btn"
-                  style={{ backgroundColor: "rgba(16, 185, 129, 0.15)", color: "#10b981", border: "1px solid rgba(16, 185, 129, 0.3)", fontWeight: "700", display: "flex", alignItems: "center", gap: "6px" }}
-                >
-                  ⚡ Diagnóstico de Conexión Nube
-                </button>
+                
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowPapeleraModal(true)}
+                    className="btn"
+                    style={{ backgroundColor: "rgba(239, 68, 68, 0.2)", color: "#f87171", border: "1px solid rgba(239, 68, 68, 0.4)", fontWeight: "700", display: "flex", alignItems: "center", gap: "6px" }}
+                  >
+                    🗑️ Abrir Papelera Avanzada
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleManualBackup}
+                    disabled={isBackupCreating}
+                    className="btn"
+                    style={{ backgroundColor: "rgba(59, 130, 246, 0.2)", color: "#60a5fa", border: "1px solid rgba(59, 130, 246, 0.4)", fontWeight: "700", display: "flex", alignItems: "center", gap: "6px" }}
+                  >
+                    ⚡ {isBackupCreating ? "Creando Respaldo..." : "Crear Respaldo Ahora"}
+                  </button>
+
+                  <label
+                    className="btn"
+                    style={{ backgroundColor: "rgba(168, 85, 247, 0.2)", color: "#c084fc", border: "1px solid rgba(168, 85, 247, 0.4)", fontWeight: "700", display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }}
+                  >
+                    📥 Importar Respaldo JSON
+                    <input type="file" accept=".json" onChange={handleImportBackupFile} style={{ display: "none" }} />
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const res = await testSupabaseConnection();
+                      alert(res.message);
+                    }}
+                    className="btn"
+                    style={{ backgroundColor: "rgba(16, 185, 129, 0.15)", color: "#10b981", border: "1px solid rgba(16, 185, 129, 0.3)", fontWeight: "700", display: "flex", alignItems: "center", gap: "6px" }}
+                  >
+                    🔍 Diagnóstico Nube
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -3093,6 +3165,15 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.app_data;`}
         </div>,
         document.body
       )}
+      {/* 🗑️ PAPELERA AVANZADA MODAL */}
+      <PapeleraModal 
+        isOpen={showPapeleraModal} 
+        onClose={() => setShowPapeleraModal(false)} 
+        onDataRestored={() => {
+          if (setPapeleraSistema) setPapeleraSistema(getTrashItems());
+        }} 
+        currentUser={usuarioActual} 
+      />
     </div>
   );
 }
