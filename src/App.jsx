@@ -869,12 +869,15 @@ export default function App() {
             }
 
             const mergedValStr = JSON.stringify(mergedValue);
+            const cloudValStr = JSON.stringify(cloudValue);
             globalLastSynced[item.key] = mergedValStr;
             if (activeSetter) activeSetter(mergedValue);
             setLocalStorage(item.key, mergedValue);
 
-            // Re-sync merged dataset back to cloud so Supabase is guaranteed to have all local & cloud items
-            syncKeyToCloud(item.key, mergedValue);
+            // Re-sync merged dataset back to cloud ONLY if local data had new merged items
+            if (mergedValStr !== cloudValStr) {
+              syncKeyToCloud(item.key, mergedValue);
+            }
           }
         });
       }
