@@ -22,6 +22,7 @@ import {
   GripVertical,
   RotateCcw
 } from "lucide-react";
+import { testSupabaseConnection } from "../utils/supabase";
 
 export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLogout, isOpen, setIsOpen, realtimeStatus, handleForceSyncMobile }) {
   const rol = usuarioActual?.rol?.toLowerCase()?.trim();
@@ -382,7 +383,13 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
           {handleForceSyncMobile && (
             <button
               type="button"
-              onClick={handleForceSyncMobile}
+              onClick={async () => {
+                if (handleForceSyncMobile) await handleForceSyncMobile();
+                const res = await testSupabaseConnection();
+                if (!res.ok) {
+                  alert(res.message);
+                }
+              }}
               style={{
                 width: "100%",
                 padding: "6px 10px",

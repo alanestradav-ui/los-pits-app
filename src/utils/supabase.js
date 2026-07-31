@@ -110,19 +110,30 @@ export const removeFromOfflineQueue = (key) => {
  */
 export const testSupabaseConnection = async () => {
   const client = getSupabaseClient();
-  if (!client) return { ok: false, message: "No se han configurado credenciales de Supabase." };
+  if (!client) return { ok: false, message: "No se han configurado credenciales de Supabase en este dispositivo." };
   try {
     const start = Date.now();
     const queryPromise = client.from('app_data').select('key').limit(1);
-    const { error } = await withTimeout(queryPromise, 6000, "El servidor Supabase no respondió dentro de 6 segundos.");
+    const { error } = await withTimeout(queryPromise, 6000, "El servidor de Supabase no respondió (Tiempo de espera de 6s agotado).");
     const latency = Date.now() - start;
 
     if (error) {
       return { ok: false, message: `Error de respuesta del servidor (${error.message}).` };
     }
-    return { ok: true, latency, message: `Conexión exitosa con Supabase (${latency}ms).` };
+    return { ok: true, latency, message: `🟢 Conexión exitosa con el servidor de Supabase (${latency}ms).` };
   } catch (err) {
-    return { ok: false, message: `Error de conexión: ${err.message || 'El servidor puede estar pausado o fuera de línea.'}` };
+    const url = localStorage.getItem('supabase_url') || DEFAULT_SUPABASE_URL;
+    return { 
+      ok: false, 
+      isPaused: true,
+      message: `⚠️ No se pudo conectar al servidor de Supabase (${url}).\n\n` +
+               `Causa principal: El proyecto de Supabase está PAUSADO debido al tiempo de inactividad del plan gratuito.\n\n` +
+               `Pasos para solucionarlo en 1 minuto:\n` +
+               `1. Inicia sesión en https://supabase.com/dashboard\n` +
+               `2. Selecciona tu proyecto ("mrpdkjhmzioyygictjua")\n` +
+               `3. Haz clic en el botón "Restore Project" / "Resume Project"\n` +
+               `4. Vuelve a la app y presiona "Reintentar Sincronización".`
+    };
   }
 };
 
