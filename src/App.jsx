@@ -990,10 +990,13 @@ export default function App() {
         const activeSetRealtimeStatus = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
         if (status === 'SUBSCRIBED') {
           activeSetRealtimeStatus('connected');
-        } else if (status === 'CLOSED') {
-          activeSetRealtimeStatus('disconnected');
-        } else {
-          activeSetRealtimeStatus('error');
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          // Reintento silencioso en segundo plano sin falsas alarmas si REST sigue funcionando
+          setTimeout(() => {
+            try {
+              if (channel) channel.subscribe();
+            } catch (e) {}
+          }, 5000);
         }
       });
 
