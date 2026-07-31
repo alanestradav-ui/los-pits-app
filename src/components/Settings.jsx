@@ -61,9 +61,17 @@ export default function SettingsComponent({
   setClientes,
   vehiculos = [],
   setVehiculos,
-  realtimeStatus
+  realtimeStatus,
+  papeleraSistema = [],
+  setPapeleraSistema,
+  systemSnapshots = [],
+  setSystemSnapshots,
+  softDelete,
+  restoreTrashItem,
+  restoreSystemSnapshot
 }) {
   const [activeTab, setActiveTab] = useState("general");
+  const [trashFilter, setTrashFilter] = useState("todos");
 
   // Local state for User Management
   const [uUser, setUUser] = useState("");
@@ -906,6 +914,12 @@ export default function SettingsComponent({
           style={{ ...styles.subTabBtn, ...(activeTab === "cloud" ? styles.subTabActive : {}) }}
         >
           ☁️ Sincronización en la Nube
+        </button>
+        <button 
+          onClick={() => setActiveTab("papelera")}
+          style={{ ...styles.subTabBtn, ...(activeTab === "papelera" ? styles.subTabActive : {}) }}
+        >
+          🗑️ Papelera y Respaldos ({papeleraSistema.length})
         </button>
       </div>
 
@@ -2432,6 +2446,220 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.app_data;`}
                 </div>
               </div>
 
+            </div>
+          </div>
+        )}
+
+        {/* Tab 8: Papelera de Reciclaje y Respaldos Horarios */}
+        {activeTab === "papelera" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "30px" }} className="animate-fade-in">
+            {/* Header / Summary Card */}
+            <div className="glass-panel" style={{ padding: "24px", borderRadius: "16px", border: "1px solid rgba(168, 85, 247, 0.25)", display: "flex", flexDirection: "column", gap: "10px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <Trash2 size={24} color="var(--color-secondary)" />
+                  <div>
+                    <h3 style={{ fontSize: "1.2rem", fontWeight: "800", color: "#fff", margin: 0 }}>
+                      Papelera de Reciclaje del Sistema & Respaldos Horarios
+                    </h3>
+                    <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: "4px 0 0 0" }}>
+                      Los elementos eliminados se conservan protegidos por 30 días. Puedes restituir cualquier orden, cliente o inventario a su módulo original, o restaurar todo el sistema a una hora específica.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const res = await testSupabaseConnection();
+                    alert(res.message);
+                  }}
+                  className="btn"
+                  style={{ backgroundColor: "rgba(16, 185, 129, 0.15)", color: "#10b981", border: "1px solid rgba(16, 185, 129, 0.3)", fontWeight: "700", display: "flex", alignItems: "center", gap: "6px" }}
+                >
+                  ⚡ Diagnóstico de Conexión Nube
+                </button>
+              </div>
+            </div>
+
+            {/* Section 1: Papelera de Reciclaje (Soft-Deleted Items) */}
+            <div className="glass-panel" style={{ padding: "24px", borderRadius: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px", marginBottom: "20px" }}>
+                <div>
+                  <h4 style={{ fontSize: "1.1rem", fontWeight: "700", color: "#fff", margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
+                    🗑️ Elementos Eliminados en los Últimos 30 Días ({papeleraSistema.length})
+                  </h4>
+                  <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Filtra y restituye órdenes o datos borrados por error</span>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <label style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Filtrar por Módulo:</label>
+                  <select
+                    className="input-field"
+                    value={trashFilter}
+                    onChange={(e) => setTrashFilter(e.target.value)}
+                    style={{ ...styles.select, width: "auto", padding: "6px 12px" }}
+                  >
+                    <option value="todos">Todos los Módulos</option>
+                    <option value="taller">Taller Mecánico</option>
+                    <option value="carwash">Carwash</option>
+                    <option value="clientes">Clientes</option>
+                    <option value="vehiculos">Vehículos</option>
+                    <option value="workshopInventory">Bodega Taller</option>
+                    <option value="cafeteriaInventory">Cafetería</option>
+                    <option value="compras">Compras</option>
+                  </select>
+                </div>
+              </div>
+
+              {papeleraSistema.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--text-muted)" }}>
+                  <Trash2 size={40} style={{ opacity: 0.3, marginBottom: "10px" }} />
+                  <p style={{ margin: 0, fontWeight: "600" }}>La papelera está vacía.</p>
+                  <span style={{ fontSize: "0.8rem" }}>Ningún registro ha sido eliminado recientemente.</span>
+                </div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "16px" }}>
+                  {papeleraSistema
+                    .filter(item => trashFilter === "todos" || item.moduloOrigen === trashFilter)
+                    .map((item) => {
+                      const orig = item.itemOriginal || {};
+                      const title = orig.cliente || orig.nombre || orig.placa || orig.vehiculo || orig.id || "Registro";
+                      const subTitle = orig.trabajo || orig.tipoServicio || orig.dpi || orig.telefono || orig.descripcion || "";
+
+                      return (
+                        <div
+                          key={item.id}
+                          className="glass-panel"
+                          style={{
+                            padding: "16px",
+                            borderRadius: "12px",
+                            border: "1px solid rgba(255, 255, 255, 0.08)",
+                            display: "flex",
+                            flexDirection: "column",
+                            justifyContent: "space-between",
+                            gap: "12px"
+                          }}
+                        >
+                          <div>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                              <span className="badge" style={{ backgroundColor: "rgba(168, 85, 247, 0.15)", color: "#c084fc", borderColor: "rgba(168, 85, 247, 0.3)", textTransform: "uppercase", fontSize: "0.7rem", fontWeight: "800" }}>
+                                {item.moduloOrigen}
+                              </span>
+                              <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                                {new Date(item.fechaEliminacion).toLocaleDateString()} {new Date(item.fechaEliminacion).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+
+                            <h5 style={{ fontSize: "1rem", fontWeight: "700", color: "#fff", margin: "0 0 4px 0" }}>
+                              {title}
+                            </h5>
+                            {subTitle && (
+                              <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", margin: 0 }}>
+                                {subTitle}
+                              </p>
+                            )}
+
+                            <div style={{ marginTop: "10px", fontSize: "0.75rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "6px" }}>
+                              <span>👤 Borrado por: <strong>{item.usuarioEliminador || "admin"}</strong></span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => restoreTrashItem && restoreTrashItem(item.id)}
+                            className="btn"
+                            style={{
+                              width: "100%",
+                              backgroundColor: "rgba(16, 185, 129, 0.15)",
+                              color: "#10b981",
+                              border: "1px solid rgba(16, 185, 129, 0.3)",
+                              fontWeight: "700",
+                              fontSize: "0.8rem",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: "6px",
+                              padding: "8px"
+                            }}
+                          >
+                            🔄 Restituir / Restaurar Elemento
+                          </button>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+
+            {/* Section 2: Cronología de Respaldos Horarios (Point-in-Time Restore) */}
+            <div className="glass-panel" style={{ padding: "24px", borderRadius: "16px" }}>
+              <div style={{ marginBottom: "20px" }}>
+                <h4 style={{ fontSize: "1.1rem", fontWeight: "700", color: "#fff", margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
+                  ⏰ Cronología de Respaldos Horarios (Restauración Punto en el Tiempo)
+                </h4>
+                <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                  El sistema toma fotocopias completas de todo el sistema cada hora. Puedes revertir todo a una hora específica.
+                </span>
+              </div>
+
+              {systemSnapshots.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "30px 20px", color: "var(--text-muted)" }}>
+                  <p style={{ margin: 0, fontWeight: "600" }}>Iniciando motor de respaldos horarios...</p>
+                  <span style={{ fontSize: "0.8rem" }}>Los respaldos automáticos aparecerán aquí cada hora.</span>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "450px", overflowY: "auto", paddingRight: "6px" }}>
+                  {systemSnapshots.map((snap) => (
+                    <div
+                      key={snap.id}
+                      className="glass-panel"
+                      style={{
+                        padding: "12px 16px",
+                        borderRadius: "10px",
+                        border: "1px solid rgba(255, 255, 255, 0.06)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        flexWrap: "wrap",
+                        gap: "10px"
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <div style={{ backgroundColor: "rgba(59, 130, 246, 0.15)", color: "#3b82f6", padding: "8px", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          📅
+                        </div>
+                        <div>
+                          <h6 style={{ fontSize: "0.9rem", fontWeight: "700", color: "#fff", margin: 0 }}>
+                            {snap.label || "Respaldo Horario"} — {new Date(snap.fecha).toLocaleDateString()} {new Date(snap.fecha).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </h6>
+                          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                            Taller: {snap.totalOrdenes || 0} órdenes | Carwash: {snap.totalCarwash || 0} lavados
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => restoreSystemSnapshot && restoreSystemSnapshot(snap.id)}
+                        className="btn"
+                        style={{
+                          backgroundColor: "rgba(245, 158, 11, 0.15)",
+                          color: "#fbbf24",
+                          border: "1px solid rgba(245, 158, 11, 0.3)",
+                          fontWeight: "700",
+                          fontSize: "0.78rem",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          padding: "6px 12px"
+                        }}
+                      >
+                        ⏪ Revertir Sistema a esta Hora
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}

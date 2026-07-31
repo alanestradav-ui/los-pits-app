@@ -42,9 +42,55 @@ export const safeParseJSON = (val) => {
   return result;
 };
 
+// Offline Queue Manager
+const QUEUE_KEY = "sync_queue";
+
+export const getOfflineQueue = () => {
+  try {
+    const raw = localStorage.getItem(QUEUE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+export const addToOfflineQueue = (key, value) => {
+  const queue = getOfflineQueue();
+  const filtered = queue.filter(q => q.key !== key);
+  filtered.push({ key, value, timestamp: new Date().toISOString() });
+  localStorage.setItem(QUEUE_KEY, JSON.stringify(filtered));
+};
+
+export const removeFromOfflineQueue = (key) => {
+  const queue = getOfflineQueue();
+  const filtered = queue.filter(q => q.key !== key);
+  localStorage.setItem(QUEUE_KEY, JSON.stringify(filtered));
+};
+
+export const testSupabaseConnection = async () => {
+  const client = getSupabaseClient();
+  if (!client) return { ok: false, message: "No se han configurado credenciales de Supabase." };
+  try {
+    const start = Date.now();
+    const { data, error } = await client.from('app_data').select('key').limit(1);
+    const latency = Date.now() - start;
+    if (error) {
+      return { ok: false, message: `Error de respuesta del servidor (${error.message}).` };
+    }
+    return { ok: true, latency, message: `Conexión exitosa con Supabase (${latency}ms).` };
+  } catch (err) {
+    return { ok: false, message: `Error de red o conexión al servidor (${err.message || 'Sin respuesta'}).` };
+  }
+};
+
 export const syncKeyToCloud = async (key, value) => {
   const client = getSupabaseClient();
-  if (!client) return false;
+  const cleanVal = safeParseJSON(value);
+
+  if (!client) {
+    addToOfflineQueue(key, cleanVal);
+    return false;
+  }
 
   const sanitizePayload = (data, stripImages = false) => {
     const parsed = safeParseJSON(data);
@@ -78,13 +124,19 @@ export const syncKeyToCloud = async (key, value) => {
       
       if (retryResult.error) {
         console.error(`[Sync] Retry sync for key "${key}" failed:`, retryResult.error.message);
+        addToOfflineQueue(key, cleanVal);
         return false;
       }
     }
+
+    // SERVER CONFIRMED RECEIPT: Remove from offline queue ONLY upon successful server response!
+    removeFromOfflineQueue(key);
     return true;
   } catch (err) {
     console.error(`[Sync] Error syncing key "${key}" to Supabase:`, err);
+    addToOfflineQueue(key, cleanVal);
     return false;
   }
 };
+
 

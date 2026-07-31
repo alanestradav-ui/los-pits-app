@@ -23,7 +23,7 @@ import {
   RotateCcw
 } from "lucide-react";
 
-export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLogout, isOpen, setIsOpen, realtimeStatus }) {
+export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLogout, isOpen, setIsOpen, realtimeStatus, handleForceSyncMobile }) {
   const rol = usuarioActual?.rol?.toLowerCase()?.trim();
   
   // Define menu items based on role permissions
@@ -358,31 +358,50 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
           </div>
         </div>
 
-        {/* Cloud Connection Status */}
-        <div className="cloud-status-container" style={styles.cloudStatusContainer}>
+        {/* Cloud Connection Semáforo Status */}
+        <div className="cloud-status-container" style={{ ...styles.cloudStatusContainer, flexDirection: "column", gap: "6px" }}>
           {realtimeStatus === "connected" && (
-            <div className="cloud-status-badge badge-connected" style={{ ...styles.cloudStatusBadge, ...styles.badgeConnected }}>
-              <span className="cloud-status-dot dot-connected" style={{ ...styles.cloudStatusDot, ...styles.dotConnected }}></span>
-              <span>Conectado a la Nube</span>
+            <div className="cloud-status-badge badge-connected" style={{ ...styles.cloudStatusBadge, ...styles.badgeConnected, backgroundColor: "rgba(16, 185, 129, 0.15)", color: "#10b981", border: "1px solid rgba(16, 185, 129, 0.3)" }}>
+              <span className="cloud-status-dot dot-connected" style={{ ...styles.cloudStatusDot, ...styles.dotConnected, backgroundColor: "#10b981" }}></span>
+              <span>🟢 Nube Conectada</span>
             </div>
           )}
           {realtimeStatus === "connecting" && (
-            <div className="cloud-status-badge badge-connecting" style={{ ...styles.cloudStatusBadge, ...styles.badgeConnecting }}>
-              <span className="cloud-status-dot dot-connecting" style={{ ...styles.cloudStatusDot, ...styles.dotConnecting }}></span>
-              <span>Conectando a la Nube...</span>
+            <div className="cloud-status-badge badge-connecting" style={{ ...styles.cloudStatusBadge, ...styles.badgeConnecting, backgroundColor: "rgba(245, 158, 11, 0.15)", color: "#f59e0b", border: "1px solid rgba(245, 158, 11, 0.3)" }}>
+              <span className="cloud-status-dot dot-connecting" style={{ ...styles.cloudStatusDot, ...styles.dotConnecting, backgroundColor: "#f59e0b" }}></span>
+              <span>🟡 Sincronizando Pendientes...</span>
             </div>
           )}
-          {realtimeStatus === "disconnected" && (
-            <div className="cloud-status-badge badge-disconnected" style={{ ...styles.cloudStatusBadge, ...styles.badgeDisconnected }}>
-              <span className="cloud-status-dot dot-disconnected" style={{ ...styles.cloudStatusDot, ...styles.dotDisconnected }}></span>
-              <span>Modo Local (Sin Nube)</span>
+          {(realtimeStatus === "disconnected" || realtimeStatus === "error") && (
+            <div className="cloud-status-badge badge-disconnected" style={{ ...styles.cloudStatusBadge, ...styles.badgeDisconnected, backgroundColor: "rgba(239, 68, 68, 0.15)", color: "#ef4444", border: "1px solid rgba(239, 68, 68, 0.3)" }}>
+              <span className="cloud-status-dot dot-disconnected" style={{ ...styles.cloudStatusDot, ...styles.dotDisconnected, backgroundColor: "#ef4444" }}></span>
+              <span>🔴 Modo Offline (Local)</span>
             </div>
           )}
-          {realtimeStatus === "error" && (
-            <div className="cloud-status-badge badge-error" style={{ ...styles.cloudStatusBadge, ...styles.badgeError }}>
-              <span className="cloud-status-dot dot-error" style={{ ...styles.cloudStatusDot, ...styles.dotError }}></span>
-              <span>Error de Conexión</span>
-            </div>
+
+          {handleForceSyncMobile && (
+            <button
+              type="button"
+              onClick={handleForceSyncMobile}
+              style={{
+                width: "100%",
+                padding: "6px 10px",
+                fontSize: "0.75rem",
+                fontWeight: "700",
+                borderRadius: "6px",
+                backgroundColor: "rgba(168, 85, 247, 0.15)",
+                border: "1px solid rgba(168, 85, 247, 0.3)",
+                color: "var(--color-secondary)",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "6px",
+                marginTop: "4px"
+              }}
+            >
+              ☁️ Subir Cambios del Celular
+            </button>
           )}
         </div>
 

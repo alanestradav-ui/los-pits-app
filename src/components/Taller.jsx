@@ -158,7 +158,8 @@ export default function Taller({
   setVehiculos,
   carwashPresets = [],
   cotizacionesRepuestos = [],
-  setCotizacionesRepuestos
+  setCotizacionesRepuestos,
+  softDelete
 }) {
   const [viewingVendorQuotesOrder, setViewingVendorQuotesOrder] = useState(null);
   const [cliente, setCliente] = useState("");
@@ -2842,7 +2843,11 @@ export default function Taller({
   };
 
   const eliminarOrden = (id) => {
-    if (window.confirm("¿Seguro que deseas eliminar esta orden?")) {
+    const target = (ordenes || []).find(o => o.id === id);
+    if (window.confirm("¿Seguro que deseas eliminar esta orden? Se resguardará en la Papelera de Reciclaje por 30 días.")) {
+      if (softDelete && target) {
+        softDelete("taller", target, usuarioActual?.user);
+      }
       setOrdenes(ordenes.filter((o) => o.id !== id));
     }
   };

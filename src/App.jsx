@@ -56,6 +56,8 @@ const globalActiveSetters = {
   compras: null,
   toolsInventory: null,
   accesoriosInventory: null,
+  papeleraSistema: null,
+  systemSnapshots: null,
   setIsInitialPullDone: null,
   setRealtimeStatus: null
 };
@@ -81,7 +83,9 @@ const ARRAY_KEYS = [
   "vehiculos",
   "compras",
   "toolsInventory",
-  "accesoriosInventory"
+  "accesoriosInventory",
+  "papeleraSistema",
+  "systemSnapshots"
 ];
 
 const filterOutMockItems = (key, list) => {
@@ -601,11 +605,91 @@ export default function App() {
     return Array.isArray(val) ? val : [];
   });
 
+  const [papeleraSistema, setPapeleraSistema] = useState(() => {
+    const val = getLocalStorage("papeleraSistema", []);
+    const clean = Array.isArray(val) ? val : [];
+    const now = Date.now();
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+    return clean.filter(item => item && item.fechaEliminacion && (now - new Date(item.fechaEliminacion).getTime() <= thirtyDaysMs));
+  });
+
+  const [systemSnapshots, setSystemSnapshots] = useState(() => {
+    const val = getLocalStorage("systemSnapshots", []);
+    const clean = Array.isArray(val) ? val : [];
+    const now = Date.now();
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+    return clean.filter(s => s && s.fecha && (now - new Date(s.fecha).getTime() <= thirtyDaysMs));
+  });
+
+  // 🗑️ SOFT-DELETE HELPER: Moves deleted item to 30-day Trash Bin instead of destroying it
+  const softDelete = (modulo, item, user) => {
+    if (!item) return;
+    const deletedEntry = {
+      id: `trash_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      moduloOrigen: modulo,
+      itemOriginal: item,
+      fechaEliminacion: new Date().toISOString(),
+      usuarioEliminador: user || usuarioActual?.user || "admin"
+    };
+    setPapeleraSistema(prev => [deletedEntry, ...(Array.isArray(prev) ? prev : [])]);
+  };
+
+  // 🔄 RESTORE TRASH ITEM: Restores soft-deleted item back to its origin module
+  const restoreTrashItem = (trashId) => {
+    const entry = (papeleraSistema || []).find(p => p.id === trashId);
+    if (!entry) return;
+
+    const { moduloOrigen, itemOriginal } = entry;
+
+    if (moduloOrigen === "taller") {
+      setOrdenes(prev => [itemOriginal, ...(Array.isArray(prev) ? prev : [])]);
+    } else if (moduloOrigen === "carwash") {
+      setCarwash(prev => [itemOriginal, ...(Array.isArray(prev) ? prev : [])]);
+    } else if (moduloOrigen === "clientes") {
+      setClientes(prev => [itemOriginal, ...(Array.isArray(prev) ? prev : [])]);
+    } else if (moduloOrigen === "vehiculos") {
+      setVehiculos(prev => [itemOriginal, ...(Array.isArray(prev) ? prev : [])]);
+    } else if (moduloOrigen === "workshopInventory") {
+      setWorkshopInventory(prev => [itemOriginal, ...(Array.isArray(prev) ? prev : [])]);
+    } else if (moduloOrigen === "cafeteriaInventory") {
+      setCafeteriaInventory(prev => [itemOriginal, ...(Array.isArray(prev) ? prev : [])]);
+    } else if (moduloOrigen === "compras") {
+      setCompras(prev => [itemOriginal, ...(Array.isArray(prev) ? prev : [])]);
+    }
+
+    setPapeleraSistema(prev => (prev || []).filter(p => p.id !== trashId));
+    alert(`¡Elemento del módulo "${moduloOrigen}" restituido con éxito!`);
+  };
+
+  // ⏪ POINT-IN-TIME RESTORE: Restores full system state to a chosen hourly snapshot
+  const restoreSystemSnapshot = (snapshotId) => {
+    const snapshot = (systemSnapshots || []).find(s => s.id === snapshotId);
+    if (!snapshot || !snapshot.data) return;
+
+    const confirmRestore = window.confirm(
+      `⚠️ RESTAURACIÓN DEL SISTEMA A UN PUNTO EN EL TIEMPO\n\n¿Estás seguro de restaurar el sistema al respaldo del ${new Date(snapshot.fecha).toLocaleString()}?\n\nEsto devolverá el 100% de las órdenes, lavados, inventarios y finanzas exactamente a como estaban en esa hora.`
+    );
+    if (!confirmRestore) return;
+
+    const { data } = snapshot;
+
+    if (Array.isArray(data.ordenes)) setOrdenes(data.ordenes);
+    if (Array.isArray(data.carwash)) setCarwash(data.carwash);
+    if (Array.isArray(data.clientes)) setClientes(data.clientes);
+    if (Array.isArray(data.vehiculos)) setVehiculos(data.vehiculos);
+    if (Array.isArray(data.workshopInventory)) setWorkshopInventory(data.workshopInventory);
+    if (Array.isArray(data.cafeteriaInventory)) setCafeteriaInventory(data.cafeteriaInventory);
+    if (Array.isArray(data.cuentasPorCobrar)) setCuentasPorCobrar(data.cuentasPorCobrar);
+    if (Array.isArray(data.cuentasPorPagar)) setCuentasPorPagar(data.cuentasPorPagar);
+    if (Array.isArray(data.compras)) setCompras(data.compras);
+
+    alert(`¡Sistema restaurado con éxito al estado del ${new Date(snapshot.fecha).toLocaleString()}!`);
+  };
+
   // 💾 PERSISTENCE EFFECT
   useEffect(() => {
     setLocalStorage("usuarioActual", usuarioActual);
     
-    // Set appropriate landing page/tab according to user role when logging in
     if (usuarioActual) {
       if (usuarioActual.rol === "mecanico") {
         setCurrentTab("taller");
@@ -650,6 +734,8 @@ export default function App() {
     globalActiveSetters.compras = setCompras;
     globalActiveSetters.toolsInventory = setToolsInventory;
     globalActiveSetters.accesoriosInventory = setAccesoriosInventory;
+    globalActiveSetters.papeleraSistema = setPapeleraSistema;
+    globalActiveSetters.systemSnapshots = setSystemSnapshots;
     globalActiveSetters.setIsInitialPullDone = setIsInitialPullDone;
     globalActiveSetters.setRealtimeStatus = setRealtimeStatus;
 
@@ -1144,6 +1230,16 @@ export default function App() {
     syncToCloud("cotizacionesRepuestos", cotizacionesRepuestos);
   }, [cotizacionesRepuestos]);
 
+  useEffect(() => {
+    setLocalStorage("papeleraSistema", papeleraSistema);
+    syncToCloud("papeleraSistema", papeleraSistema);
+  }, [papeleraSistema]);
+
+  useEffect(() => {
+    setLocalStorage("systemSnapshots", systemSnapshots);
+    syncToCloud("systemSnapshots", systemSnapshots);
+  }, [systemSnapshots]);
+
   const usuarioActivo = usuarios.find(u => (u.user || "").toLowerCase().trim() === (usuarioActual?.user || "").toLowerCase().trim()) || usuarioActual;
 
   const userHasPermission = (user, tabId) => {
@@ -1267,6 +1363,7 @@ export default function App() {
             carwashPresets={carwashPresets}
             cotizacionesRepuestos={cotizacionesRepuestos}
             setCotizacionesRepuestos={setCotizacionesRepuestos}
+            softDelete={softDelete}
           />
         )}
 
@@ -1490,6 +1587,13 @@ export default function App() {
             vehiculos={vehiculos}
             setVehiculos={setVehiculos}
             realtimeStatus={realtimeStatus}
+            papeleraSistema={papeleraSistema}
+            setPapeleraSistema={setPapeleraSistema}
+            systemSnapshots={systemSnapshots}
+            setSystemSnapshots={setSystemSnapshots}
+            softDelete={softDelete}
+            restoreTrashItem={restoreTrashItem}
+            restoreSystemSnapshot={restoreSystemSnapshot}
           />
         )}
 
