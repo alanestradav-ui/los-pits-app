@@ -369,7 +369,7 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
           {realtimeStatus === "connecting" && (
             <div className="cloud-status-badge badge-connecting" style={{ ...styles.cloudStatusBadge, ...styles.badgeConnecting, backgroundColor: "rgba(245, 158, 11, 0.15)", color: "#f59e0b", border: "1px solid rgba(245, 158, 11, 0.3)" }}>
               <span className="cloud-status-dot dot-connecting" style={{ ...styles.cloudStatusDot, ...styles.dotConnecting, backgroundColor: "#f59e0b" }}></span>
-              <span>🟡 Sincronizando Pendientes...</span>
+              <span>🟡 Conectando con Nube...</span>
             </div>
           )}
           {(realtimeStatus === "disconnected" || realtimeStatus === "error") && (
@@ -389,9 +389,9 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
                 fontSize: "0.75rem",
                 fontWeight: "700",
                 borderRadius: "6px",
-                backgroundColor: "rgba(168, 85, 247, 0.15)",
-                border: "1px solid rgba(168, 85, 247, 0.3)",
-                color: "var(--color-secondary)",
+                backgroundColor: "rgba(59, 130, 246, 0.15)",
+                border: "1px solid rgba(59, 130, 246, 0.3)",
+                color: "#60a5fa",
                 cursor: "pointer",
                 display: "flex",
                 alignItems: "center",
@@ -400,7 +400,7 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
                 marginTop: "4px"
               }}
             >
-              ☁️ Subir Cambios del Celular
+              🔄 Reintentar Sincronización
             </button>
           )}
         </div>

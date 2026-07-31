@@ -20,7 +20,7 @@ import Accesorios from "./components/Accesorios";
 import Pantalla from "./components/Pantalla";
 import VendorQuotes from "./components/VendorQuotes";
 import { getLocalStorage, setLocalStorage } from "./utils/storage";
-import { getSupabaseClient, syncKeyToCloud, safeParseJSON } from "./utils/supabase";
+import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout } from "./utils/supabase";
 import { initHourlyBackupScheduler, checkAndCreateHourlyBackup } from "./services/backupService";
 import { autoPurgeTrash } from "./services/trashService";
 
@@ -846,7 +846,9 @@ export default function App() {
     try {
       const activeSetRealtimeStatus = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
       if (activeSetRealtimeStatus) activeSetRealtimeStatus("connecting");
-      const { data, error } = await client.from('app_data').select('*');
+      
+      const queryPromise = client.from('app_data').select('*');
+      const { data, error } = await withTimeout(queryPromise, 8000, "Tiempo de espera (8s) superado al conectar con Supabase.");
       if (error) throw error;
 
       if (data && data.length > 0) {
@@ -884,7 +886,7 @@ export default function App() {
       if (activeSetInitialPullDone) activeSetInitialPullDone(true);
       return true;
     } catch (err) {
-      console.error("Error doing force pull from cloud:", err);
+      console.warn("[Sync] Falló o expiró el tiempo de respuesta del servidor de Supabase:", err.message);
       const activeSetRealtimeStatus = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
       if (activeSetRealtimeStatus) activeSetRealtimeStatus("disconnected");
       const activeSetInitialPullDone = globalActiveSetters.setIsInitialPullDone || setIsInitialPullDone;
@@ -1315,6 +1317,7 @@ export default function App() {
         isOpen={isSidebarOpen}
         setIsOpen={setIsSidebarOpen}
         realtimeStatus={realtimeStatus}
+        handleForceSyncMobile={forcePullFromCloud}
       />
 
       {/* Floating Menu Button for mobile */}
