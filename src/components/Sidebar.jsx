@@ -383,12 +383,8 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
           {handleForceSyncMobile && (
             <button
               type="button"
-              onClick={async () => {
-                if (handleForceSyncMobile) await handleForceSyncMobile();
-                const res = await testSupabaseConnection();
-                if (!res.ok) {
-                  alert(res.message);
-                }
+              onClick={() => {
+                if (handleForceSyncMobile) handleForceSyncMobile(true);
               }}
               style={{
                 width: "100%",
