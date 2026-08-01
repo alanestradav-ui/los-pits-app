@@ -901,9 +901,14 @@ export default function App() {
         activeSetRealtimeStatus("connecting");
       }
       
-      const queryPromise = client.from('app_data').select('*');
-      // Timeout tolerante de 12 segundos para dar margen si la ventana está en segundo plano
-      const { data, error } = await withTimeout(queryPromise, 12000, "Tiempo de espera (12s) superado al conectar con Supabase.");
+      const queryPromise = client
+        .from('app_data')
+        .select('key, value')
+        .neq('key', 'systemSnapshots')
+        .neq('key', 'app_data_backup_snapshot');
+
+      // Timeout de 25 segundos para asegurar la descarga completa en redes móviles de teléfonos
+      const { data, error } = await withTimeout(queryPromise, 25000, "Tiempo de espera (25s) superado al conectar con Supabase.");
       if (error) throw error;
 
       const cloudDataMap = new Map();
@@ -913,8 +918,8 @@ export default function App() {
         });
       }
 
-      // Barrido garantizado sobre TODAS las claves de la aplicación
-      const allKeysList = Array.from(new Set([...ARRAY_KEYS, "usuarios", "ordenes", "carwash", "parkingEntries", "parkingHistory", "vehiculosVenta", "workshopInventory", "cafeteriaInventory", "cafeteriaSales", "carwashPresets", "carwashInventory", "carwashConsumption", "tiendaSales", "cuentasPorCobrar", "cuentasPorPagar", "fixedCosts", "clientes", "vehiculos", "compras", "toolsInventory", "accesoriosInventory", "papeleraSistema", "systemSnapshots", "cotizacionesRepuestos"]));
+      // Barrido garantizado sobre TODAS las claves de la aplicación (excluyendo snapshots masivos de respaldo)
+      const allKeysList = Array.from(new Set([...ARRAY_KEYS, "usuarios", "ordenes", "carwash", "parkingEntries", "parkingHistory", "vehiculosVenta", "workshopInventory", "cafeteriaInventory", "cafeteriaSales", "carwashPresets", "carwashInventory", "carwashConsumption", "tiendaSales", "cuentasPorCobrar", "cuentasPorPagar", "fixedCosts", "clientes", "vehiculos", "compras", "toolsInventory", "accesoriosInventory", "papeleraSistema", "cotizacionesRepuestos"])).filter(k => k !== "systemSnapshots" && k !== "app_data_backup_snapshot");
 
       allKeysList.forEach(key => {
         const activeSetter = globalActiveSetters[key];
@@ -957,8 +962,8 @@ export default function App() {
       failedPullCount.current += 1;
       const activeSetRealtimeStatus = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
       
-      // Solo pasar a disconnected si fue iniciado por el usuario o si fallaron 2 o más intentos seguidos
-      if (isUserInitiated || failedPullCount.current >= 2) {
+      // Solo pasar a disconnected si fue iniciado por el usuario o si fallaron 3 o más intentos seguidos
+      if (isUserInitiated || failedPullCount.current >= 3) {
         if (activeSetRealtimeStatus) activeSetRealtimeStatus("disconnected");
       }
 
