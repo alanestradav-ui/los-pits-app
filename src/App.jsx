@@ -64,6 +64,7 @@ const globalActiveSetters = {
   puntosRecompensas: null,
   catalogoPremios: null,
   historialCanjes: null,
+  reglasPrograma: null,
   setIsInitialPullDone: null,
   setRealtimeStatus: null
 };
@@ -94,7 +95,8 @@ const ARRAY_KEYS = [
   "systemSnapshots",
   "puntosRecompensas",
   "catalogoPremios",
-  "historialCanjes"
+  "historialCanjes",
+  "reglasPrograma"
 ];
 
 const filterOutMockItems = (key, list) => {
@@ -693,6 +695,16 @@ export default function App() {
   const [historialCanjes, setHistorialCanjes] = useState(() => {
     const val = getLocalStorage("historialCanjes", []);
     return Array.isArray(val) ? val : [];
+  });
+
+  const [reglasPrograma, setReglasPrograma] = useState(() => {
+    const defaultReglas = [
+      { id: "r1", titulo: "Carwash, Detailing y Cafetería", formula: "Q1.00 gastado = 1 Punto Pits", descripcion: "Acumulación directa sobre el total cobrado al cliente.", tipo: "acumulacion" },
+      { id: "r2", titulo: "Taller Automotriz (Mano de Obra)", formula: "Q4.00 en Mano de Obra = 1 Punto Pits", descripcion: "Calculado exclusivamente sobre la Mano de Obra (excluye repuestos). Tope máximo: 1,500 pts por factura.", tipo: "acumulacion" },
+      { id: "r3", titulo: "Caducidad de Puntos por Inactividad", formula: "Vencimiento a los 6 Meses (180 Días)", descripcion: "Los puntos vencerán si el cliente pasa más de 6 meses sin registrar una sola visita.", tipo: "caducidad" }
+    ];
+    const val = getLocalStorage("reglasPrograma", defaultReglas);
+    return Array.isArray(val) && val.length > 0 ? val : defaultReglas;
   });
 
   // 🏆 LOYALTY REWARDS HELPER: Auto-calculates & awards Puntos Pits for completed services
@@ -1450,6 +1462,11 @@ export default function App() {
     syncToCloud("historialCanjes", historialCanjes);
   }, [historialCanjes]);
 
+  useEffect(() => {
+    setLocalStorage("reglasPrograma", reglasPrograma);
+    syncToCloud("reglasPrograma", reglasPrograma);
+  }, [reglasPrograma]);
+
   const usuarioActivo = usuarios.find(u => (u.user || "").toLowerCase().trim() === (usuarioActual?.user || "").toLowerCase().trim()) || usuarioActual;
 
   const userHasPermission = (user, tabId) => {
@@ -1732,9 +1749,11 @@ export default function App() {
             puntosRecompensas={puntosRecompensas}
             catalogoPremios={catalogoPremios}
             historialCanjes={historialCanjes}
+            reglasPrograma={reglasPrograma}
             onUpdatePuntos={setPuntosRecompensas}
             onCanjearPremio={handleCanjearPremio}
             onUpdateCatalogo={setCatalogoPremios}
+            onUpdateReglas={setReglasPrograma}
             usuarioActual={usuarioActivo}
           />
         )}

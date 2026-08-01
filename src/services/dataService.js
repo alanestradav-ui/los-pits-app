@@ -28,7 +28,8 @@ export const APP_ARRAY_KEYS = [
   "systemSnapshots",
   "puntosRecompensas",
   "catalogoPremios",
-  "historialCanjes"
+  "historialCanjes",
+  "reglasPrograma"
 ];
 
 export const APP_VAL_KEYS = [
