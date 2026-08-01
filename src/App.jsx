@@ -220,47 +220,97 @@ const mergeCollections = (key, localValRaw, cloudValRaw) => {
       const cNorm = normalizeStatus(cloudItem);
       const lNorm = normalizeStatus(localItem);
 
+      if (!cNorm) return lNorm;
+      if (!lNorm) return cNorm;
+
       const stateWeight = (st) => {
-        if (st === "Entregado") return 3;
-        if (st === "Listo para entrega" || st === "Listo") return 2;
-        if (st === "En proceso de reparación" || st === "En proceso") return 1;
-        return 0;
+        if (st === "Entregado" || st === "Cobrado") return 4;
+        if (st === "Listo para entrega" || st === "Listo") return 3;
+        if (st === "En proceso de reparación" || st === "En proceso") return 2;
+        return 1;
       };
 
       const cWeight = stateWeight(cNorm?.estado);
       const lWeight = stateWeight(lNorm?.estado);
 
-      let finalBase = (lWeight >= cWeight) ? { ...cNorm, ...lNorm } : { ...lNorm, ...cNorm };
+      // Estado más avanzado prevalece
+      const winnerBase = (lWeight >= cWeight) ? lNorm : cNorm;
+      const loserBase = (lWeight >= cWeight) ? cNorm : lNorm;
 
-      if (cWeight > lWeight) {
-        finalBase.estado = cNorm.estado;
-      } else if (lWeight > cWeight) {
-        finalBase.estado = lNorm.estado;
-      }
+      // 1. Fusión de Repuestos/Presupuesto (parts/repuestos): Unión de elementos sin duplicar ni borrar
+      const partsA = Array.isArray(cNorm?.presupuesto?.parts) ? cNorm.presupuesto.parts : (Array.isArray(cNorm?.repuestos) ? cNorm.repuestos : []);
+      const partsB = Array.isArray(lNorm?.presupuesto?.parts) ? lNorm.presupuesto.parts : (Array.isArray(lNorm?.repuestos) ? lNorm.repuestos : []);
 
-      if (cNorm?.estado === "Entregado" || lNorm?.estado === "Entregado") {
-        const deliveredSource = (lNorm?.estado === "Entregado") ? lNorm : cNorm;
-        const otherSource = (lNorm?.estado === "Entregado") ? cNorm : lNorm;
-        finalBase = {
-          ...otherSource,
-          ...deliveredSource,
-          estado: "Entregado",
-          total: (deliveredSource.total !== undefined && deliveredSource.total > 0)
-            ? deliveredSource.total
-            : (otherSource.total || 0),
-          nit: (deliveredSource.nit && deliveredSource.nit !== "C/F")
-            ? deliveredSource.nit
-            : (otherSource.nit || deliveredSource.nit || "C/F"),
-          nombreFacturacion: deliveredSource.nombreFacturacion || otherSource.nombreFacturacion || deliveredSource.cliente || otherSource.cliente,
-          formaPago: deliveredSource.formaPago || otherSource.formaPago,
-          formaPagoDesc: deliveredSource.formaPagoDesc || otherSource.formaPagoDesc,
-          cajero: deliveredSource.cajero || otherSource.cajero,
-          comision: deliveredSource.comision !== undefined ? deliveredSource.comision : otherSource.comision,
-          fecha: deliveredSource.fecha || otherSource.fecha
-        };
-      }
+      const mergedPartsMap = new Map();
+      [...partsA, ...partsB].forEach((p, idx) => {
+        if (!p) return;
+        const pKey = String(p.code || p.codigo || p.name || p.nombre || p.desc || `p_${idx}`).toLowerCase().trim();
+        if (!mergedPartsMap.has(pKey)) {
+          mergedPartsMap.set(pKey, p);
+        } else {
+          const existing = mergedPartsMap.get(pKey);
+          mergedPartsMap.set(pKey, {
+            ...existing,
+            ...p,
+            qty: Math.max(parseFloat(existing.qty) || 1, parseFloat(p.qty) || 1),
+            price: Math.max(parseFloat(existing.price) || 0, parseFloat(p.price) || 0)
+          });
+        }
+      });
+      const mergedParts = Array.from(mergedPartsMap.values());
 
-      return finalBase;
+      // 2. Fusión de Trabajos / Mano de Obra: Unión de tareas
+      const laborA = Array.isArray(cNorm?.presupuesto?.labor) ? cNorm.presupuesto.labor : (Array.isArray(cNorm?.trabajos) ? cNorm.trabajos : []);
+      const laborB = Array.isArray(lNorm?.presupuesto?.labor) ? lNorm.presupuesto.labor : (Array.isArray(lNorm?.trabajos) ? lNorm.trabajos : []);
+
+      const mergedLaborMap = new Map();
+      [...laborA, ...laborB].forEach((l, idx) => {
+        if (!l) return;
+        const lKey = (typeof l === "string" ? l : (l.name || l.descripcion || l.desc || `l_${idx}`)).toString().toLowerCase().trim();
+        if (!mergedLaborMap.has(lKey)) {
+          mergedLaborMap.set(lKey, l);
+        } else {
+          const existing = mergedLaborMap.get(lKey);
+          mergedLaborMap.set(lKey, typeof l === "object" ? { ...existing, ...l } : l);
+        }
+      });
+      const mergedLabor = Array.from(mergedLaborMap.values());
+
+      // 3. Cálculos Financieros: Tomar el mayor monto total válido y acumulado de anticipos
+      const totalC = parseFloat(cNorm.total) || 0;
+      const totalL = parseFloat(lNorm.total) || 0;
+      const maxTotal = Math.max(totalC, totalL);
+
+      const anticipoC = parseFloat(cNorm.anticipo) || 0;
+      const anticipoL = parseFloat(lNorm.anticipo) || 0;
+      const maxAnticipo = Math.max(anticipoC, anticipoL);
+
+      // 4. Fusión de Fotos
+      const photosC = Array.isArray(cNorm.fotos) ? cNorm.fotos : [];
+      const photosL = Array.isArray(lNorm.fotos) ? lNorm.fotos : [];
+      const mergedPhotos = Array.from(new Set([...photosC, ...photosL])).filter(Boolean);
+
+      return {
+        ...loserBase,
+        ...winnerBase,
+        total: maxTotal > 0 ? maxTotal : (winnerBase.total || loserBase.total || 0),
+        anticipo: maxAnticipo,
+        saldo: Math.max(0, (maxTotal > 0 ? maxTotal : (winnerBase.total || 0)) - maxAnticipo),
+        presupuesto: {
+          ...(loserBase.presupuesto || {}),
+          ...(winnerBase.presupuesto || {}),
+          parts: mergedParts.length > 0 ? mergedParts : (winnerBase.presupuesto?.parts || loserBase.presupuesto?.parts || []),
+          labor: mergedLabor.length > 0 ? mergedLabor : (winnerBase.presupuesto?.labor || loserBase.presupuesto?.labor || [])
+        },
+        fotos: mergedPhotos,
+        mecanico: winnerBase.mecanico || loserBase.mecanico,
+        lavador: winnerBase.lavador || loserBase.lavador,
+        cajero: winnerBase.cajero || loserBase.cajero,
+        formaPago: winnerBase.formaPago || loserBase.formaPago,
+        formaPagoDesc: winnerBase.formaPagoDesc || loserBase.formaPagoDesc,
+        nit: (winnerBase.nit && winnerBase.nit !== "C/F") ? winnerBase.nit : (loserBase.nit || "C/F"),
+        nombreFacturacion: winnerBase.nombreFacturacion || loserBase.nombreFacturacion
+      };
     };
 
     cloudVal.forEach((item, idx) => {
