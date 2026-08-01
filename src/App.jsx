@@ -831,7 +831,9 @@ export default function App() {
     }
   };
 
-  const forcePullFromCloud = async () => {
+  const failedPullCount = useRef(0);
+
+  const forcePullFromCloud = async (isUserInitiated = false) => {
     const client = getSupabaseClient();
     if (!client) {
       globalSyncFlags.isInitialPullSucceeded = true;
@@ -845,10 +847,13 @@ export default function App() {
 
     try {
       const activeSetRealtimeStatus = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
-      if (activeSetRealtimeStatus) activeSetRealtimeStatus("connecting");
+      if (isUserInitiated && activeSetRealtimeStatus) {
+        activeSetRealtimeStatus("connecting");
+      }
       
       const queryPromise = client.from('app_data').select('*');
-      const { data, error } = await withTimeout(queryPromise, 8000, "Tiempo de espera (8s) superado al conectar con Supabase.");
+      // Timeout tolerante de 12 segundos para dar margen si la ventana está en segundo plano
+      const { data, error } = await withTimeout(queryPromise, 12000, "Tiempo de espera (12s) superado al conectar con Supabase.");
       if (error) throw error;
 
       if (data && data.length > 0) {
@@ -882,6 +887,7 @@ export default function App() {
         });
       }
 
+      failedPullCount.current = 0;
       globalSyncFlags.isInitialPullSucceeded = true;
       globalSyncFlags.isInitialPullDone = true;
       if (activeSetRealtimeStatus) activeSetRealtimeStatus("connected");
@@ -889,33 +895,45 @@ export default function App() {
       if (activeSetInitialPullDone) activeSetInitialPullDone(true);
       return true;
     } catch (err) {
-      console.warn("[Sync] Falló o expiró el tiempo de respuesta del servidor de Supabase:", err.message);
+      console.warn("[Sync] Falló o expiró la respuesta del servidor:", err.message);
+      failedPullCount.current += 1;
       const activeSetRealtimeStatus = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
-      if (activeSetRealtimeStatus) activeSetRealtimeStatus("disconnected");
+      
+      // Solo pasar a disconnected si fue iniciado por el usuario o si fallaron 2 o más intentos seguidos
+      if (isUserInitiated || failedPullCount.current >= 2) {
+        if (activeSetRealtimeStatus) activeSetRealtimeStatus("disconnected");
+      }
+
       const activeSetInitialPullDone = globalActiveSetters.setIsInitialPullDone || setIsInitialPullDone;
       if (activeSetInitialPullDone) activeSetInitialPullDone(true);
       return false;
     }
   };
 
-  // Initial Sync from Cloud on mount + Periodic Background Sync (every 60s & when coming online)
+  // Initial Sync from Cloud on mount + Background & Focus Sync
   useEffect(() => {
-    forcePullFromCloud();
+    forcePullFromCloud(true);
 
-    const handleOnline = () => {
-      console.log("[Sync] Conexión restablecida. Ejecutando sincronización de respaldo...");
-      forcePullFromCloud();
+    const handleSyncEvent = () => {
+      if (navigator.onLine && !document.hidden) {
+        forcePullFromCloud(false);
+      }
     };
-    window.addEventListener("online", handleOnline);
+
+    window.addEventListener("online", handleSyncEvent);
+    window.addEventListener("focus", handleSyncEvent);
+    document.addEventListener("visibilitychange", handleSyncEvent);
 
     const interval = setInterval(() => {
-      if (navigator.onLine) {
-        forcePullFromCloud();
+      if (navigator.onLine && !document.hidden) {
+        forcePullFromCloud(false);
       }
     }, 60000);
 
     return () => {
-      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("online", handleSyncEvent);
+      window.removeEventListener("focus", handleSyncEvent);
+      document.removeEventListener("visibilitychange", handleSyncEvent);
       clearInterval(interval);
     };
   }, []);
