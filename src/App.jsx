@@ -906,36 +906,44 @@ export default function App() {
       const { data, error } = await withTimeout(queryPromise, 12000, "Tiempo de espera (12s) superado al conectar con Supabase.");
       if (error) throw error;
 
+      const cloudDataMap = new Map();
       if (data && data.length > 0) {
         data.forEach(item => {
-          const activeSetter = globalActiveSetters[item.key];
-          let cloudValue = safeParseJSON(item.value);
-
-          if (cloudValue !== null && cloudValue !== undefined) {
-            const localValue = safeParseJSON(getLocalStorage(item.key, null));
-            let mergedValue = mergeCollections(item.key, localValue, cloudValue);
-
-            if (ARRAY_KEYS.includes(item.key) && !Array.isArray(mergedValue)) {
-              if (mergedValue && typeof mergedValue === "object") {
-                mergedValue = Object.values(mergedValue);
-              } else {
-                mergedValue = Array.isArray(cloudValue) ? cloudValue : [];
-              }
-            }
-
-            const mergedValStr = JSON.stringify(mergedValue);
-            const cloudValStr = JSON.stringify(cloudValue);
-            globalLastSynced[item.key] = mergedValStr;
-            if (activeSetter) activeSetter(mergedValue);
-            setLocalStorage(item.key, mergedValue);
-
-            // Re-sync merged dataset back to cloud ONLY if local data had new merged items
-            if (mergedValStr !== cloudValStr) {
-              syncKeyToCloud(item.key, mergedValue);
-            }
-          }
+          cloudDataMap.set(item.key, item.value);
         });
       }
+
+      // Barrido garantizado sobre TODAS las claves de la aplicación
+      const allKeysList = Array.from(new Set([...ARRAY_KEYS, "usuarios", "ordenes", "carwash", "parkingEntries", "parkingHistory", "vehiculosVenta", "workshopInventory", "cafeteriaInventory", "cafeteriaSales", "carwashPresets", "carwashInventory", "carwashConsumption", "tiendaSales", "cuentasPorCobrar", "cuentasPorPagar", "fixedCosts", "clientes", "vehiculos", "compras", "toolsInventory", "accesoriosInventory", "papeleraSistema", "systemSnapshots", "cotizacionesRepuestos"]));
+
+      allKeysList.forEach(key => {
+        const activeSetter = globalActiveSetters[key];
+        const cloudRaw = cloudDataMap.get(key);
+        const cloudValue = cloudRaw !== undefined ? safeParseJSON(cloudRaw) : null;
+        const localValue = safeParseJSON(getLocalStorage(key, null));
+
+        let mergedValue = mergeCollections(key, localValue, cloudValue);
+
+        if (ARRAY_KEYS.includes(key) && !Array.isArray(mergedValue)) {
+          if (mergedValue && typeof mergedValue === "object") {
+            mergedValue = Object.values(mergedValue);
+          } else {
+            mergedValue = Array.isArray(cloudValue) ? cloudValue : [];
+          }
+        }
+
+        const mergedValStr = JSON.stringify(mergedValue);
+        const cloudValStr = JSON.stringify(cloudValue);
+
+        globalLastSynced[key] = mergedValStr;
+        if (activeSetter) activeSetter(mergedValue);
+        setLocalStorage(key, mergedValue);
+
+        // Subir inmediatamente a Supabase si el dispositivo local tenía elementos que la nube no tenía
+        if (mergedValStr !== cloudValStr && mergedValue !== null && mergedValue !== undefined) {
+          syncKeyToCloud(key, mergedValue);
+        }
+      });
 
       failedPullCount.current = 0;
       globalSyncFlags.isInitialPullSucceeded = true;
