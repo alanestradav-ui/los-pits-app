@@ -20,7 +20,8 @@ import {
   Wallet,
   Tv,
   GripVertical,
-  RotateCcw
+  RotateCcw,
+  Gift
 } from "lucide-react";
 import { testSupabaseConnection } from "../utils/supabase";
 
@@ -105,6 +106,12 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
       id: "clientesVehiculos",
       label: "Clientes / Vehículos",
       icon: Users,
+      roles: ["admin", "cajero"]
+    },
+    {
+      id: "recompensas",
+      label: "Recompensas Pits",
+      icon: Gift,
       roles: ["admin", "cajero"]
     },
     {

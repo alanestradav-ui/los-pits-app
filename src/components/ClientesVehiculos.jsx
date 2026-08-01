@@ -47,9 +47,21 @@ export default function ClientesVehiculos({
   setOrdenes,
   setCarwash,
   setCuentasPorCobrar,
-  onForceSyncCloud
+  onForceSyncCloud,
+  puntosRecompensas = []
 }) {
   const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+
+  const getPuntos = (tel, nombre) => {
+    if (!puntosRecompensas || puntosRecompensas.length === 0) return 0;
+    const t = String(tel || "").toLowerCase().trim();
+    const n = String(nombre || "").toLowerCase().trim();
+    const match = puntosRecompensas.find(p => 
+      (t && String(p.telefono || "").toLowerCase().trim() === t) ||
+      (n && String(p.nombre || "").toLowerCase().trim() === n)
+    );
+    return match ? (parseInt(match.puntos) || 0) : 0;
+  };
 
   const handleForceSync = async () => {
     if (onForceSyncCloud) {

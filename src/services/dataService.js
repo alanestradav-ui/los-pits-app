@@ -25,7 +25,10 @@ export const APP_ARRAY_KEYS = [
   "toolsInventory",
   "accesoriosInventory",
   "papeleraSistema",
-  "systemSnapshots"
+  "systemSnapshots",
+  "puntosRecompensas",
+  "catalogoPremios",
+  "historialCanjes"
 ];
 
 export const APP_VAL_KEYS = [

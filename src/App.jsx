@@ -19,6 +19,7 @@ import Compras from "./components/Compras";
 import Accesorios from "./components/Accesorios";
 import Pantalla from "./components/Pantalla";
 import VendorQuotes from "./components/VendorQuotes";
+import LoyaltyRewards from "./components/LoyaltyRewards";
 import { getLocalStorage, setLocalStorage } from "./utils/storage";
 import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout } from "./utils/supabase";
 import { initHourlyBackupScheduler, checkAndCreateHourlyBackup } from "./services/backupService";
@@ -60,6 +61,9 @@ const globalActiveSetters = {
   accesoriosInventory: null,
   papeleraSistema: null,
   systemSnapshots: null,
+  puntosRecompensas: null,
+  catalogoPremios: null,
+  historialCanjes: null,
   setIsInitialPullDone: null,
   setRealtimeStatus: null
 };
@@ -87,7 +91,10 @@ const ARRAY_KEYS = [
   "toolsInventory",
   "accesoriosInventory",
   "papeleraSistema",
-  "systemSnapshots"
+  "systemSnapshots",
+  "puntosRecompensas",
+  "catalogoPremios",
+  "historialCanjes"
 ];
 
 const filterOutMockItems = (key, list) => {
@@ -672,6 +679,94 @@ export default function App() {
     const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
     return clean.filter(s => s && s.fecha && (now - new Date(s.fecha).getTime() <= thirtyDaysMs));
   });
+
+  const [puntosRecompensas, setPuntosRecompensas] = useState(() => {
+    const val = getLocalStorage("puntosRecompensas", []);
+    return Array.isArray(val) ? val : [];
+  });
+
+  const [catalogoPremios, setCatalogoPremios] = useState(() => {
+    const val = getLocalStorage("catalogoPremios", []);
+    return Array.isArray(val) ? val : [];
+  });
+
+  const [historialCanjes, setHistorialCanjes] = useState(() => {
+    const val = getLocalStorage("historialCanjes", []);
+    return Array.isArray(val) ? val : [];
+  });
+
+  // 🏆 LOYALTY REWARDS HELPER: Auto-calculates & awards Puntos Pits for completed services
+  const addPuntosLealtad = (clienteKey, clienteNombre, monto, area, tallerLaborMonto = 0) => {
+    if (!clienteKey && !clienteNombre) return;
+
+    let puntosGanados = 0;
+
+    if (area === "carwash" || area === "cafeteria" || area === "detailing") {
+      // Q1 = 1 Punto Pits
+      puntosGanados = Math.floor(parseFloat(monto) || 0);
+    } else if (area === "taller") {
+      // Q4 in Labor = 1 Punto Pits (Excludes parts, max 1,500 pts per invoice)
+      const laborMonto = parseFloat(tallerLaborMonto) || 0;
+      puntosGanados = Math.min(1500, Math.floor(laborMonto / 4));
+    }
+
+    if (puntosGanados <= 0) return;
+
+    const targetKey = String(clienteKey || clienteNombre).toLowerCase().trim();
+
+    setPuntosRecompensas(prev => {
+      const list = Array.isArray(prev) ? [...prev] : [];
+      const idx = list.findIndex(p => 
+        String(p.telefono || "").toLowerCase().trim() === targetKey ||
+        String(p.nombre || "").toLowerCase().trim() === targetKey
+      );
+
+      const nowIso = new Date().toISOString();
+
+      if (idx >= 0) {
+        const existing = list[idx];
+        list[idx] = {
+          ...existing,
+          puntos: (parseInt(existing.puntos) || 0) + puntosGanados,
+          ultimaVisita: nowIso
+        };
+      } else {
+        list.push({
+          telefono: String(clienteKey || "").trim(),
+          nombre: String(clienteNombre || "Cliente").trim(),
+          puntos: puntosGanados,
+          fechaRegistro: nowIso,
+          ultimaVisita: nowIso
+        });
+      }
+
+      return list;
+    });
+  };
+
+  const handleCanjearPremio = (ticket) => {
+    if (!ticket) return;
+
+    setHistorialCanjes(prev => [ticket, ...(Array.isArray(prev) ? prev : [])]);
+
+    const targetKey = String(ticket.clienteTelefono || ticket.clienteNombre).toLowerCase().trim();
+    setPuntosRecompensas(prev => {
+      const list = Array.isArray(prev) ? [...prev] : [];
+      const idx = list.findIndex(p => 
+        String(p.telefono || "").toLowerCase().trim() === targetKey ||
+        String(p.nombre || "").toLowerCase().trim() === targetKey
+      );
+
+      if (idx >= 0) {
+        const existing = list[idx];
+        list[idx] = {
+          ...existing,
+          puntos: Math.max(0, (parseInt(existing.puntos) || 0) - ticket.puntosCanjeados)
+        };
+      }
+      return list;
+    });
+  };
 
   // 🗑️ SOFT-DELETE HELPER: Moves deleted item to 30-day Trash Bin instead of destroying it
   const softDelete = (modulo, item, user) => {
@@ -1340,6 +1435,21 @@ export default function App() {
     syncToCloud("systemSnapshots", systemSnapshots);
   }, [systemSnapshots]);
 
+  useEffect(() => {
+    setLocalStorage("puntosRecompensas", puntosRecompensas);
+    syncToCloud("puntosRecompensas", puntosRecompensas);
+  }, [puntosRecompensas]);
+
+  useEffect(() => {
+    setLocalStorage("catalogoPremios", catalogoPremios);
+    syncToCloud("catalogoPremios", catalogoPremios);
+  }, [catalogoPremios]);
+
+  useEffect(() => {
+    setLocalStorage("historialCanjes", historialCanjes);
+    syncToCloud("historialCanjes", historialCanjes);
+  }, [historialCanjes]);
+
   const usuarioActivo = usuarios.find(u => (u.user || "").toLowerCase().trim() === (usuarioActual?.user || "").toLowerCase().trim()) || usuarioActual;
 
   const userHasPermission = (user, tabId) => {
@@ -1361,7 +1471,7 @@ export default function App() {
 
     // Fallbacks
     if (activeRol === "cajero") {
-      return ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios", "cotizacionesVendedores"].includes(tabId);
+      return ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios", "cotizacionesVendedores", "recompensas"].includes(tabId);
     }
     if (activeRol === "mecanico") return ["taller", "historial"].includes(tabId);
     if (activeRol === "lavador") return tabId === "carwash";
@@ -1616,6 +1726,19 @@ export default function App() {
           />
         )}
 
+        {currentTab === "recompensas" && userHasPermission(usuarioActivo, "recompensas") && (
+          <LoyaltyRewards 
+            clientes={clientes}
+            puntosRecompensas={puntosRecompensas}
+            catalogoPremios={catalogoPremios}
+            historialCanjes={historialCanjes}
+            onUpdatePuntos={setPuntosRecompensas}
+            onCanjearPremio={handleCanjearPremio}
+            onUpdateCatalogo={setCatalogoPremios}
+            usuarioActual={usuarioActivo}
+          />
+        )}
+
         {currentTab === "finanzas" && userHasPermission(usuarioActivo, "finanzas") && (
           <Finance 
             usuarioActual={usuarioActivo}
@@ -1738,6 +1861,7 @@ export default function App() {
             setCarwash={setCarwash}
             setCuentasPorCobrar={setCuentasPorCobrar}
             onForceSyncCloud={forcePullFromCloud}
+            puntosRecompensas={puntosRecompensas}
           />
         )}
 
