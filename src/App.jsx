@@ -133,23 +133,48 @@ export const deduplicateUsers = (userList) => {
 };
 
 // Helper to merge local cached array data with cloud data to prevent silent data wipes on initial connection
-const mergeCollections = (key, localValRaw, cloudValRaw) => {
+const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
   const localVal = filterOutMockItems(key, safeParseJSON(localValRaw));
   const cloudVal = filterOutMockItems(key, safeParseJSON(cloudValRaw));
 
-  if (!cloudVal || (Array.isArray(cloudVal) && cloudVal.length === 0)) {
-    const res = Array.isArray(localVal) ? localVal : (cloudVal || []);
-    return key === "usuarios" ? deduplicateUsers(res) : res;
-  }
-  if (!localVal || (Array.isArray(localVal) && localVal.length === 0)) {
-    return key === "usuarios" ? deduplicateUsers(cloudVal) : cloudVal;
+  // 🗑️ SOFT-DELETE REGISTRY: Extraer todos los IDs resguardados en Papelera para evitar que resuciten
+  const deletedItemIds = new Set();
+  const trashItems = trashRaw !== null ? safeParseJSON(trashRaw) : safeParseJSON(getLocalStorage("papeleraSistema", []));
+  if (Array.isArray(trashItems)) {
+    trashItems.forEach(entry => {
+      if (entry && entry.itemOriginal) {
+        const item = entry.itemOriginal;
+        if (item.id !== undefined && item.id !== null) {
+          deletedItemIds.add(String(item.id));
+        }
+      }
+    });
   }
 
-  if (Array.isArray(localVal) && Array.isArray(cloudVal)) {
+  const isItemDeleted = (item) => {
+    if (!item) return true;
+    if (item.id !== undefined && item.id !== null && deletedItemIds.has(String(item.id))) {
+      return true;
+    }
+    return false;
+  };
+
+  const cleanLocal = Array.isArray(localVal) ? localVal.filter(item => !isItemDeleted(item)) : localVal;
+  const cleanCloud = Array.isArray(cloudVal) ? cloudVal.filter(item => !isItemDeleted(item)) : cloudVal;
+
+  if (!cleanCloud || (Array.isArray(cleanCloud) && cleanCloud.length === 0)) {
+    const res = Array.isArray(cleanLocal) ? cleanLocal : (cleanCloud || []);
+    return key === "usuarios" ? deduplicateUsers(res) : res;
+  }
+  if (!cleanLocal || (Array.isArray(cleanLocal) && cleanLocal.length === 0)) {
+    return key === "usuarios" ? deduplicateUsers(cleanCloud) : cleanCloud;
+  }
+
+  if (Array.isArray(cleanLocal) && Array.isArray(cleanCloud)) {
     if (key === "usuarios") {
       const mergedMap = new Map();
-      const cloudUsers = deduplicateUsers(cloudVal);
-      const localUsers = deduplicateUsers(localVal);
+      const cloudUsers = deduplicateUsers(cleanCloud);
+      const localUsers = deduplicateUsers(cleanLocal);
 
       cloudUsers.forEach((u) => {
         const username = String(u.user || u.username || "").toLowerCase().trim();
@@ -172,11 +197,11 @@ const mergeCollections = (key, localValRaw, cloudValRaw) => {
 
     if (key === "clientes") {
       const mergedMap = new Map();
-      cloudVal.forEach((c, idx) => {
+      cleanCloud.forEach((c, idx) => {
         const id = (c.telefono && c.telefono.trim()) || (c.nombre && c.nombre.trim()) || `cloud_c_${idx}`;
         mergedMap.set(id, c);
       });
-      localVal.forEach((c, idx) => {
+      cleanLocal.forEach((c, idx) => {
         const id = (c.telefono && c.telefono.trim()) || (c.nombre && c.nombre.trim()) || `local_c_${idx}`;
         if (!mergedMap.has(id)) {
           mergedMap.set(id, c);
@@ -190,11 +215,11 @@ const mergeCollections = (key, localValRaw, cloudValRaw) => {
 
     if (key === "vehiculos") {
       const mergedMap = new Map();
-      cloudVal.forEach((v, idx) => {
+      cleanCloud.forEach((v, idx) => {
         const id = (v.placa && v.placa.trim().toUpperCase()) || (v.chasis && v.chasis.trim().toUpperCase()) || `cloud_v_${idx}`;
         mergedMap.set(id, v);
       });
-      localVal.forEach((v, idx) => {
+      cleanLocal.forEach((v, idx) => {
         const id = (v.placa && v.placa.trim().toUpperCase()) || (v.chasis && v.chasis.trim().toUpperCase()) || `local_v_${idx}`;
         if (!mergedMap.has(id)) {
           mergedMap.set(id, v);
@@ -222,6 +247,15 @@ const mergeCollections = (key, localValRaw, cloudValRaw) => {
       if (item && item.id !== undefined && item.id !== null) {
         return String(item.id);
       }
+      if (key === "ordenes") {
+        return `${item.cliente || 'cl'}_${item.placa || 'plc'}_${item.fecha || idx}`;
+      }
+      if (key === "carwash") {
+        return `${item.cliente || 'cl'}_${item.vehiculo || 'veh'}_${item.fecha || idx}`;
+      }
+      if (key === "workshopInventory" || key === "cafeteriaInventory" || key === "carwashInventory") {
+        return item.code || item.nombre || item.name || `${prefix}_item_${idx}`;
+      }
       return `${prefix}_item_${idx}`;
     };
 
@@ -242,9 +276,17 @@ const mergeCollections = (key, localValRaw, cloudValRaw) => {
       const cWeight = stateWeight(cNorm?.estado);
       const lWeight = stateWeight(lNorm?.estado);
 
-      // Estado más avanzado prevalece
-      const winnerBase = (lWeight >= cWeight) ? lNorm : cNorm;
-      const loserBase = (lWeight >= cWeight) ? cNorm : lNorm;
+      const timeC = new Date(cNorm.updatedAt || cNorm.fecha || 0).getTime();
+      const timeL = new Date(lNorm.updatedAt || lNorm.fecha || 0).getTime();
+
+      let winnerBase, loserBase;
+      if (lWeight !== cWeight) {
+        winnerBase = (lWeight > cWeight) ? lNorm : cNorm;
+        loserBase = (lWeight > cWeight) ? cNorm : lNorm;
+      } else {
+        winnerBase = (timeL >= timeC) ? lNorm : cNorm;
+        loserBase = (timeL >= timeC) ? cNorm : lNorm;
+      }
 
       // 1. Fusión de Repuestos/Presupuesto (parts/repuestos): Unión de elementos sin duplicar ni borrar
       const partsA = Array.isArray(cNorm?.presupuesto?.parts) ? cNorm.presupuesto.parts : (Array.isArray(cNorm?.repuestos) ? cNorm.repuestos : []);
@@ -322,13 +364,13 @@ const mergeCollections = (key, localValRaw, cloudValRaw) => {
       };
     };
 
-    cloudVal.forEach((item, idx) => {
+    cleanCloud.forEach((item, idx) => {
       const norm = normalizeStatus(item);
       const id = getItemId(norm, idx, "cloud");
       mergedMap.set(id, norm);
     });
 
-    localVal.forEach((item, idx) => {
+    cleanLocal.forEach((item, idx) => {
       const norm = normalizeStatus(item);
       const id = getItemId(norm, idx, "local");
       if (!mergedMap.has(id)) {
@@ -342,8 +384,9 @@ const mergeCollections = (key, localValRaw, cloudValRaw) => {
     return Array.from(mergedMap.values());
   }
 
-  return key === "usuarios" ? deduplicateUsers(cloudVal) : cloudVal;
+  return key === "usuarios" ? deduplicateUsers(cleanCloud) : cleanCloud;
 };
+
 
 
 export default function App() {
@@ -1034,7 +1077,8 @@ export default function App() {
         const cloudValue = cloudRaw !== undefined ? safeParseJSON(cloudRaw) : null;
         const localValue = safeParseJSON(getLocalStorage(key, null));
 
-        let mergedValue = mergeCollections(key, localValue, cloudValue);
+        const papeleraRaw = cloudDataMap.get("papeleraSistema");
+        let mergedValue = mergeCollections(key, localValue, cloudValue, papeleraRaw);
 
         if (ARRAY_KEYS.includes(key) && !Array.isArray(mergedValue)) {
           if (mergedValue && typeof mergedValue === "object") {
@@ -1098,7 +1142,7 @@ export default function App() {
       if (navigator.onLine && !document.hidden) {
         forcePullFromCloud(false);
       }
-    }, 60000);
+    }, 8000);
 
     return () => {
       window.removeEventListener("online", handleSyncEvent);
