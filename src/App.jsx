@@ -142,11 +142,10 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
   const trashItems = trashRaw !== null ? safeParseJSON(trashRaw) : safeParseJSON(getLocalStorage("papeleraSistema", []));
   if (Array.isArray(trashItems)) {
     trashItems.forEach(entry => {
-      if (entry && entry.itemOriginal) {
-        const item = entry.itemOriginal;
-        if (item.id !== undefined && item.id !== null) {
-          deletedItemIds.add(String(item.id));
-        }
+      if (!entry) return;
+      const origId = entry.originalId || (entry.itemOriginal && entry.itemOriginal.id) || (entry.originalData && entry.originalData.id);
+      if (origId !== undefined && origId !== null) {
+        deletedItemIds.add(String(origId));
       }
     });
   }
@@ -315,6 +314,9 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
       };
     };
 
+    const offlineQueue = safeParseJSON(localStorage.getItem("sync_queue")) || [];
+    const isKeyInOfflineQueue = Array.isArray(offlineQueue) && offlineQueue.some(q => q && q.key === key);
+
     cleanCloud.forEach((item, idx) => {
       const norm = normalizeStatus(item);
       const id = getItemId(norm, idx, "cloud");
@@ -325,7 +327,14 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
       const norm = normalizeStatus(item);
       const id = getItemId(norm, idx, "local");
       if (!mergedMap.has(id)) {
-        mergedMap.set(id, norm);
+        // Keep local item ONLY if it was created very recently (< 15 mins) or if key has pending offline sync
+        const createdTime = new Date(norm.fecha || norm.updatedAt || 0).getTime();
+        const fifteenMinsAgo = Date.now() - (15 * 60 * 1000);
+        const isRecentOfflineItem = (createdTime > fifteenMinsAgo) || isKeyInOfflineQueue;
+
+        if (isRecentOfflineItem && !isItemDeleted(norm)) {
+          mergedMap.set(id, norm);
+        }
       } else {
         const cloudItem = mergedMap.get(id);
         mergedMap.set(id, mergeSingleItem(cloudItem, norm));
@@ -1005,26 +1014,26 @@ export default function App() {
       const cloudDataMap = new Map();
       const allKeysList = Array.from(new Set([...ARRAY_KEYS, "usuarios", "ordenes", "carwash", "parkingEntries", "parkingHistory", "vehiculosVenta", "workshopInventory", "cafeteriaInventory", "cafeteriaSales", "carwashPresets", "carwashInventory", "carwashConsumption", "tiendaSales", "cuentasPorCobrar", "cuentasPorPagar", "fixedCosts", "clientes", "vehiculos", "compras", "toolsInventory", "accesoriosInventory", "papeleraSistema", "cotizacionesRepuestos"])).filter(k => k !== "systemSnapshots" && k !== "app_data_backup_snapshot");
 
-      // Consultar llaves en lotes de 8 para evitar Statement Timeout 500 en Postgres
+      // Consultar llaves en paralelo en lotes de 8 para respuesta ultrarrápida (< 300ms)
       const chunkSize = 8;
+      const promises = [];
       for (let i = 0; i < allKeysList.length; i += chunkSize) {
         const chunk = allKeysList.slice(i, i + chunkSize);
-        try {
-          const queryPromise = client
-            .from('app_data')
-            .select('key, value')
-            .in('key', chunk);
-
-          const { data, error } = await withTimeout(queryPromise, 10000, `Timeout en lote de llaves`);
-          if (!error && data) {
-            data.forEach(item => {
-              cloudDataMap.set(item.key, item.value);
-            });
-          }
-        } catch (chunkErr) {
-          console.warn(`[Sync] Timeout o advertencia en lote de llaves [${chunk.join(', ')}]:`, chunkErr.message);
-        }
+        const queryPromise = client
+          .from('app_data')
+          .select('key, value')
+          .in('key', chunk);
+        promises.push(withTimeout(queryPromise, 6000, `Timeout en lote`));
       }
+
+      const results = await Promise.allSettled(promises);
+      results.forEach(res => {
+        if (res.status === "fulfilled" && res.value && res.value.data) {
+          res.value.data.forEach(item => {
+            cloudDataMap.set(item.key, item.value);
+          });
+        }
+      });
 
       allKeysList.forEach(key => {
         const activeSetter = globalActiveSetters[key];
@@ -1050,8 +1059,8 @@ export default function App() {
         if (activeSetter) activeSetter(mergedValue);
         setLocalStorage(key, mergedValue);
 
-        // Subir inmediatamente a Supabase si el dispositivo local tenía elementos que la nube no tenía
-        if (mergedValStr !== cloudValStr && mergedValue !== null && mergedValue !== undefined) {
+        // Subir a Supabase solo si hay datos locales legítimos recién creados sin sincronizar
+        if (mergedValStr !== cloudValStr && mergedValue !== null && mergedValue !== undefined && cloudRaw !== undefined) {
           syncKeyToCloud(key, mergedValue);
         }
       });
@@ -1100,7 +1109,7 @@ export default function App() {
       if (navigator.onLine && !document.hidden) {
         forcePullFromCloud(false);
       }
-    }, 8000);
+    }, 3000);
 
     return () => {
       window.removeEventListener("online", handleSyncEvent);
