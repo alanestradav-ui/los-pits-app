@@ -310,7 +310,8 @@ export default function RepuestosFaltantes({
                 ...o,
                 presupuesto: updatedBudget,
                 total: newTotal,
-                comision: newCommission
+                comision: newCommission,
+                updatedAt: new Date().toISOString()
               };
             }
           }

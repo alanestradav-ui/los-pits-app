@@ -149,9 +149,9 @@ export const syncKeyToCloud = async (key, value) => {
     return false;
   }
 
-  const sanitizePayload = (data, stripImages = false) => {
+  const sanitizePayload = (data) => {
     const parsed = safeParseJSON(data);
-    if (!stripImages) return parsed;
+    if (!parsed) return parsed;
     
     if (Array.isArray(parsed)) {
       return parsed.map(item => {
@@ -160,6 +160,9 @@ export const syncKeyToCloud = async (key, value) => {
         if (Array.isArray(newItem.fotos)) {
           newItem.fotos = newItem.fotos.map(f => (typeof f === "string" && f.length > 500) ? "" : f).filter(Boolean);
         }
+        if (Array.isArray(newItem.photos)) {
+          newItem.photos = newItem.photos.map(f => (typeof f === "string" && f.length > 500) ? "" : f).filter(Boolean);
+        }
         return newItem;
       });
     }
@@ -167,7 +170,7 @@ export const syncKeyToCloud = async (key, value) => {
   };
 
   try {
-    let cleanValue = sanitizePayload(value, false);
+    const cleanValue = sanitizePayload(value);
     const upsertPromise = client
       .from('app_data')
       .upsert({ key, value: cleanValue, updated_at: new Date().toISOString() });
@@ -175,8 +178,7 @@ export const syncKeyToCloud = async (key, value) => {
     let { error } = await withTimeout(upsertPromise, 8000, `Timeout al sincronizar ${key}`);
     
     if (error) {
-      console.warn(`[Sync] Direct sync for key "${key}" failed (${error.message}). Retrying with optimized payload...`);
-      cleanValue = sanitizePayload(value, true);
+      console.warn(`[Sync] Direct sync for key "${key}" failed (${error.message}). Retrying...`);
       const retryPromise = client
         .from('app_data')
         .upsert({ key, value: cleanValue, updated_at: new Date().toISOString() });
@@ -199,3 +201,21 @@ export const syncKeyToCloud = async (key, value) => {
     return false;
   }
 };
+
+/**
+ * Procesar y vaciar la cola offline cuando hay conectividad activa
+ */
+export const processOfflineQueue = async () => {
+  const queue = getOfflineQueue();
+  if (!queue || queue.length === 0) return;
+  console.log(`[OfflineQueue] Procesando ${queue.length} ítems acumulados offline...`);
+  for (const item of queue) {
+    if (item && item.key) {
+      const ok = await syncKeyToCloud(item.key, item.value);
+      if (ok) {
+        removeFromOfflineQueue(item.key);
+      }
+    }
+  }
+};
+

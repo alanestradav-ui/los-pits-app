@@ -365,7 +365,8 @@ export default function VehicleHistory({
           services: servicesList
         },
         total: granTotal,
-        comision
+        comision,
+        updatedAt: new Date().toISOString()
       };
 
       if (setOrdenes) {
@@ -387,7 +388,8 @@ export default function VehicleHistory({
           placa: editingHistoryItem.placa,
           marca: editingHistoryItem.marca,
           linea: editingHistoryItem.linea
-        }
+        },
+        updatedAt: new Date().toISOString()
       };
 
       if (setCarwash) {

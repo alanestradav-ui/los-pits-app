@@ -21,7 +21,7 @@ import Pantalla from "./components/Pantalla";
 import VendorQuotes from "./components/VendorQuotes";
 import LoyaltyRewards from "./components/LoyaltyRewards";
 import { getLocalStorage, setLocalStorage } from "./utils/storage";
-import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout } from "./utils/supabase";
+import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout, processOfflineQueue } from "./utils/supabase";
 import { initHourlyBackupScheduler, checkAndCreateHourlyBackup } from "./services/backupService";
 import { autoPurgeTrash } from "./services/trashService";
 
@@ -266,77 +266,44 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
       if (!cNorm) return lNorm;
       if (!lNorm) return cNorm;
 
-      const stateWeight = (st) => {
-        if (st === "Entregado" || st === "Cobrado") return 4;
-        if (st === "Listo para entrega" || st === "Listo") return 3;
-        if (st === "En proceso de reparación" || st === "En proceso") return 2;
-        return 1;
-      };
-
-      const cWeight = stateWeight(cNorm?.estado);
-      const lWeight = stateWeight(lNorm?.estado);
-
-      const timeC = new Date(cNorm.updatedAt || cNorm.fecha || 0).getTime();
-      const timeL = new Date(lNorm.updatedAt || lNorm.fecha || 0).getTime();
+      const timeC = cNorm.updatedAt ? new Date(cNorm.updatedAt).getTime() : (cNorm.fecha ? new Date(cNorm.fecha).getTime() : 0);
+      const timeL = lNorm.updatedAt ? new Date(lNorm.updatedAt).getTime() : (lNorm.fecha ? new Date(lNorm.fecha).getTime() : 0);
 
       let winnerBase, loserBase;
-      if (lWeight !== cWeight) {
-        winnerBase = (lWeight > cWeight) ? lNorm : cNorm;
-        loserBase = (lWeight > cWeight) ? cNorm : lNorm;
+
+      // Primary conflict resolution: record with newer updatedAt timestamp wins
+      if (cNorm.updatedAt || lNorm.updatedAt) {
+        if (timeC > timeL) {
+          winnerBase = cNorm;
+          loserBase = lNorm;
+        } else if (timeL > timeC) {
+          winnerBase = lNorm;
+          loserBase = cNorm;
+        } else {
+          winnerBase = cNorm;
+          loserBase = lNorm;
+        }
       } else {
-        winnerBase = (timeL >= timeC) ? lNorm : cNorm;
-        loserBase = (timeL >= timeC) ? cNorm : lNorm;
+        // Fallback when neither record has updatedAt: prefer cloud unless local has higher status weight
+        const stateWeight = (st) => {
+          if (st === "Entregado" || st === "Cobrado") return 4;
+          if (st === "Listo para entrega" || st === "Listo") return 3;
+          if (st === "En proceso de reparación" || st === "En proceso") return 2;
+          return 1;
+        };
+        const cWeight = stateWeight(cNorm?.estado);
+        const lWeight = stateWeight(lNorm?.estado);
+
+        if (cWeight !== lWeight) {
+          winnerBase = (cWeight > lWeight) ? cNorm : lNorm;
+          loserBase = (cWeight > lWeight) ? lNorm : cNorm;
+        } else {
+          winnerBase = (timeC > timeL) ? cNorm : lNorm;
+          loserBase = (timeC > timeL) ? lNorm : cNorm;
+        }
       }
 
-      // 1. Fusión de Repuestos/Presupuesto (parts/repuestos): Unión de elementos sin duplicar ni borrar
-      const partsA = Array.isArray(cNorm?.presupuesto?.parts) ? cNorm.presupuesto.parts : (Array.isArray(cNorm?.repuestos) ? cNorm.repuestos : []);
-      const partsB = Array.isArray(lNorm?.presupuesto?.parts) ? lNorm.presupuesto.parts : (Array.isArray(lNorm?.repuestos) ? lNorm.repuestos : []);
-
-      const mergedPartsMap = new Map();
-      [...partsA, ...partsB].forEach((p, idx) => {
-        if (!p) return;
-        const pKey = String(p.code || p.codigo || p.name || p.nombre || p.desc || `p_${idx}`).toLowerCase().trim();
-        if (!mergedPartsMap.has(pKey)) {
-          mergedPartsMap.set(pKey, p);
-        } else {
-          const existing = mergedPartsMap.get(pKey);
-          mergedPartsMap.set(pKey, {
-            ...existing,
-            ...p,
-            qty: Math.max(parseFloat(existing.qty) || 1, parseFloat(p.qty) || 1),
-            price: Math.max(parseFloat(existing.price) || 0, parseFloat(p.price) || 0)
-          });
-        }
-      });
-      const mergedParts = Array.from(mergedPartsMap.values());
-
-      // 2. Fusión de Trabajos / Mano de Obra: Unión de tareas
-      const laborA = Array.isArray(cNorm?.presupuesto?.labor) ? cNorm.presupuesto.labor : (Array.isArray(cNorm?.trabajos) ? cNorm.trabajos : []);
-      const laborB = Array.isArray(lNorm?.presupuesto?.labor) ? lNorm.presupuesto.labor : (Array.isArray(lNorm?.trabajos) ? lNorm.trabajos : []);
-
-      const mergedLaborMap = new Map();
-      [...laborA, ...laborB].forEach((l, idx) => {
-        if (!l) return;
-        const lKey = (typeof l === "string" ? l : (l.name || l.descripcion || l.desc || `l_${idx}`)).toString().toLowerCase().trim();
-        if (!mergedLaborMap.has(lKey)) {
-          mergedLaborMap.set(lKey, l);
-        } else {
-          const existing = mergedLaborMap.get(lKey);
-          mergedLaborMap.set(lKey, typeof l === "object" ? { ...existing, ...l } : l);
-        }
-      });
-      const mergedLabor = Array.from(mergedLaborMap.values());
-
-      // 3. Cálculos Financieros: Tomar el mayor monto total válido y acumulado de anticipos
-      const totalC = parseFloat(cNorm.total) || 0;
-      const totalL = parseFloat(lNorm.total) || 0;
-      const maxTotal = Math.max(totalC, totalL);
-
-      const anticipoC = parseFloat(cNorm.anticipo) || 0;
-      const anticipoL = parseFloat(lNorm.anticipo) || 0;
-      const maxAnticipo = Math.max(anticipoC, anticipoL);
-
-      // 4. Fusión de Fotos
+      // Merge photos uniquely
       const photosC = Array.isArray(cNorm.fotos) ? cNorm.fotos : [];
       const photosL = Array.isArray(lNorm.fotos) ? lNorm.fotos : [];
       const mergedPhotos = Array.from(new Set([...photosC, ...photosL])).filter(Boolean);
@@ -344,23 +311,7 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
       return {
         ...loserBase,
         ...winnerBase,
-        total: maxTotal > 0 ? maxTotal : (winnerBase.total || loserBase.total || 0),
-        anticipo: maxAnticipo,
-        saldo: Math.max(0, (maxTotal > 0 ? maxTotal : (winnerBase.total || 0)) - maxAnticipo),
-        presupuesto: {
-          ...(loserBase.presupuesto || {}),
-          ...(winnerBase.presupuesto || {}),
-          parts: mergedParts.length > 0 ? mergedParts : (winnerBase.presupuesto?.parts || loserBase.presupuesto?.parts || []),
-          labor: mergedLabor.length > 0 ? mergedLabor : (winnerBase.presupuesto?.labor || loserBase.presupuesto?.labor || [])
-        },
-        fotos: mergedPhotos,
-        mecanico: winnerBase.mecanico || loserBase.mecanico,
-        lavador: winnerBase.lavador || loserBase.lavador,
-        cajero: winnerBase.cajero || loserBase.cajero,
-        formaPago: winnerBase.formaPago || loserBase.formaPago,
-        formaPagoDesc: winnerBase.formaPagoDesc || loserBase.formaPagoDesc,
-        nit: (winnerBase.nit && winnerBase.nit !== "C/F") ? winnerBase.nit : (loserBase.nit || "C/F"),
-        nombreFacturacion: winnerBase.nombreFacturacion || loserBase.nombreFacturacion
+        fotos: mergedPhotos
       };
     };
 
@@ -1051,25 +1002,29 @@ export default function App() {
         activeSetRealtimeStatus("connecting");
       }
       
-      const queryPromise = client
-        .from('app_data')
-        .select('key, value')
-        .neq('key', 'systemSnapshots')
-        .neq('key', 'app_data_backup_snapshot');
-
-      // Timeout de 25 segundos para asegurar la descarga completa en redes móviles de teléfonos
-      const { data, error } = await withTimeout(queryPromise, 25000, "Tiempo de espera (25s) superado al conectar con Supabase.");
-      if (error) throw error;
-
       const cloudDataMap = new Map();
-      if (data && data.length > 0) {
-        data.forEach(item => {
-          cloudDataMap.set(item.key, item.value);
-        });
-      }
-
-      // Barrido garantizado sobre TODAS las claves de la aplicación (excluyendo snapshots masivos de respaldo)
       const allKeysList = Array.from(new Set([...ARRAY_KEYS, "usuarios", "ordenes", "carwash", "parkingEntries", "parkingHistory", "vehiculosVenta", "workshopInventory", "cafeteriaInventory", "cafeteriaSales", "carwashPresets", "carwashInventory", "carwashConsumption", "tiendaSales", "cuentasPorCobrar", "cuentasPorPagar", "fixedCosts", "clientes", "vehiculos", "compras", "toolsInventory", "accesoriosInventory", "papeleraSistema", "cotizacionesRepuestos"])).filter(k => k !== "systemSnapshots" && k !== "app_data_backup_snapshot");
+
+      // Consultar llaves en lotes de 8 para evitar Statement Timeout 500 en Postgres
+      const chunkSize = 8;
+      for (let i = 0; i < allKeysList.length; i += chunkSize) {
+        const chunk = allKeysList.slice(i, i + chunkSize);
+        try {
+          const queryPromise = client
+            .from('app_data')
+            .select('key, value')
+            .in('key', chunk);
+
+          const { data, error } = await withTimeout(queryPromise, 10000, `Timeout en lote de llaves`);
+          if (!error && data) {
+            data.forEach(item => {
+              cloudDataMap.set(item.key, item.value);
+            });
+          }
+        } catch (chunkErr) {
+          console.warn(`[Sync] Timeout o advertencia en lote de llaves [${chunk.join(', ')}]:`, chunkErr.message);
+        }
+      }
 
       allKeysList.forEach(key => {
         const activeSetter = globalActiveSetters[key];
@@ -1100,6 +1055,9 @@ export default function App() {
           syncKeyToCloud(key, mergedValue);
         }
       });
+
+      // Procesar cualquier operación pendiente en la cola offline
+      processOfflineQueue();
 
       failedPullCount.current = 0;
       globalSyncFlags.isInitialPullSucceeded = true;

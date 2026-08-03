@@ -581,6 +581,7 @@ export default function Carwash({
       estado: "En proceso",
       comision: comisionVal,
       fecha: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       anio: anio.trim(),
       kilometraje: kilometraje.trim(),
       chasis: chasis.toUpperCase().trim(),
@@ -691,7 +692,8 @@ export default function Carwash({
             ...c,
             lavadores: newList,
             lavador: newList.join(", "),
-            comision: totalComm
+            comision: totalComm,
+            updatedAt: new Date().toISOString()
           };
         }
         return c;
@@ -732,7 +734,7 @@ export default function Carwash({
           cancelado = true;
           return c;
         }
-        return { ...c, estado: nuevoEstado };
+        return { ...c, estado: nuevoEstado, updatedAt: new Date().toISOString() };
       }
       return c;
     });

@@ -282,7 +282,8 @@ export default function Taller({
     const updatedOrder = {
       ...currentOrder,
       presupuesto: updatedBudget,
-      total: granTotal
+      total: granTotal,
+      updatedAt: new Date().toISOString()
     };
 
     setOrdenes(prev => (prev || []).map(o => String(o.id) === String(orderId) ? updatedOrder : o));
@@ -394,7 +395,7 @@ export default function Taller({
     if (!updatedObj) return;
 
     const newComision = calculateOrderCommission(updatedObj);
-    const updatedWithComm = { ...updatedObj, comision: newComision };
+    const updatedWithComm = { ...updatedObj, comision: newComision, updatedAt: new Date().toISOString() };
 
     setOrdenes(prev => (prev || []).map(o => o.id === updatedWithComm.id ? updatedWithComm : o));
 
@@ -743,6 +744,7 @@ export default function Taller({
       comision,
       diagnosticoAutorizado: false,
       fecha: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       nit: nit.trim() || "C/F",
       nombreFacturacion: nombreFacturacion.trim() || cliente.trim(),
       checklist,
@@ -914,7 +916,7 @@ export default function Taller({
           }
         }
 
-        return { ...o, estado: nuevoEstado, total: nuevoTotal, comision: nuevaComision };
+        return { ...o, estado: nuevoEstado, total: nuevoTotal, comision: nuevaComision, updatedAt: new Date().toISOString() };
       }
       return o;
     });
@@ -1074,7 +1076,8 @@ export default function Taller({
           total: checkoutOrder.total,
           cajero: usuarioActual.user,
           cajeroComisionApplies: checkoutOrder.cajeroComisionApplies === true,
-          fecha: new Date().toISOString()
+          fecha: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         };
       }
       return o;
@@ -1089,7 +1092,7 @@ export default function Taller({
     setOrdenes(
       ordenes.map((o) => {
         if (o.id === id) {
-          return { ...o, mecanico: name };
+          return { ...o, mecanico: name, updatedAt: new Date().toISOString() };
         }
         return o;
       })
@@ -1285,7 +1288,8 @@ export default function Taller({
             cajeroComisionApplies: budgetCajeroComisionApplies,
             total: granTotal,
             comision: calculateOrderCommission({ ...o, presupuesto: updatedBudget, total: granTotal }),
-            diagnosticoAutorizado: o.diagnosticoAutorizado !== undefined ? o.diagnosticoAutorizado : false
+            diagnosticoAutorizado: o.diagnosticoAutorizado !== undefined ? o.diagnosticoAutorizado : false,
+            updatedAt: new Date().toISOString()
           };
         }
         return o;
@@ -1406,7 +1410,8 @@ export default function Taller({
             ...o,
             presupuesto: nextBudget,
             total: granTotal,
-            comision: calculateOrderCommission({ ...o, presupuesto: nextBudget, total: granTotal })
+            comision: calculateOrderCommission({ ...o, presupuesto: nextBudget, total: granTotal }),
+            updatedAt: new Date().toISOString()
           };
         }
         return o;
@@ -5451,8 +5456,8 @@ export default function Taller({
                     type="button"
                     className="btn"
                     onClick={() => {
-                      setOrdenes(prev => prev.map(o => o.id === presupuestoFormalOrder.id ? { ...o, diagnosticoAutorizado: true } : o));
-                      setPresupuestoFormalOrder(prev => ({ ...prev, diagnosticoAutorizado: true }));
+                      setOrdenes(prev => prev.map(o => o.id === presupuestoFormalOrder.id ? { ...o, diagnosticoAutorizado: true, updatedAt: new Date().toISOString() } : o));
+                      setPresupuestoFormalOrder(prev => ({ ...prev, diagnosticoAutorizado: true, updatedAt: new Date().toISOString() }));
                       alert("Diagnóstico autorizado con éxito.");
                     }}
                     style={{
