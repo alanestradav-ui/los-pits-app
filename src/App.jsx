@@ -314,30 +314,24 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
       };
     };
 
-    const offlineQueue = safeParseJSON(localStorage.getItem("sync_queue")) || [];
-    const isKeyInOfflineQueue = Array.isArray(offlineQueue) && offlineQueue.some(q => q && q.key === key);
-
     cleanCloud.forEach((item, idx) => {
-      const norm = normalizeStatus(item);
-      const id = getItemId(norm, idx, "cloud");
-      mergedMap.set(id, norm);
+      if (!isItemDeleted(item)) {
+        const norm = normalizeStatus(item);
+        const id = getItemId(norm, idx, "cloud");
+        mergedMap.set(id, norm);
+      }
     });
 
     cleanLocal.forEach((item, idx) => {
-      const norm = normalizeStatus(item);
-      const id = getItemId(norm, idx, "local");
-      if (!mergedMap.has(id)) {
-        // Keep local item ONLY if it was created very recently (< 15 mins) or if key has pending offline sync
-        const createdTime = new Date(norm.fecha || norm.updatedAt || 0).getTime();
-        const fifteenMinsAgo = Date.now() - (15 * 60 * 1000);
-        const isRecentOfflineItem = (createdTime > fifteenMinsAgo) || isKeyInOfflineQueue;
-
-        if (isRecentOfflineItem && !isItemDeleted(norm)) {
+      if (!isItemDeleted(item)) {
+        const norm = normalizeStatus(item);
+        const id = getItemId(norm, idx, "local");
+        if (!mergedMap.has(id)) {
           mergedMap.set(id, norm);
+        } else {
+          const cloudItem = mergedMap.get(id);
+          mergedMap.set(id, mergeSingleItem(cloudItem, norm));
         }
-      } else {
-        const cloudItem = mergedMap.get(id);
-        mergedMap.set(id, mergeSingleItem(cloudItem, norm));
       }
     });
 
@@ -970,6 +964,47 @@ export default function App() {
     accesoriosInventory
   ]);
 
+  const globalBroadcastChannel = useRef(null);
+
+  // Fast single-key cloud pull for instant <300ms updates
+  const fetchSingleKeyFromCloud = async (targetKey) => {
+    const client = getSupabaseClient();
+    if (!client) return;
+    try {
+      const queryPromise = client
+        .from('app_data')
+        .select('key, value')
+        .eq('key', targetKey);
+      
+      const { data, error } = await withTimeout(queryPromise, 4000, `Timeout en fetch de ${targetKey}`);
+      if (error || !data || data.length === 0) return;
+
+      const cloudRaw = data[0].value;
+      const cloudValue = safeParseJSON(cloudRaw);
+      const localValue = safeParseJSON(getLocalStorage(targetKey, null));
+
+      const papeleraRaw = safeParseJSON(getLocalStorage("papeleraSistema", []));
+      let mergedValue = mergeCollections(targetKey, localValue, cloudValue, papeleraRaw);
+
+      if (ARRAY_KEYS.includes(targetKey) && !Array.isArray(mergedValue)) {
+        if (mergedValue && typeof mergedValue === "object") {
+          mergedValue = Object.values(mergedValue);
+        } else {
+          mergedValue = Array.isArray(cloudValue) ? cloudValue : [];
+        }
+      }
+
+      const mergedValStr = JSON.stringify(mergedValue);
+      const activeSetter = globalActiveSetters[targetKey];
+
+      globalLastSynced[targetKey] = mergedValStr;
+      if (activeSetter) activeSetter(mergedValue);
+      setLocalStorage(targetKey, mergedValue);
+    } catch (err) {
+      console.warn(`[Sync] Error en fetch rápido de "${targetKey}":`, err.message);
+    }
+  };
+
   // Sync a key-value pair to cloud if it has actually changed
   const syncToCloud = async (key, value) => {
     if (!isInitialPullDone) return; // Guard: prevent syncing local states before initial setup completes
@@ -986,6 +1021,16 @@ export default function App() {
     const ok = await syncKeyToCloud(key, cleanVal);
     if (ok) {
       globalLastSynced[key] = valueStr;
+      // 🚀 Emit instant WebSocket Broadcast event to all active clients
+      try {
+        if (globalBroadcastChannel.current) {
+          globalBroadcastChannel.current.send({
+            type: 'broadcast',
+            event: 'app_key_changed',
+            payload: { key }
+          });
+        }
+      } catch (e) {}
     } else {
       console.warn(`[Sync] Falló la sincronización para la llave "${key}". Se reintentará en la próxima actualización.`);
     }
@@ -1128,7 +1173,7 @@ export default function App() {
     };
   }, []);
 
-  // Subscribe to Realtime Postgres changes once initial pull is complete
+  // Subscribe to Realtime Postgres changes + Instant Broadcast Channel once initial pull is complete
   useEffect(() => {
     const client = getSupabaseClient();
     if (!client || !isInitialPullDone) return;
@@ -1184,6 +1229,17 @@ export default function App() {
           }
         }
       )
+      .on(
+        'broadcast',
+        { event: 'app_key_changed' },
+        (payload) => {
+          if (payload && payload.payload && payload.payload.key) {
+            const targetKey = payload.payload.key;
+            console.log(`[Instant Broadcast] Notificación de cambio recibida para la llave "${targetKey}"`);
+            fetchSingleKeyFromCloud(targetKey);
+          }
+        }
+      )
       .subscribe((status, err) => {
         console.log(`[Realtime Sync] Status changed: ${status}`, err || '');
         const activeSetRealtimeStatus = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
@@ -1195,9 +1251,11 @@ export default function App() {
             try {
               if (channel) channel.subscribe();
             } catch (e) {}
-          }, 5000);
+          }, 3000);
         }
       });
+
+    globalBroadcastChannel.current = channel;
 
     return () => {
       client.removeChannel(channel);
