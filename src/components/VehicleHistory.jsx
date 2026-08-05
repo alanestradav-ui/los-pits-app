@@ -92,7 +92,13 @@ export default function VehicleHistory({
   setCarwash, 
   workshopInventory = [], 
   mecanicos = [],
-  usuarioActual 
+  usuarioActual,
+  compras = [],
+  setCompras,
+  cuentasPorCobrar = [],
+  setCuentasPorCobrar,
+  cuentasPorPagar = [],
+  setCuentasPorPagar
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedPlaca, setSelectedPlaca] = useState(null);
@@ -328,6 +334,10 @@ export default function VehicleHistory({
     if (e) e.preventDefault();
     if (!editingHistoryItem) return;
 
+    const finalFecha = editingHistoryItem.fechaInput 
+      ? new Date(editingHistoryItem.fechaInput + "T12:00:00").toISOString() 
+      : (editingHistoryItem.fecha || editingHistoryItem.originalOrder?.fecha || editingHistoryItem.originalWash?.fecha || new Date().toISOString());
+
     if (editingHistoryItem.tipo === "Taller") {
       const budget = editingHistoryItem.presupuesto || { labor: [], parts: [], services: [], discount: 0 };
       const laborList = budget.labor || [];
@@ -345,6 +355,7 @@ export default function VehicleHistory({
       const updatedOrder = {
         ...(editingHistoryItem.originalOrder || {}),
         id: editingHistoryItem.id,
+        fecha: finalFecha,
         cliente: editingHistoryItem.cliente,
         telefono: editingHistoryItem.telefono,
         nit: editingHistoryItem.nit || "C/F",
@@ -372,11 +383,35 @@ export default function VehicleHistory({
       if (setOrdenes) {
         setOrdenes(prev => (prev || []).map(o => String(o.id) === String(updatedOrder.id) ? updatedOrder : o));
       }
+
+      // Sync linked carwash entries
+      if (setCarwash) {
+        setCarwash(prev => (prev || []).map(c => {
+          if (String(c.tallerOrderId) === String(updatedOrder.id)) {
+            return { ...c, fecha: finalFecha, updatedAt: new Date().toISOString() };
+          }
+          return c;
+        }));
+      }
+
+      // Sync linked compras/expenses
+      if (setCompras) {
+        setCompras(prev => (prev || []).map(comp => {
+          const isLinkedByOrder = String(comp.ordenId || comp.tallerOrderId || comp.presupuestoId) === String(updatedOrder.id);
+          const isLinkedByPlaca = comp.placa && String(comp.placa).toUpperCase().trim() === String(updatedOrder.placa).toUpperCase().trim();
+          if (isLinkedByOrder || isLinkedByPlaca) {
+            return { ...comp, fecha: finalFecha, updatedAt: new Date().toISOString() };
+          }
+          return comp;
+        }));
+      }
+
       alert("¡Trabajo e historial de Taller actualizado con éxito!");
     } else if (editingHistoryItem.tipo === "Carwash") {
       const updatedWash = {
         ...(editingHistoryItem.originalWash || {}),
         id: editingHistoryItem.id,
+        fecha: finalFecha,
         cliente: editingHistoryItem.cliente,
         telefono: editingHistoryItem.telefono,
         tipo: editingHistoryItem.tipoLavado || editingHistoryItem.tipo,
@@ -2172,6 +2207,27 @@ export default function VehicleHistory({
                     required
                   />
                 </div>
+              </div>
+
+              <div style={{ marginBottom: "16px", padding: "12px", background: "rgba(59, 130, 246, 0.06)", borderRadius: "10px", border: "1px solid rgba(59, 130, 246, 0.2)" }}>
+                <label style={{ fontSize: "0.85rem", color: "#60a5fa", fontWeight: "700", display: "block", marginBottom: "6px" }}>
+                  📅 Fecha del Trabajo / Presupuesto / Servicio:
+                </label>
+                <input
+                  type="date"
+                  className="input-field"
+                  style={{ borderColor: "#3b82f6", color: "#fff", fontWeight: "600" }}
+                  value={
+                    editingHistoryItem.fechaInput !== undefined 
+                      ? editingHistoryItem.fechaInput 
+                      : (editingHistoryItem.fecha ? new Date(editingHistoryItem.fecha).toISOString().split("T")[0] : (editingHistoryItem.originalOrder?.fecha ? new Date(editingHistoryItem.originalOrder.fecha).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]))
+                  }
+                  onChange={(e) => setEditingHistoryItem({ ...editingHistoryItem, fechaInput: e.target.value })}
+                  required
+                />
+                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "4px", display: "block" }}>
+                  ℹ️ Al cambiar la fecha, los ingresos y gastos asociados se reflejarán en el periodo correspondiente.
+                </span>
               </div>
 
               {editingHistoryItem.tipo === "Taller" && (

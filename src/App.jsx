@@ -1661,6 +1661,8 @@ export default function App() {
             cotizacionesRepuestos={cotizacionesRepuestos}
             setCotizacionesRepuestos={setCotizacionesRepuestos}
             softDelete={softDelete}
+            compras={compras}
+            setCompras={setCompras}
           />
         )}
 
@@ -1800,6 +1802,12 @@ export default function App() {
             workshopInventory={workshopInventory}
             mecanicos={mecanicos}
             usuarioActual={usuarioActivo}
+            compras={compras}
+            setCompras={setCompras}
+            cuentasPorCobrar={cuentasPorCobrar}
+            setCuentasPorCobrar={setCuentasPorCobrar}
+            cuentasPorPagar={cuentasPorPagar}
+            setCuentasPorPagar={setCuentasPorPagar}
           />
         )}
 

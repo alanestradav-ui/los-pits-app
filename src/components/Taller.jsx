@@ -159,7 +159,9 @@ export default function Taller({
   carwashPresets = [],
   cotizacionesRepuestos = [],
   setCotizacionesRepuestos,
-  softDelete
+  softDelete,
+  compras = [],
+  setCompras
 }) {
   const [viewingVendorQuotesOrder, setViewingVendorQuotesOrder] = useState(null);
   const [cliente, setCliente] = useState("");
@@ -394,33 +396,76 @@ export default function Taller({
   const guardarBilledOrderEdit = (updatedObj) => {
     if (!updatedObj) return;
 
+    const finalFecha = updatedObj.fechaInput 
+      ? new Date(updatedObj.fechaInput + "T12:00:00").toISOString() 
+      : (updatedObj.fecha || new Date().toISOString());
+
     const newComision = calculateOrderCommission(updatedObj);
-    const updatedWithComm = { ...updatedObj, comision: newComision, updatedAt: new Date().toISOString() };
+    const updatedWithComm = { 
+      ...updatedObj, 
+      fecha: finalFecha,
+      comision: newComision, 
+      updatedAt: new Date().toISOString() 
+    };
+    delete updatedWithComm.fechaInput;
 
     setOrdenes(prev => (prev || []).map(o => o.id === updatedWithComm.id ? updatedWithComm : o));
 
     // Also sync linked carwash entry if any
-    setCarwash(prev => (prev || []).map(c => {
-      if (c.tallerOrderId === updatedWithComm.id) {
-        return {
-          ...c,
-          cliente: updatedWithComm.cliente,
-          telefono: updatedWithComm.telefono,
-          nit: updatedWithComm.nit,
-          nombreFacturacion: updatedWithComm.nombreFacturacion,
-          vehiculo: {
-            placa: updatedWithComm.placa,
-            marca: updatedWithComm.marca,
-            linea: updatedWithComm.linea,
-            color: updatedWithComm.color
-          }
-        };
-      }
-      return c;
-    }));
+    if (setCarwash) {
+      setCarwash(prev => (prev || []).map(c => {
+        if (String(c.tallerOrderId) === String(updatedWithComm.id)) {
+          return {
+            ...c,
+            fecha: finalFecha,
+            cliente: updatedWithComm.cliente,
+            telefono: updatedWithComm.telefono,
+            nit: updatedWithComm.nit,
+            nombreFacturacion: updatedWithComm.nombreFacturacion,
+            vehiculo: {
+              placa: updatedWithComm.placa,
+              marca: updatedWithComm.marca,
+              linea: updatedWithComm.linea,
+              color: updatedWithComm.color
+            }
+          };
+        }
+        return c;
+      }));
+    }
+
+    // Sync linked purchases/expenses in compras
+    if (setCompras) {
+      setCompras(prev => (prev || []).map(comp => {
+        const isLinkedByOrder = String(comp.ordenId || comp.tallerOrderId || comp.presupuestoId) === String(updatedWithComm.id);
+        const isLinkedByPlaca = comp.placa && String(comp.placa).toUpperCase().trim() === String(updatedWithComm.placa).toUpperCase().trim();
+        if (isLinkedByOrder || isLinkedByPlaca) {
+          return { ...comp, fecha: finalFecha, updatedAt: new Date().toISOString() };
+        }
+        return comp;
+      }));
+    }
+
+    // Sync linked accounts receivable / payable
+    if (setCuentasPorCobrar) {
+      setCuentasPorCobrar(prev => (prev || []).map(c => {
+        if (String(c.tallerOrderId || c.ordenId) === String(updatedWithComm.id)) {
+          return { ...c, fecha: finalFecha, updatedAt: new Date().toISOString() };
+        }
+        return c;
+      }));
+    }
+    if (setCuentasPorPagar) {
+      setCuentasPorPagar(prev => (prev || []).map(p => {
+        if (String(p.tallerOrderId || p.ordenId) === String(updatedWithComm.id)) {
+          return { ...p, fecha: finalFecha, updatedAt: new Date().toISOString() };
+        }
+        return p;
+      }));
+    }
 
     setEditingBilledOrder(null);
-    alert("¡Orden facturada actualizada con éxito por Administración!");
+    alert("¡Orden y presupuesto facturado actualizados con éxito por Administración!");
   };
 
   // Filter orders by search query, tab and role
@@ -6229,6 +6274,27 @@ export default function Taller({
                     onChange={(e) => setEditingBilledOrder({ ...editingBilledOrder, linea: e.target.value })}
                   />
                 </div>
+              </div>
+
+              <div style={{ marginBottom: "16px", padding: "12px", background: "rgba(59, 130, 246, 0.06)", borderRadius: "10px", border: "1px solid rgba(59, 130, 246, 0.2)" }}>
+                <label style={{ fontSize: "0.85rem", color: "#60a5fa", fontWeight: "700", display: "block", marginBottom: "6px" }}>
+                  📅 Fecha del Presupuesto / Facturación:
+                </label>
+                <input
+                  type="date"
+                  className="input-field"
+                  style={{ borderColor: "#3b82f6", color: "#fff", fontWeight: "600" }}
+                  value={
+                    editingBilledOrder.fechaInput !== undefined 
+                      ? editingBilledOrder.fechaInput 
+                      : (editingBilledOrder.fecha ? new Date(editingBilledOrder.fecha).toISOString().split("T")[0] : new Date().toISOString().split("T")[0])
+                  }
+                  onChange={(e) => setEditingBilledOrder({ ...editingBilledOrder, fechaInput: e.target.value })}
+                  required
+                />
+                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "4px", display: "block" }}>
+                  ℹ️ Al cambiar la fecha, el ingreso y los gastos de repuestos/materiales asociados se contabilizarán en el mes de la nueva fecha seleccionada.
+                </span>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "16px" }}>

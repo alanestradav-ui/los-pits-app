@@ -68,14 +68,74 @@ export default function Finance({
 
   const guardarBilledOrderEditFinance = (updatedObj) => {
     if (!updatedObj) return;
-    setOrdenes(prev => (prev || []).map(o => o.id === updatedObj.id ? updatedObj : o));
+
+    const finalFecha = updatedObj.fechaInput 
+      ? new Date(updatedObj.fechaInput + "T12:00:00").toISOString() 
+      : (updatedObj.fecha || new Date().toISOString());
+
+    const updatedWithDate = {
+      ...updatedObj,
+      fecha: finalFecha,
+      updatedAt: new Date().toISOString()
+    };
+    delete updatedWithDate.fechaInput;
+
+    setOrdenes(prev => (prev || []).map(o => o.id === updatedWithDate.id ? updatedWithDate : o));
+
+    // Sync linked carwash entries
+    if (setCarwash) {
+      setCarwash(prev => (prev || []).map(c => {
+        if (String(c.tallerOrderId) === String(updatedWithDate.id)) {
+          return {
+            ...c,
+            fecha: finalFecha,
+            cliente: updatedWithDate.cliente,
+            telefono: updatedWithDate.telefono,
+            nit: updatedWithDate.nit,
+            nombreFacturacion: updatedWithDate.nombreFacturacion,
+            vehiculo: {
+              placa: updatedWithDate.placa,
+              marca: updatedWithDate.marca,
+              linea: updatedWithDate.linea,
+              color: updatedWithDate.color
+            }
+          };
+        }
+        return c;
+      }));
+    }
+
+    // Sync linked compras/expenses
+    if (setCompras) {
+      setCompras(prev => (prev || []).map(comp => {
+        const isLinkedByOrder = String(comp.ordenId || comp.tallerOrderId || comp.presupuestoId) === String(updatedWithDate.id);
+        const isLinkedByPlaca = comp.placa && String(comp.placa).toUpperCase().trim() === String(updatedWithDate.placa).toUpperCase().trim();
+        if (isLinkedByOrder || isLinkedByPlaca) {
+          return { ...comp, fecha: finalFecha, updatedAt: new Date().toISOString() };
+        }
+        return comp;
+      }));
+    }
+
     setEditingBilledOrderFromFinance(null);
-    alert("¡Orden facturada actualizada con éxito en Finanzas!");
+    alert("¡Orden y presupuesto facturado actualizados con éxito en Finanzas!");
   };
 
   const guardarBilledCarwashEditFinance = (updatedObj) => {
     if (!updatedObj) return;
-    setCarwash(prev => (prev || []).map(c => c.id === updatedObj.id ? updatedObj : c));
+
+    const finalFecha = updatedObj.fechaInput 
+      ? new Date(updatedObj.fechaInput + "T12:00:00").toISOString() 
+      : (updatedObj.fecha || new Date().toISOString());
+
+    const updatedWithDate = {
+      ...updatedObj,
+      fecha: finalFecha,
+      updatedAt: new Date().toISOString()
+    };
+    delete updatedWithDate.fechaInput;
+
+    setCarwash(prev => (prev || []).map(c => c.id === updatedWithDate.id ? updatedWithDate : c));
     setEditingBilledCarwashFromFinance(null);
     alert("¡Lavado facturado actualizado con éxito en Finanzas!");
   };
@@ -2601,6 +2661,27 @@ export default function Finance({
                 </div>
               </div>
 
+              <div style={{ marginBottom: "16px", padding: "12px", background: "rgba(59, 130, 246, 0.06)", borderRadius: "10px", border: "1px solid rgba(59, 130, 246, 0.2)" }}>
+                <label style={{ fontSize: "0.85rem", color: "#60a5fa", fontWeight: "700", display: "block", marginBottom: "6px" }}>
+                  📅 Fecha del Presupuesto / Facturación:
+                </label>
+                <input
+                  type="date"
+                  className="input-field"
+                  style={{ borderColor: "#3b82f6", color: "#fff", fontWeight: "600" }}
+                  value={
+                    editingBilledOrderFromFinance.fechaInput !== undefined 
+                      ? editingBilledOrderFromFinance.fechaInput 
+                      : (editingBilledOrderFromFinance.fecha ? new Date(editingBilledOrderFromFinance.fecha).toISOString().split("T")[0] : new Date().toISOString().split("T")[0])
+                  }
+                  onChange={(e) => setEditingBilledOrderFromFinance({ ...editingBilledOrderFromFinance, fechaInput: e.target.value })}
+                  required
+                />
+                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "4px", display: "block" }}>
+                  ℹ️ Al cambiar la fecha, el ingreso y los gastos de repuestos/materiales asociados se contabilizarán en el mes de la nueva fecha seleccionada.
+                </span>
+              </div>
+
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "16px" }}>
                 <div>
                   <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Placa:</label>
@@ -2772,6 +2853,24 @@ export default function Finance({
                     onChange={(e) => setEditingBilledCarwashFromFinance({ ...editingBilledCarwashFromFinance, telefono: e.target.value })}
                   />
                 </div>
+              </div>
+
+              <div style={{ marginBottom: "16px", padding: "12px", background: "rgba(59, 130, 246, 0.06)", borderRadius: "10px", border: "1px solid rgba(59, 130, 246, 0.2)" }}>
+                <label style={{ fontSize: "0.85rem", color: "#60a5fa", fontWeight: "700", display: "block", marginBottom: "6px" }}>
+                  📅 Fecha del Servicio Carwash:
+                </label>
+                <input
+                  type="date"
+                  className="input-field"
+                  style={{ borderColor: "#3b82f6", color: "#fff", fontWeight: "600" }}
+                  value={
+                    editingBilledCarwashFromFinance.fechaInput !== undefined 
+                      ? editingBilledCarwashFromFinance.fechaInput 
+                      : (editingBilledCarwashFromFinance.fecha ? new Date(editingBilledCarwashFromFinance.fecha).toISOString().split("T")[0] : new Date().toISOString().split("T")[0])
+                  }
+                  onChange={(e) => setEditingBilledCarwashFromFinance({ ...editingBilledCarwashFromFinance, fechaInput: e.target.value })}
+                  required
+                />
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "16px" }}>
