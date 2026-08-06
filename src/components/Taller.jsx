@@ -659,7 +659,6 @@ export default function Taller({
           fechaRegistro: new Date().toISOString()
         }];
         setLocalStorage("clientes", updated);
-        try { syncKeyToCloud("clientes", updated); } catch (err) {}
         return updated;
       });
     }
@@ -692,7 +691,6 @@ export default function Taller({
           fechaRegistro: new Date().toISOString()
         }];
         setLocalStorage("vehiculos", updated);
-        try { syncKeyToCloud("vehiculos", updated); } catch (err) {}
         return updated;
       });
     }
@@ -703,49 +701,40 @@ export default function Taller({
     if (!editingEntryOrder) return;
     
     const clienteVal = (editingEntryOrder.cliente || "").trim();
-    const placaVal = (editingEntryOrder.placa || "").trim();
+    const telVal = (editingEntryOrder.telefono || "").trim();
+    const cleanNum = (editingEntryOrder.plateNumber || "").trim().toUpperCase();
     const marcaVal = (editingEntryOrder.marca || "").trim();
     const lineaVal = (editingEntryOrder.linea || "").trim();
-    const motivoVal = (editingEntryOrder.motivoIngreso || "").trim();
-    
-    if (!clienteVal || !placaVal || !parsePlate(placaVal).number.trim() || !marcaVal || !lineaVal || !motivoVal) {
-      alert("Completa los campos obligatorios (Placa, Marca, Línea, Cliente y Motivo de ingreso).");
+
+    if (!clienteVal || !telVal || !cleanNum || !marcaVal || !lineaVal) {
+      alert("Completa todos los campos obligatorios.");
       return;
     }
-    
-    const updatedVehiculo = `${marcaVal} ${lineaVal} (${placaVal.toUpperCase()})`;
-    
-    const updatedOrders = ordenes.map(o => {
-      if (o.id === editingEntryOrder.id) {
-        const newMotivosArray = motivoVal.split(" / ");
-        
-        const updatedOrder = {
-          ...o,
-          cliente: clienteVal,
-          telefono: (editingEntryOrder.telefono || "").trim(),
-          nit: (editingEntryOrder.nit || "").trim() || "C/F",
-          nombreFacturacion: (editingEntryOrder.nombreFacturacion || "").trim() || clienteVal,
-          placa: placaVal.toUpperCase(),
-          chasis: (editingEntryOrder.chasis || "").toUpperCase().trim(),
-          marca: marcaVal,
-          linea: lineaVal,
-          anio: (editingEntryOrder.anio || "").toString().trim(),
-          color: (editingEntryOrder.color || "").trim(),
-          kilometraje: (editingEntryOrder.kilometraje || "").toString().trim(),
-          motivoIngreso: motivoVal,
-          trabajo: motivoVal,
-          motivosIngreso: newMotivosArray,
-          vehiculo: updatedVehiculo
-        };
-        
-        registrarClienteYVehiculo(updatedOrder);
-        return updatedOrder;
-      }
-      return o;
-    });
-    
-    setOrdenes(updatedOrders);
+
+    const pref = editingEntryOrder.platePrefix || "P";
+    const fullPlaca = pref === "Extranjera" ? cleanNum : `${pref}-${cleanNum}`;
+
+    const updatedOrder = {
+      ...editingEntryOrder,
+      cliente: clienteVal,
+      telefono: telVal,
+      placa: fullPlaca,
+      marca: marcaVal,
+      linea: lineaVal,
+      anio: (editingEntryOrder.anio || "").trim(),
+      color: (editingEntryOrder.color || "").trim(),
+      kilometraje: (editingEntryOrder.kilometraje || "").trim(),
+      chasis: (editingEntryOrder.chasis || "").toUpperCase().trim(),
+      nit: (editingEntryOrder.nit || "").trim() || "C/F",
+      nombreFacturacion: (editingEntryOrder.nombreFacturacion || "").trim() || clienteVal,
+      vehiculo: `${marcaVal} ${lineaVal} (${fullPlaca})`,
+      updatedAt: new Date().toISOString()
+    };
+
+    setOrdenes(prev => (prev || []).map(o => o.id === editingEntryOrder.id ? updatedOrder : o));
+    registrarClienteYVehiculo(updatedOrder);
     setEditingEntryOrder(null);
+    alert("¡Datos del vehículo e ingreso actualizados con éxito!");
   };
 
   const removePhoto = (index) => {
@@ -755,22 +744,19 @@ export default function Taller({
   const crearOrden = (e) => {
     e.preventDefault();
     const cleanNum = plateNumber.trim().toUpperCase();
-    if (!cliente.trim() || !cleanNum || !marca.trim() || !linea.trim() || motivosIngreso.length === 0) {
-      alert("Completa los campos obligatorios (Placa, Marca, Línea, Cliente y al menos un Motivo de ingreso).");
+    if (!cliente.trim() || !telefono.trim() || !cleanNum || !marca.trim() || !linea.trim()) {
+      alert("Completa todos los campos obligatorios (Placa, Cliente, Teléfono, Marca y Línea).");
       return;
     }
-    const fullPlaca = platePrefix === "Extranjera" ? cleanNum : `${platePrefix}-${cleanNum}`;
 
-    let valorPrecio = 0;
-    if (precio) {
-      valorPrecio = parseFloat(precio);
-      if (isNaN(valorPrecio) || valorPrecio < 0) {
-        alert("El precio debe ser un número válido");
-        return;
-      }
+    if (!motivosIngreso || motivosIngreso.length === 0) {
+      alert("Debes seleccionar al menos un motivo de ingreso.");
+      return;
     }
 
-    const comision = calculateOrderCommission({ total: valorPrecio, mecanico });
+    const fullPlaca = platePrefix === "Extranjera" ? cleanNum : `${platePrefix}-${cleanNum}`;
+    const valorPrecio = parseFloat(precio) || 0;
+    const comision = (valorPrecio * (parseFloat(comisionMecanico) || 10)) / 100;
 
     const motivosString = motivosIngreso.join(" / ");
 
@@ -811,7 +797,6 @@ export default function Taller({
       const exists = safePrev.some(o => String(o.id) === String(nueva.id));
       const updated = exists ? safePrev : [nueva, ...safePrev];
       setLocalStorage("ordenes", updated);
-      try { syncKeyToCloud("ordenes", updated); } catch (err) {}
       return updated;
     });
     registrarClienteYVehiculo(nueva);

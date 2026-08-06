@@ -601,7 +601,6 @@ export default function Carwash({
             fechaRegistro: new Date().toISOString()
           }];
           setLocalStorage("clientes", updated);
-          try { syncKeyToCloud("clientes", updated); } catch (err) {}
           return updated;
         });
       }
@@ -634,7 +633,6 @@ export default function Carwash({
             fechaRegistro: new Date().toISOString()
           }];
           setLocalStorage("vehiculos", updated);
-          try { syncKeyToCloud("vehiculos", updated); } catch (err) {}
           return updated;
         });
       }
@@ -645,7 +643,6 @@ export default function Carwash({
       const exists = safePrev.some(c => String(c.id) === String(nuevo.id));
       const updated = exists ? safePrev : [nuevo, ...safePrev];
       setLocalStorage("carwash", updated);
-      try { syncKeyToCloud("carwash", updated); } catch (err) {}
       return updated;
     });
     registrarClienteYVehiculo(nuevo);
