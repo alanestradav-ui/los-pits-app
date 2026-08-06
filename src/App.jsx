@@ -1020,7 +1020,31 @@ export default function App() {
   const globalBroadcastChannel = useRef(null);
   const instanceId = useRef(Math.random().toString(36).substring(2, 9));
 
-  // Fast single-key cloud pull for instant <300ms updates
+  const getLatestLocalValue = (k) => {
+    const fromStorage = safeParseJSON(getLocalStorage(k, null));
+    const fromRef = stateRef.current ? stateRef.current[k] : null;
+    if (!fromStorage && !fromRef) return null;
+    if (!fromStorage) return fromRef;
+    if (!fromRef) return fromStorage;
+
+    if (Array.isArray(fromStorage) && Array.isArray(fromRef)) {
+      const combinedMap = new Map();
+      fromRef.forEach((item, idx) => {
+        if (!item) return;
+        const id = item.id !== undefined && item.id !== null ? String(item.id) : `ref_${idx}`;
+        combinedMap.set(id, item);
+      });
+      fromStorage.forEach((item, idx) => {
+        if (!item) return;
+        const id = item.id !== undefined && item.id !== null ? String(item.id) : `stg_${idx}`;
+        combinedMap.set(id, item);
+      });
+      return Array.from(combinedMap.values());
+    }
+    return fromStorage || fromRef;
+  };
+
+  // Fetch a single key from cloud on-demand when notified via WebSocket Broadcast
   const fetchSingleKeyFromCloud = async (targetKey) => {
     const client = getSupabaseClient();
     if (!client) return;
@@ -1035,9 +1059,7 @@ export default function App() {
 
       const cloudRaw = data[0].value;
       const cloudValue = safeParseJSON(cloudRaw);
-      const localValue = (stateRef.current && stateRef.current[targetKey] !== undefined && stateRef.current[targetKey] !== null)
-        ? stateRef.current[targetKey]
-        : safeParseJSON(getLocalStorage(targetKey, null));
+      const localValue = getLatestLocalValue(targetKey);
 
       const papeleraRaw = safeParseJSON(getLocalStorage("papeleraSistema", []));
       let mergedValue = mergeCollections(targetKey, localValue, cloudValue, papeleraRaw);
@@ -1140,9 +1162,7 @@ export default function App() {
         const activeSetter = globalActiveSetters[key];
         const cloudRaw = cloudDataMap.get(key);
         const cloudValue = cloudRaw !== undefined ? safeParseJSON(cloudRaw) : null;
-        const localValue = (stateRef.current && stateRef.current[key] !== undefined && stateRef.current[key] !== null)
-          ? stateRef.current[key]
-          : safeParseJSON(getLocalStorage(key, null));
+        const localValue = getLatestLocalValue(key);
 
         const papeleraRaw = cloudDataMap.get("papeleraSistema");
         let mergedValue = mergeCollections(key, localValue, cloudValue, papeleraRaw);
@@ -1267,9 +1287,7 @@ export default function App() {
             }
           }
 
-          const currentLocalVal = (stateRef.current && stateRef.current[key] !== undefined)
-            ? stateRef.current[key]
-            : getLocalStorage(key, null);
+          const currentLocalVal = getLatestLocalValue(key);
 
           const mergedValue = mergeCollections(key, currentLocalVal, sanitizedValue);
           const mergedValStr = JSON.stringify(mergedValue);
