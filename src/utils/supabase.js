@@ -157,11 +157,30 @@ export const syncKeyToCloud = async (key, value) => {
       return parsed.map(item => {
         if (!item || typeof item !== "object") return item;
         const newItem = { ...item };
+        
+        const sanitizePhotoItem = (f) => {
+          if (!f) return null;
+          if (typeof f === "string") {
+            // Preserve valid photo Base64 or URL strings up to 2MB characters
+            return f.length <= 2000000 ? f : f.substring(0, 500);
+          }
+          if (typeof f === "object" && f.base64) {
+            return {
+              ...f,
+              base64: typeof f.base64 === "string" && f.base64.length <= 2000000 ? f.base64 : ""
+            };
+          }
+          return f;
+        };
+
         if (Array.isArray(newItem.fotos)) {
-          newItem.fotos = newItem.fotos.map(f => (typeof f === "string" && f.length > 500) ? "" : f).filter(Boolean);
+          newItem.fotos = newItem.fotos.map(sanitizePhotoItem).filter(Boolean);
         }
         if (Array.isArray(newItem.photos)) {
-          newItem.photos = newItem.photos.map(f => (typeof f === "string" && f.length > 500) ? "" : f).filter(Boolean);
+          newItem.photos = newItem.photos.map(sanitizePhotoItem).filter(Boolean);
+        }
+        if (Array.isArray(newItem.fotosDiagnostico)) {
+          newItem.fotosDiagnostico = newItem.fotosDiagnostico.map(sanitizePhotoItem).filter(Boolean);
         }
         return newItem;
       });

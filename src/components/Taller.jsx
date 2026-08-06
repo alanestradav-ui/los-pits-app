@@ -481,9 +481,19 @@ export default function Taller({
       }
     }
 
-    // If mechanic role, show only their assigned orders
-    if (isWorker && (o.mecanico || "").toLowerCase() !== (usuarioActual?.user || "").toLowerCase()) {
-      return false;
+    // If mechanic/worker role, show orders assigned to them, created by them, or unassigned
+    if (isWorker) {
+      const userClean = (usuarioActual?.user || "").toLowerCase().trim();
+      const mecaClean = (o.mecanico || "").toLowerCase().trim();
+      const creadorClean = (o.creadoPor || "").toLowerCase().trim();
+
+      const isAssigned = mecaClean && (mecaClean === userClean || mecaClean.includes(userClean) || userClean.includes(mecaClean));
+      const isCreator = creadorClean && creadorClean === userClean;
+      const isUnassigned = !mecaClean;
+
+      if (!isAssigned && !isCreator && !isUnassigned) {
+        return false;
+      }
     }
     
     if (!query) return true;
@@ -783,6 +793,7 @@ export default function Taller({
       trabajo: motivosString, // Retrocompatibilidad
       vehiculo: `${marca.trim()} ${linea.trim()} (${fullPlaca})`, // Retrocompatibilidad
       mecanico,
+      creadoPor: usuarioActual?.user || "",
       fotos: fotos,
       estado: "En recepción",
       total: valorPrecio,
