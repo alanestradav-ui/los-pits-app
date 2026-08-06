@@ -964,8 +964,11 @@ export default function Taller({
                 trabajoAdicionalPrecio: 0,
                 comision: 5.0, // Fixed Q5 commission for workshop washes
                 lavadores: [],
+                lavador: "Sin asignar",
+                creadoPor: o.creadoPor || "",
                 estado: "En proceso",
-                fecha: new Date().toISOString()
+                fecha: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
               };
               setCarwash([nuevoLavadoTaller, ...carwash]);
             }

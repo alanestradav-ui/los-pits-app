@@ -504,7 +504,7 @@ export default function Dashboard({
                     </div>
                     <div style={styles.activityRow}>
                       <span style={styles.activitySub}>
-                        {item.isWash ? `Lavador: ${item.lavador}` : `Mecánico: ${item.mecanico}`}
+                        {item.isWash ? `Lavador: ${item.lavador || "Sin asignar"}` : `Mecánico: ${item.mecanico || "Sin asignar"}`}
                       </span>
                       <span className={`badge ${
                         item.estado === "Listo para entrega" ? "badge-ready" :

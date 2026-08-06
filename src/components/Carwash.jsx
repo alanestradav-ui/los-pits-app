@@ -457,14 +457,17 @@ export default function Carwash({
       }
     }
 
-    // If washer role, show only their assigned washes
+    // If washer role, show assigned washes, washes created by them, or unassigned washes
     const washLavadores = Array.isArray(c.lavadores) 
-      ? c.lavadores.map(l => String(l).toLowerCase()) 
-      : String(c.lavador || "").toLowerCase().split(",").map(l => l.trim());
+      ? c.lavadores.map(l => String(l).toLowerCase().trim()) 
+      : String(c.lavador || "").toLowerCase().split(",").map(l => l.trim()).filter(Boolean);
 
     const activeUserStr = String(usuarioActual?.user || "").toLowerCase().trim();
+    const isAssigned = washLavadores.includes(activeUserStr);
+    const isCreator = c.creadoPor && String(c.creadoPor).toLowerCase().trim() === activeUserStr;
+    const isUnassigned = washLavadores.length === 0 || (washLavadores.length === 1 && washLavadores[0] === "");
 
-    if (isWorker && !washLavadores.includes(activeUserStr)) {
+    if (isWorker && !isAssigned && !isCreator && !isUnassigned) {
       return false;
     }
     
@@ -576,7 +579,8 @@ export default function Carwash({
       trabajoAdicionalPrecio: pAdd,
       accesoriosCargados: selectedAccesorios,
       lavadores: selectedLavadores,
-      lavador: selectedLavadores.join(", "),
+      lavador: selectedLavadores && selectedLavadores.length > 0 ? selectedLavadores.join(", ") : "Sin asignar",
+      creadoPor: usuarioActual?.user || "",
       fotos: fotos,
       estado: "En proceso",
       comision: comisionVal,
