@@ -171,27 +171,26 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
 
   if (Array.isArray(cleanLocal) && Array.isArray(cleanCloud)) {
     if (key === "usuarios") {
-      const mergedMap = new Map();
-      const cloudUsers = deduplicateUsers(cleanCloud);
       const localUsers = deduplicateUsers(cleanLocal);
+      const cloudUsersMap = new Map();
+      if (Array.isArray(cleanCloud)) {
+        deduplicateUsers(cleanCloud).forEach(u => {
+          const usernameKey = String(u.user || u.username || "").toLowerCase().trim();
+          if (usernameKey) cloudUsersMap.set(usernameKey, u);
+        });
+      }
 
-      cloudUsers.forEach((u) => {
-        const username = String(u.user || u.username || "").toLowerCase().trim();
-        if (username) mergedMap.set(username, u);
-      });
+      if (localUsers && localUsers.length > 0) {
+        // Local list defines active users; merge cloud properties for matching users without resurrecting deleted ones
+        return localUsers.map(lUser => {
+          const usernameKey = String(lUser.user || lUser.username || "").toLowerCase().trim();
+          const cloudUser = cloudUsersMap.get(usernameKey);
+          if (!cloudUser) return lUser;
+          return { ...cloudUser, ...lUser };
+        });
+      }
 
-      localUsers.forEach((u) => {
-        const username = String(u.user || u.username || "").toLowerCase().trim();
-        if (username) {
-          if (!mergedMap.has(username)) {
-            mergedMap.set(username, u);
-          } else {
-            const existing = mergedMap.get(username);
-            mergedMap.set(username, { ...u, ...existing });
-          }
-        }
-      });
-      return Array.from(mergedMap.values());
+      return Array.from(cloudUsersMap.values());
     }
 
     if (key === "clientes") {
@@ -347,15 +346,10 @@ export default function App() {
   // 🔐 USER DEFINITIONS
   const [usuarios, setUsuarios] = useState(() => {
     const defaultUsers = [
-      { user: "admin", pass: "1234", rol: "admin", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"], salarioBase: 0, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 0 },
-      { user: "cajero", pass: "1234", rol: "cajero", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"], salarioBase: 3000, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 0 },
-      { user: "mecanico", pass: "1234", rol: "mecanico", permissions: ["taller", "historial"], salarioBase: 2500, comisionTaller: 10, comisionCarwash: 0, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: false, comisionRepuestos: 0 },
-      { user: "lavador", pass: "1234", rol: "lavador", permissions: ["carwash"], salarioBase: 2000, comisionTaller: 0, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 0 },
-      { user: "jefe", pass: "1234", rol: "jefe de taller", permissions: ["dashboard", "taller", "repuestosFaltantes", "historial"], salarioBase: 4000, comisionTaller: 10, comisionCarwash: 0, comisionarLabor: true, comisionarRepuestos: true, comisionarCarwash: false, comisionRepuestos: 5 },
-      { user: "vendedor", pass: "1234", rol: "vendedor", permissions: ["cotizacionesVendedores"], salarioBase: 0, comisionTaller: 0, comisionCarwash: 0 }
+      { user: "admin", pass: "1234", rol: "admin", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"], salarioBase: 0, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 0 }
     ];
-    const val = getLocalStorage("usuarios", defaultUsers);
-    const loaded = deduplicateUsers(Array.isArray(val) ? val : defaultUsers);
+    const val = getLocalStorage("usuarios", null);
+    const loaded = deduplicateUsers(Array.isArray(val) && val.length > 0 ? val : defaultUsers);
     return loaded.map(u => {
       const perms = u.permissions || [];
       const updatedPerms = (u.rol === "admin" || u.rol === "cajero")
