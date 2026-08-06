@@ -255,20 +255,67 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
       return { ...item, estado: est };
     };
 
-    const getItemId = (item, idx, prefix) => {
-      if (item && item.id !== undefined && item.id !== null) {
+    const getItemId = (item, idx) => {
+      if (!item) return `item_${idx}`;
+      if (item.id !== undefined && item.id !== null && String(item.id).trim() !== "") {
         return String(item.id);
       }
+      if (item.uuid) {
+        return String(item.uuid);
+      }
       if (key === "ordenes") {
-        return `${item.cliente || 'cl'}_${item.placa || 'plc'}_${item.fecha || idx}`;
+        const cl = String(item.cliente || '').toLowerCase().trim();
+        const pl = String(item.placa || '').toLowerCase().trim();
+        const fc = item.fecha ? new Date(item.fecha).getTime() : idx;
+        return `ord_${cl}_${pl}_${fc}`;
       }
       if (key === "carwash") {
-        return `${item.cliente || 'cl'}_${item.vehiculo || 'veh'}_${item.fecha || idx}`;
+        const cl = String(item.cliente || '').toLowerCase().trim();
+        const vh = String(item.vehiculo?.placa || item.vehiculo || '').toLowerCase().trim();
+        const fc = item.fecha ? new Date(item.fecha).getTime() : idx;
+        return `cw_${cl}_${vh}_${fc}`;
       }
-      if (key === "workshopInventory" || key === "cafeteriaInventory" || key === "carwashInventory") {
-        return item.code || item.nombre || item.name || `${prefix}_item_${idx}`;
+      if (key === "compras") {
+        const prov = String(item.proveedor || '').toLowerCase().trim();
+        const tot = item.total || item.monto || 0;
+        const fc = item.fecha ? new Date(item.fecha).getTime() : idx;
+        return `comp_${prov}_${tot}_${fc}`;
       }
-      return `${prefix}_item_${idx}`;
+      if (key === "cuentasPorCobrar" || key === "cuentasPorPagar") {
+        const entity = String(item.cliente || item.proveedor || '').toLowerCase().trim();
+        const m = item.monto || item.total || 0;
+        const fc = item.fecha ? new Date(item.fecha).getTime() : idx;
+        return `ccta_${entity}_${m}_${fc}`;
+      }
+      if (key === "vehiculosVenta") {
+        const pl = String(item.placa || item.chasis || item.vin || '').toLowerCase().trim();
+        if (pl) return `vventa_${pl}`;
+        return `vventa_${item.marca || ''}_${item.linea || ''}_${idx}`;
+      }
+      if (key === "payrollHistory") {
+        const usr = String(item.user || item.colaborador || '').toLowerCase().trim();
+        const per = item.periodo || item.fecha || idx;
+        return `payroll_${usr}_${per}`;
+      }
+      if (key === "workshopInventory" || key === "cafeteriaInventory" || key === "carwashInventory" || key === "toolsInventory" || key === "accesoriosInventory") {
+        const code = String(item.code || item.codigo || item.nombre || item.name || '').toLowerCase().trim();
+        if (code) return `inv_${key}_${code}`;
+      }
+      if (key === "cafeteriaSales" || key === "tiendaSales") {
+        const fc = item.fecha ? new Date(item.fecha).getTime() : idx;
+        const tot = item.total || 0;
+        return `sale_${key}_${fc}_${tot}`;
+      }
+      if (key === "parkingHistory" || key === "parkingEntries") {
+        const pl = String(item.placa || '').toLowerCase().trim();
+        const h = item.horaEntrada || item.fecha || idx;
+        return `park_${pl}_${h}`;
+      }
+      const fallbackSig = (item.name || item.tipo || item.descripcion || item.total || item.fecha);
+      if (fallbackSig) {
+        return `item_${key}_${String(fallbackSig).toLowerCase().trim()}`;
+      }
+      return `item_${key}_${idx}`;
     };
 
     const mergeSingleItem = (cloudItem, localItem) => {
@@ -330,7 +377,7 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
     cleanCloud.forEach((item, idx) => {
       if (!isItemDeleted(item)) {
         const norm = normalizeStatus(item);
-        const id = getItemId(norm, idx, "cloud");
+        const id = getItemId(norm, idx);
         mergedMap.set(id, norm);
       }
     });
@@ -338,7 +385,7 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
     cleanLocal.forEach((item, idx) => {
       if (!isItemDeleted(item)) {
         const norm = normalizeStatus(item);
-        const id = getItemId(norm, idx, "local");
+        const id = getItemId(norm, idx);
         if (!mergedMap.has(id)) {
           mergedMap.set(id, norm);
         } else {
@@ -1107,7 +1154,7 @@ export default function App() {
         setLocalStorage(key, mergedValue);
 
         // Subir a Supabase solo si hay datos locales legítimos recién creados sin sincronizar
-        if (mergedValStr !== cloudValStr && mergedValue !== null && mergedValue !== undefined && cloudRaw !== undefined) {
+        if (mergedValStr !== cloudValStr && mergedValue !== null && mergedValue !== undefined) {
           syncKeyToCloud(key, mergedValue);
         }
       });
