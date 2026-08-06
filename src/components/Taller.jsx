@@ -19,6 +19,7 @@ import {
   ShoppingBag
 } from "lucide-react";
 import { formatMoney, getLocalStorage, setLocalStorage } from "../utils/storage";
+import { syncKeyToCloud } from "../utils/supabase";
 import { jsPDF } from "jspdf";
 
 const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
@@ -641,60 +642,58 @@ export default function Taller({
 
   const registrarClienteYVehiculo = (order) => {
     const tel = order.telefono?.trim();
-    if (tel) {
+    if (tel && setClientes) {
       setClientes(prev => {
         const safePrev = Array.isArray(prev) ? prev : [];
         const exists = safePrev.find(c => c.telefono === tel);
-        if (exists) {
-          return safePrev.map(c => c.telefono === tel ? {
-            ...c,
-            nombre: order.cliente.trim(),
-            nit: order.nit || c.nit,
-            nombreFacturacion: order.nombreFacturacion || c.nombreFacturacion
-          } : c);
-        } else {
-          return [...safePrev, {
-            telefono: tel,
-            nombre: order.cliente.trim(),
-            nit: order.nit || "C/F",
-            nombreFacturacion: order.nombreFacturacion || order.cliente.trim(),
-            fechaRegistro: new Date().toISOString()
-          }];
-        }
+        const updated = exists ? safePrev.map(c => c.telefono === tel ? {
+          ...c,
+          nombre: order.cliente.trim(),
+          nit: order.nit || c.nit,
+          nombreFacturacion: order.nombreFacturacion || c.nombreFacturacion
+        } : c) : [...safePrev, {
+          telefono: tel,
+          nombre: order.cliente.trim(),
+          nit: order.nit || "C/F",
+          nombreFacturacion: order.nombreFacturacion || order.cliente.trim(),
+          fechaRegistro: new Date().toISOString()
+        }];
+        setLocalStorage("clientes", updated);
+        try { syncKeyToCloud("clientes", updated); } catch (err) {}
+        return updated;
       });
     }
 
     const plc = order.placa?.toUpperCase()?.trim();
     const chs = order.chasis?.toUpperCase()?.trim();
-    if (plc || chs) {
+    if ((plc || chs) && setVehiculos) {
       setVehiculos(prev => {
         const safePrev = Array.isArray(prev) ? prev : [];
         const matchIndex = safePrev.findIndex(v => 
           (plc && v.placa === plc) || (chs && v.chasis === chs)
         );
-        if (matchIndex > -1) {
-          return safePrev.map((v, idx) => idx === matchIndex ? {
-            ...v,
-            placa: plc || v.placa,
-            chasis: chs || v.chasis,
-            marca: order.marca.trim(),
-            linea: order.linea.trim(),
-            anio: order.anio || v.anio,
-            color: order.color || v.color,
-            clienteTelefono: tel || v.clienteTelefono
-          } : v);
-        } else {
-          return [...safePrev, {
-            placa: plc || "",
-            chasis: chs || "",
-            marca: order.marca.trim(),
-            linea: order.linea.trim(),
-            anio: order.anio || "",
-            color: order.color || "",
-            clienteTelefono: tel || "",
-            fechaRegistro: new Date().toISOString()
-          }];
-        }
+        const updated = matchIndex > -1 ? safePrev.map((v, idx) => idx === matchIndex ? {
+          ...v,
+          placa: plc || v.placa,
+          chasis: chs || v.chasis,
+          marca: order.marca.trim(),
+          linea: order.linea.trim(),
+          anio: order.anio || v.anio,
+          color: order.color || v.color,
+          clienteTelefono: tel || v.clienteTelefono
+        } : v) : [...safePrev, {
+          placa: plc || "",
+          chasis: chs || "",
+          marca: order.marca.trim(),
+          linea: order.linea.trim(),
+          anio: order.anio || "",
+          color: order.color || "",
+          clienteTelefono: tel || "",
+          fechaRegistro: new Date().toISOString()
+        }];
+        setLocalStorage("vehiculos", updated);
+        try { syncKeyToCloud("vehiculos", updated); } catch (err) {}
+        return updated;
       });
     }
   };
@@ -810,7 +809,7 @@ export default function Taller({
     const nextOrdenes = [nueva, ...(Array.isArray(ordenes) ? ordenes : [])];
     setOrdenes(nextOrdenes);
     setLocalStorage("ordenes", nextOrdenes);
-    syncToCloud("ordenes", nextOrdenes);
+    try { syncKeyToCloud("ordenes", nextOrdenes); } catch (err) {}
     registrarClienteYVehiculo(nueva);
     setCliente("");
     setTelefono("");

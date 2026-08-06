@@ -14,7 +14,8 @@ import {
   AlertTriangle,
   Edit
 } from "lucide-react";
-import { formatMoney } from "../utils/storage";
+import { formatMoney, setLocalStorage } from "../utils/storage";
+import { syncKeyToCloud } from "../utils/supabase";
 import { jsPDF } from "jspdf";
 
 const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
@@ -613,7 +614,7 @@ export default function Carwash({
             fechaRegistro: new Date().toISOString()
           }];
           setLocalStorage("clientes", updated);
-          syncToCloud("clientes", updated);
+          try { syncKeyToCloud("clientes", updated); } catch (err) {}
           return updated;
         });
       }
@@ -646,7 +647,7 @@ export default function Carwash({
             fechaRegistro: new Date().toISOString()
           }];
           setLocalStorage("vehiculos", updated);
-          syncToCloud("vehiculos", updated);
+          try { syncKeyToCloud("vehiculos", updated); } catch (err) {}
           return updated;
         });
       }
@@ -655,7 +656,7 @@ export default function Carwash({
     const nextCarwashList = [nuevo, ...(Array.isArray(carwash) ? carwash : [])];
     setCarwash(nextCarwashList);
     setLocalStorage("carwash", nextCarwashList);
-    syncToCloud("carwash", nextCarwashList);
+    try { syncKeyToCloud("carwash", nextCarwashList); } catch (err) {}
     registrarClienteYVehiculo(nuevo);
     setCliente("");
     setTelefono("");
