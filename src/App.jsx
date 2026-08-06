@@ -330,12 +330,9 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
 
       let winnerBase, loserBase;
 
-      // Primary conflict resolution: record with newer updatedAt timestamp wins
+      // Primary conflict resolution: record with newer updatedAt timestamp wins (local wins on tie)
       if (cNorm.updatedAt || lNorm.updatedAt) {
-        if (timeC > timeL) {
-          winnerBase = cNorm;
-          loserBase = lNorm;
-        } else if (timeL > timeC) {
+        if (timeL >= timeC) {
           winnerBase = lNorm;
           loserBase = cNorm;
         } else {
@@ -343,7 +340,7 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
           loserBase = lNorm;
         }
       } else {
-        // Fallback when neither record has updatedAt: prefer cloud unless local has higher status weight
+        // Fallback when neither record has updatedAt: prefer local unless cloud has higher status weight
         const stateWeight = (st) => {
           if (st === "Entregado" || st === "Cobrado") return 4;
           if (st === "Listo para entrega" || st === "Listo") return 3;
@@ -357,15 +354,15 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
           winnerBase = (cWeight > lWeight) ? cNorm : lNorm;
           loserBase = (cWeight > lWeight) ? lNorm : cNorm;
         } else {
-          winnerBase = (timeC > timeL) ? cNorm : lNorm;
-          loserBase = (timeC > timeL) ? lNorm : cNorm;
+          winnerBase = (timeL >= timeC) ? lNorm : cNorm;
+          loserBase = (timeL >= timeC) ? cNorm : lNorm;
         }
       }
 
       // Merge photos uniquely
       const photosC = Array.isArray(cNorm.fotos) ? cNorm.fotos : [];
       const photosL = Array.isArray(lNorm.fotos) ? lNorm.fotos : [];
-      const mergedPhotos = Array.from(new Set([...photosC, ...photosL])).filter(Boolean);
+      const mergedPhotos = Array.from(new Set([...photosL, ...photosC])).filter(Boolean);
 
       return {
         ...loserBase,
@@ -374,7 +371,7 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
       };
     };
 
-    cleanCloud.forEach((item, idx) => {
+    cleanLocal.forEach((item, idx) => {
       if (!isItemDeleted(item)) {
         const norm = normalizeStatus(item);
         const id = getItemId(norm, idx);
@@ -382,15 +379,15 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
       }
     });
 
-    cleanLocal.forEach((item, idx) => {
+    cleanCloud.forEach((item, idx) => {
       if (!isItemDeleted(item)) {
         const norm = normalizeStatus(item);
         const id = getItemId(norm, idx);
         if (!mergedMap.has(id)) {
           mergedMap.set(id, norm);
         } else {
-          const cloudItem = mergedMap.get(id);
-          mergedMap.set(id, mergeSingleItem(cloudItem, norm));
+          const localItem = mergedMap.get(id);
+          mergedMap.set(id, mergeSingleItem(item, localItem));
         }
       }
     });
