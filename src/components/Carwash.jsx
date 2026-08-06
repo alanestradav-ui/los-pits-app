@@ -458,20 +458,7 @@ export default function Carwash({
       }
     }
 
-    // If washer role, show assigned washes, washes created by them, or unassigned washes
-    const washLavadores = Array.isArray(c.lavadores) 
-      ? c.lavadores.map(l => String(l).toLowerCase().trim()) 
-      : String(c.lavador || "").toLowerCase().split(",").map(l => l.trim()).filter(Boolean);
-
-    const activeUserStr = String(usuarioActual?.user || "").toLowerCase().trim();
-    const isAssigned = washLavadores.includes(activeUserStr);
-    const isCreator = c.creadoPor && String(c.creadoPor).toLowerCase().trim() === activeUserStr;
-    const isUnassigned = washLavadores.length === 0 || (washLavadores.length === 1 && washLavadores[0] === "");
-
-    if (isWorker && !isAssigned && !isCreator && !isUnassigned) {
-      return false;
-    }
-    
+    // All active/delivered washes are visible in Carwash module
     if (!query) return true;
 
     const matchesSearch = 
@@ -662,6 +649,8 @@ export default function Carwash({
       return updated;
     });
     registrarClienteYVehiculo(nuevo);
+    setWashFilterTab("activos");
+    setSearchQuery("");
     setCliente("");
     setTelefono("");
     setPlatePrefix("P");
