@@ -1030,7 +1030,9 @@ export default function App() {
 
       const cloudRaw = data[0].value;
       const cloudValue = safeParseJSON(cloudRaw);
-      const localValue = safeParseJSON(getLocalStorage(targetKey, null));
+      const localValue = (stateRef.current && stateRef.current[targetKey] !== undefined && stateRef.current[targetKey] !== null)
+        ? stateRef.current[targetKey]
+        : safeParseJSON(getLocalStorage(targetKey, null));
 
       const papeleraRaw = safeParseJSON(getLocalStorage("papeleraSistema", []));
       let mergedValue = mergeCollections(targetKey, localValue, cloudValue, papeleraRaw);
@@ -1133,7 +1135,9 @@ export default function App() {
         const activeSetter = globalActiveSetters[key];
         const cloudRaw = cloudDataMap.get(key);
         const cloudValue = cloudRaw !== undefined ? safeParseJSON(cloudRaw) : null;
-        const localValue = safeParseJSON(getLocalStorage(key, null));
+        const localValue = (stateRef.current && stateRef.current[key] !== undefined && stateRef.current[key] !== null)
+          ? stateRef.current[key]
+          : safeParseJSON(getLocalStorage(key, null));
 
         const papeleraRaw = cloudDataMap.get("papeleraSistema");
         let mergedValue = mergeCollections(key, localValue, cloudValue, papeleraRaw);

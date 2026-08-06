@@ -807,7 +807,10 @@ export default function Taller({
       cajeroComisionApplies
     };
 
-    setOrdenes([nueva, ...ordenes]);
+    const nextOrdenes = [nueva, ...(Array.isArray(ordenes) ? ordenes : [])];
+    setOrdenes(nextOrdenes);
+    setLocalStorage("ordenes", nextOrdenes);
+    syncToCloud("ordenes", nextOrdenes);
     registrarClienteYVehiculo(nueva);
     setCliente("");
     setTelefono("");

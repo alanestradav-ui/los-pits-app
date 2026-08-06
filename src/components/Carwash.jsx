@@ -600,22 +600,21 @@ export default function Carwash({
         setClientes(prev => {
           const safePrev = Array.isArray(prev) ? prev : [];
           const exists = safePrev.find(c => c.telefono === tel);
-          if (exists) {
-            return safePrev.map(c => c.telefono === tel ? {
-              ...c,
-              nombre: order.cliente.trim(),
-              nit: order.nit || c.nit,
-              nombreFacturacion: order.nombreFacturacion || c.nombreFacturacion
-            } : c);
-          } else {
-            return [...safePrev, {
-              telefono: tel,
-              nombre: order.cliente.trim(),
-              nit: order.nit || "C/F",
-              nombreFacturacion: order.nombreFacturacion || order.cliente.trim(),
-              fechaRegistro: new Date().toISOString()
-            }];
-          }
+          const updated = exists ? safePrev.map(c => c.telefono === tel ? {
+            ...c,
+            nombre: order.cliente.trim(),
+            nit: order.nit || c.nit,
+            nombreFacturacion: order.nombreFacturacion || c.nombreFacturacion
+          } : c) : [...safePrev, {
+            telefono: tel,
+            nombre: order.cliente.trim(),
+            nit: order.nit || "C/F",
+            nombreFacturacion: order.nombreFacturacion || order.cliente.trim(),
+            fechaRegistro: new Date().toISOString()
+          }];
+          setLocalStorage("clientes", updated);
+          syncToCloud("clientes", updated);
+          return updated;
         });
       }
 
@@ -627,34 +626,36 @@ export default function Carwash({
           const matchIndex = safePrev.findIndex(v => 
             (plc && v.placa === plc) || (chs && v.chasis === chs)
           );
-          if (matchIndex > -1) {
-            return safePrev.map((v, idx) => idx === matchIndex ? {
-              ...v,
-              placa: plc || v.placa,
-              chasis: chs || v.chasis,
-              marca: order.vehiculo.marca.trim(),
-              linea: order.vehiculo.linea.trim(),
-              anio: order.anio || v.anio,
-              color: order.vehiculo.color || v.color,
-              clienteTelefono: tel || v.clienteTelefono
-            } : v);
-          } else {
-            return [...safePrev, {
-              placa: plc || "",
-              chasis: chs || "",
-              marca: order.vehiculo.marca.trim(),
-              linea: order.vehiculo.linea.trim(),
-              anio: order.anio || "",
-              color: order.vehiculo.color || "",
-              clienteTelefono: tel || "",
-              fechaRegistro: new Date().toISOString()
-            }];
-          }
+          const updated = matchIndex > -1 ? safePrev.map((v, idx) => idx === matchIndex ? {
+            ...v,
+            placa: plc || v.placa,
+            chasis: chs || v.chasis,
+            marca: order.vehiculo.marca.trim(),
+            linea: order.vehiculo.linea.trim(),
+            anio: order.anio || v.anio,
+            color: order.vehiculo.color || v.color,
+            clienteTelefono: tel || v.clienteTelefono
+          } : v) : [...safePrev, {
+            placa: plc || "",
+            chasis: chs || "",
+            marca: order.vehiculo.marca.trim(),
+            linea: order.vehiculo.linea.trim(),
+            anio: order.anio || "",
+            color: order.vehiculo.color || "",
+            clienteTelefono: tel || "",
+            fechaRegistro: new Date().toISOString()
+          }];
+          setLocalStorage("vehiculos", updated);
+          syncToCloud("vehiculos", updated);
+          return updated;
         });
       }
     };
 
-    setCarwash([nuevo, ...carwash]);
+    const nextCarwashList = [nuevo, ...(Array.isArray(carwash) ? carwash : [])];
+    setCarwash(nextCarwashList);
+    setLocalStorage("carwash", nextCarwashList);
+    syncToCloud("carwash", nextCarwashList);
     registrarClienteYVehiculo(nuevo);
     setCliente("");
     setTelefono("");
