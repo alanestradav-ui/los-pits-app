@@ -144,16 +144,19 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
     trashItems.forEach(entry => {
       if (!entry) return;
       const origId = entry.originalId || (entry.itemOriginal && entry.itemOriginal.id) || (entry.originalData && entry.originalData.id);
-      if (origId !== undefined && origId !== null) {
-        deletedItemIds.add(String(origId));
+      if (origId !== undefined && origId !== null && String(origId).trim() !== "" && String(origId) !== "undefined" && String(origId) !== "null") {
+        deletedItemIds.add(String(origId).trim());
       }
     });
   }
 
   const isItemDeleted = (item) => {
     if (!item) return true;
-    if (item.id !== undefined && item.id !== null && deletedItemIds.has(String(item.id))) {
-      return true;
+    if (item.id !== undefined && item.id !== null) {
+      const strId = String(item.id).trim();
+      if (strId !== "" && strId !== "undefined" && strId !== "null" && deletedItemIds.has(strId)) {
+        return true;
+      }
     }
     return false;
   };

@@ -806,10 +806,14 @@ export default function Taller({
       cajeroComisionApplies
     };
 
-    const nextOrdenes = [nueva, ...(Array.isArray(ordenes) ? ordenes : [])];
-    setOrdenes(nextOrdenes);
-    setLocalStorage("ordenes", nextOrdenes);
-    try { syncKeyToCloud("ordenes", nextOrdenes); } catch (err) {}
+    setOrdenes(prev => {
+      const safePrev = Array.isArray(prev) ? prev : [];
+      const exists = safePrev.some(o => String(o.id) === String(nueva.id));
+      const updated = exists ? safePrev : [nueva, ...safePrev];
+      setLocalStorage("ordenes", updated);
+      try { syncKeyToCloud("ordenes", updated); } catch (err) {}
+      return updated;
+    });
     registrarClienteYVehiculo(nueva);
     setCliente("");
     setTelefono("");

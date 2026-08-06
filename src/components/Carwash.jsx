@@ -653,10 +653,14 @@ export default function Carwash({
       }
     };
 
-    const nextCarwashList = [nuevo, ...(Array.isArray(carwash) ? carwash : [])];
-    setCarwash(nextCarwashList);
-    setLocalStorage("carwash", nextCarwashList);
-    try { syncKeyToCloud("carwash", nextCarwashList); } catch (err) {}
+    setCarwash(prev => {
+      const safePrev = Array.isArray(prev) ? prev : [];
+      const exists = safePrev.some(c => String(c.id) === String(nuevo.id));
+      const updated = exists ? safePrev : [nuevo, ...safePrev];
+      setLocalStorage("carwash", updated);
+      try { syncKeyToCloud("carwash", updated); } catch (err) {}
+      return updated;
+    });
     registrarClienteYVehiculo(nuevo);
     setCliente("");
     setTelefono("");
