@@ -143,6 +143,10 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
   if (Array.isArray(trashItems)) {
     trashItems.forEach(entry => {
       if (!entry) return;
+      const entryKey = entry.module || entry.key || entry.tablaOriginal || entry.origen || "";
+      if (entryKey && String(entryKey).toLowerCase().trim() !== String(key).toLowerCase().trim()) {
+        return; // Ignorar elementos eliminados de otros módulos
+      }
       const origId = entry.originalId || (entry.itemOriginal && entry.itemOriginal.id) || (entry.originalData && entry.originalData.id);
       if (origId !== undefined && origId !== null && String(origId).trim() !== "" && String(origId) !== "undefined" && String(origId) !== "null") {
         deletedItemIds.add(String(origId).trim());
