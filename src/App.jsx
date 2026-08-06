@@ -165,11 +165,10 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
     const res = Array.isArray(cleanLocal) ? cleanLocal : (cleanCloud || []);
     return key === "usuarios" ? deduplicateUsers(res) : res;
   }
-  if (!cleanLocal || (Array.isArray(cleanLocal) && cleanLocal.length === 0)) {
-    return key === "usuarios" ? deduplicateUsers(cleanCloud) : cleanCloud;
-  }
 
-  if (Array.isArray(cleanLocal) && Array.isArray(cleanCloud)) {
+  // Handle configuration keys where deletion is direct and local array is master
+  const CONFIG_KEYS = ["fixedCosts", "carwashPresets", "usuarios"];
+  if (CONFIG_KEYS.includes(key) && Array.isArray(cleanLocal)) {
     if (key === "usuarios") {
       const localUsers = deduplicateUsers(cleanLocal);
       const cloudUsersMap = new Map();
@@ -179,20 +178,35 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
           if (usernameKey) cloudUsersMap.set(usernameKey, u);
         });
       }
-
-      if (localUsers && localUsers.length > 0) {
-        // Local list defines active users; merge cloud properties for matching users without resurrecting deleted ones
-        return localUsers.map(lUser => {
-          const usernameKey = String(lUser.user || lUser.username || "").toLowerCase().trim();
-          const cloudUser = cloudUsersMap.get(usernameKey);
-          if (!cloudUser) return lUser;
-          return { ...cloudUser, ...lUser };
-        });
-      }
-
-      return Array.from(cloudUsersMap.values());
+      return localUsers.map(lUser => {
+        const usernameKey = String(lUser.user || lUser.username || "").toLowerCase().trim();
+        const cloudUser = cloudUsersMap.get(usernameKey);
+        if (!cloudUser) return lUser;
+        return { ...cloudUser, ...lUser };
+      });
     }
 
+    const cloudMap = new Map();
+    if (Array.isArray(cleanCloud)) {
+      cleanCloud.forEach((cItem, idx) => {
+        const cId = cItem?.id !== undefined ? String(cItem.id) : (cItem?.name || cItem?.tipo || `c_${idx}`);
+        cloudMap.set(String(cId).toLowerCase().trim(), cItem);
+      });
+    }
+
+    return cleanLocal.map((lItem, idx) => {
+      const lId = lItem?.id !== undefined ? String(lItem.id) : (lItem?.name || lItem?.tipo || `l_${idx}`);
+      const cMatch = cloudMap.get(String(lId).toLowerCase().trim());
+      if (!cMatch) return lItem;
+      return { ...cMatch, ...lItem };
+    });
+  }
+
+  if (!cleanLocal || (Array.isArray(cleanLocal) && cleanLocal.length === 0)) {
+    return key === "usuarios" ? deduplicateUsers(cleanCloud) : cleanCloud;
+  }
+
+  if (Array.isArray(cleanLocal) && Array.isArray(cleanCloud)) {
     if (key === "clientes") {
       const mergedMap = new Map();
       cleanCloud.forEach((c, idx) => {
@@ -615,14 +629,8 @@ export default function App() {
   });
 
   const [fixedCosts, setFixedCosts] = useState(() => {
-    const defaultFixedCosts = [
-      { id: 1, name: "Alquiler del Taller", amount: 3500 },
-      { id: 2, name: "Planilla Fija", amount: 6000 },
-      { id: 3, name: "Servicios Públicos (Luz y Agua)", amount: 800 },
-      { id: 4, name: "Seguro y Conectividad", amount: 500 }
-    ];
-    const val = getLocalStorage("fixedCosts", defaultFixedCosts);
-    return Array.isArray(val) ? val : defaultFixedCosts;
+    const val = getLocalStorage("fixedCosts", null);
+    return Array.isArray(val) ? val : [];
   });
 
   const [clientes, setClientes] = useState(() => {
