@@ -1014,6 +1014,7 @@ export default function App() {
   ]);
 
   const globalBroadcastChannel = useRef(null);
+  const instanceId = useRef(Math.random().toString(36).substring(2, 9));
 
   // Fast single-key cloud pull for instant <300ms updates
   const fetchSingleKeyFromCloud = async (targetKey) => {
@@ -1078,7 +1079,7 @@ export default function App() {
           globalBroadcastChannel.current.send({
             type: 'broadcast',
             event: 'app_key_changed',
-            payload: { key }
+            payload: { key, senderId: instanceId.current }
           });
         }
       } catch (e) {}
@@ -1287,6 +1288,9 @@ export default function App() {
         { event: 'app_key_changed' },
         (payload) => {
           if (payload && payload.payload && payload.payload.key) {
+            if (payload.payload.senderId && payload.payload.senderId === instanceId.current) {
+              return; // Ignorar el propio broadcast emitido por esta instancia
+            }
             const targetKey = payload.payload.key;
             console.log(`[Instant Broadcast] Notificación de cambio recibida para la llave "${targetKey}"`);
             fetchSingleKeyFromCloud(targetKey);
@@ -1321,30 +1325,9 @@ export default function App() {
   }, [ordenes]);
 
   useEffect(() => {
-    const normalized = (carwash || []).map(c => {
-      if (!c) return c;
-      const isWorkshopWash = c.tallerOrderId || String(c.tipo || "").toLowerCase().trim() === "lavado de taller";
-      let targetComm = 5.0;
-      if (isWorkshopWash) {
-        targetComm = 5.0;
-      } else {
-        const matched = (carwashPresets || []).find(p => p.tipo && String(p.tipo).toLowerCase().trim() === String(c.tipo).toLowerCase().trim());
-        targetComm = matched && matched.comision !== undefined ? parseFloat(matched.comision) : (c.comision !== undefined ? parseFloat(c.comision) : 0);
-      }
-      if (c.comision !== targetComm) {
-        return { ...c, comision: targetComm };
-      }
-      return c;
-    });
-
-    const changed = normalized.some((c, idx) => c !== carwash[idx]);
-    if (changed) {
-      setCarwash(normalized);
-    } else {
-      setLocalStorage("carwash", carwash);
-      syncToCloud("carwash", carwash);
-    }
-  }, [carwash, carwashPresets]);
+    setLocalStorage("carwash", carwash);
+    syncToCloud("carwash", carwash);
+  }, [carwash]);
 
   useEffect(() => {
     setLocalStorage("parkingEntries", parkingEntries);

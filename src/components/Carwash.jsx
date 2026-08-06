@@ -561,7 +561,7 @@ export default function Carwash({
       : 0;
 
     const nuevo = {
-      id: Date.now(),
+      id: `cw_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
       cliente: cliente.trim(),
       telefono: telefono.trim(),
       nit: nit.trim() || "C/F",

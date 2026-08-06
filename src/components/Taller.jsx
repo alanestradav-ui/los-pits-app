@@ -776,7 +776,7 @@ export default function Taller({
     const motivosString = motivosIngreso.join(" / ");
 
     const nueva = {
-      id: Date.now(),
+      id: `ord_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
       cliente: cliente.trim(),
       telefono: telefono.trim(),
       placa: fullPlaca,
