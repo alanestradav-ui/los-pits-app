@@ -1146,7 +1146,7 @@ export default function App() {
           .from('app_data')
           .select('key, value')
           .in('key', chunk);
-        promises.push(withTimeout(queryPromise, 6000, `Timeout en lote`));
+        promises.push(withTimeout(queryPromise, 3500, `Timeout en lote`));
       }
 
       const results = await Promise.allSettled(promises);
@@ -1203,10 +1203,7 @@ export default function App() {
       failedPullCount.current += 1;
       const activeSetRealtimeStatus = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
       
-      // Solo pasar a disconnected si fue iniciado por el usuario o si fallaron 3 o más intentos seguidos
-      if (isUserInitiated || failedPullCount.current >= 3) {
-        if (activeSetRealtimeStatus) activeSetRealtimeStatus("disconnected");
-      }
+      if (activeSetRealtimeStatus) activeSetRealtimeStatus("disconnected");
 
       const activeSetInitialPullDone = globalActiveSetters.setIsInitialPullDone || setIsInitialPullDone;
       if (activeSetInitialPullDone) activeSetInitialPullDone(true);
@@ -1229,10 +1226,10 @@ export default function App() {
     document.addEventListener("visibilitychange", handleSyncEvent);
 
     const interval = setInterval(() => {
-      if (navigator.onLine && !document.hidden) {
+      if (navigator.onLine && !document.hidden && failedPullCount.current < 2) {
         forcePullFromCloud(false);
       }
-    }, 3000);
+    }, 15000);
 
     return () => {
       window.removeEventListener("online", handleSyncEvent);
