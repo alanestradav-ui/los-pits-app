@@ -51,6 +51,8 @@ export default function Finance({
   setCustomEndDate
 }) {
   const [activeTab, setActiveTab] = useState("overview");
+  const [selectedHistMonth, setSelectedHistMonth] = useState(new Date().getMonth());
+  const [selectedHistYear, setSelectedHistYear] = useState(new Date().getFullYear());
   const [breakevenPeriod, setBreakevenPeriod] = useState("mes");
   const [payrollPeriodMode, setPayrollPeriodMode] = useState("q1"); // 'q1', 'q2', 'mes', 'custom'
   const [payrollYear, setPayrollYear] = useState(new Date().getFullYear());
@@ -221,6 +223,11 @@ export default function Finance({
     return null;
   };
 
+  const monthNamesEs = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+  ];
+
   const getPeriodBoundaries = () => {
     const now = new Date();
     let start = new Date();
@@ -244,6 +251,19 @@ export default function Finance({
       case "mes": {
         start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
         end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        break;
+      }
+      case "mes_anterior": {
+        const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        start = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), 1, 0, 0, 0, 0);
+        end = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth() + 1, 0, 23, 59, 59, 999);
+        break;
+      }
+      case "mes_especifico": {
+        const yr = selectedHistYear || now.getFullYear();
+        const mo = selectedHistMonth !== undefined ? selectedHistMonth : now.getMonth();
+        start = new Date(yr, mo, 1, 0, 0, 0, 0);
+        end = new Date(yr, mo + 1, 0, 23, 59, 59, 999);
         break;
       }
       case "ano": {
@@ -288,13 +308,21 @@ export default function Finance({
   const periodLabels = {
     dia: "Día Actual",
     semana: "Semana Actual",
-    mes: "Mes Actual",
-    ano: "Año Actual",
-    personalizado: "Personalizado"
+    mes: "Mes Actual en Curso",
+    mes_anterior: "Mes Anterior Completo",
+    mes_especifico: "Mes Histórico Específico",
+    ano: "Año Actual Completo",
+    personalizado: "Rango Personalizado"
   };
-  const currentPeriodLabel = dashboardPeriod === "personalizado" 
-    ? `${customStartDate || "Hoy"} a ${customEndDate || "Hoy"}` 
-    : (periodLabels[dashboardPeriod] || "Mes");
+  let currentPeriodLabel = periodLabels[dashboardPeriod] || "Mes";
+  if (dashboardPeriod === "personalizado") {
+    currentPeriodLabel = `${customStartDate || "Inicio"} a ${customEndDate || "Fin"}`;
+  } else if (dashboardPeriod === "mes_anterior") {
+    const prevD = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1);
+    currentPeriodLabel = `Mes Anterior (${monthNamesEs[prevD.getMonth()]} ${prevD.getFullYear()})`;
+  } else if (dashboardPeriod === "mes_especifico") {
+    currentPeriodLabel = `${monthNamesEs[selectedHistMonth]} ${selectedHistYear}`;
+  }
 
   // Calculations for billing overview (only "Entregado" and within period)
   const billedTaller = filterByPeriod(ordenes.filter(o => o.estado === "Entregado"), "fecha");
@@ -461,6 +489,173 @@ export default function Finance({
   // Net Profit considering Direct Costs, Registered General Purchases, and Fixed Costs
   const netProfitPeriod = totalContributionMarginPeriod - totalGeneralPurchasesPeriod - periodFixedCosts;
   const isProfitablePeriod = netProfitPeriod >= 0;
+
+  const getMonthlyHistoricalSummary = () => {
+    const historyList = [];
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const yr = d.getFullYear();
+      const mo = d.getMonth();
+      const start = new Date(yr, mo, 1, 0, 0, 0, 0);
+      const end = new Date(yr, mo + 1, 0, 23, 59, 59, 999);
+
+      const filterByCustomRange = (list, dateField = "fecha") => {
+        if (!list) return [];
+        return list.filter(item => {
+          const itemDate = getItemDate(item, dateField);
+          if (!itemDate) return false;
+          return itemDate >= start && itemDate <= end;
+        });
+      };
+
+      const bTaller = filterByCustomRange((ordenes || []).filter(o => o.estado === "Entregado"), "fecha");
+      const bCarwash = filterByCustomRange((carwash || []).filter(c => c.estado === "Entregado"), "fecha");
+      const fParking = filterByCustomRange(parkingHistory || [], "horaSalida");
+      const fCafeteria = filterByCustomRange(cafeteriaSales || [], "fecha");
+      const fTienda = filterByCustomRange(tiendaSales || [], "fecha");
+
+      const revTaller = bTaller.reduce((sum, o) => sum + (parseFloat(o.total) || 0), 0);
+      const revCarwash = bCarwash.reduce((sum, c) => sum + (parseFloat(c.precio) || 0), 0);
+      const revParking = fParking.reduce((sum, p) => sum + (parseFloat(p.total) || 0), 0);
+      const revCafeteria = fCafeteria.reduce((sum, s) => sum + (parseFloat(s.total) || 0), 0);
+      const revTienda = (fTienda || []).reduce((sum, t) => sum + (parseFloat(t.total) || 0), 0);
+      const revTotal = revTaller + revCarwash + revParking + revCafeteria + revTienda;
+
+      const partsCost = bTaller.reduce((sum, o) => {
+        if (o.presupuesto && Array.isArray(o.presupuesto.parts)) {
+          return sum + o.presupuesto.parts.reduce((pSum, part) => pSum + ((parseFloat(part.qty) || 1) * (parseFloat(part.purchasePrice) || parseFloat(part.unitCost) || (parseFloat(part.price) * 0.7))), 0);
+        }
+        return sum;
+      }, 0);
+
+      const cafCost = fCafeteria.reduce((sum, s) => {
+        if (s.items && Array.isArray(s.items)) {
+          return sum + s.items.reduce((iSum, item) => iSum + ((parseFloat(item.qty) || 1) * (parseFloat(item.purchasePrice) || (parseFloat(item.price) * 0.6))), 0);
+        }
+        return sum;
+      }, 0);
+
+      const tiendaCost = (fTienda || []).reduce((sum, s) => {
+        if (s.items && Array.isArray(s.items)) {
+          return sum + s.items.reduce((iSum, item) => iSum + ((parseFloat(item.qty) || 1) * (parseFloat(item.purchasePrice) || (parseFloat(item.price) * 0.6))), 0);
+        }
+        return sum;
+      }, 0);
+
+      const cwSupplies = (filterByCustomRange(carwashConsumption || [], "fecha")).reduce((sum, c) => sum + (parseFloat(c.cost) || 0), 0);
+      const mechComms = bTaller.reduce((sum, o) => sum + (parseFloat(o.comision) || 0), 0);
+      const washComms = bCarwash.reduce((sum, c) => {
+        const isWorkshopWash = c.tallerOrderId || String(c.tipo || "").toLowerCase().trim() === "lavado de taller";
+        const matchedPreset = (carwashPresets || []).find(p => p.tipo && String(p.tipo).toLowerCase().trim() === String(c.tipo).toLowerCase().trim());
+        const totalComm = isWorkshopWash ? 5.0 : (matchedPreset && matchedPreset.comision !== undefined ? parseFloat(matchedPreset.comision) : (parseFloat(c.comision) || 5.0));
+        return sum + totalComm;
+      }, 0);
+
+      const commsTotal = mechComms + washComms;
+      const directCostsTotal = partsCost + cafCost + tiendaCost + cwSupplies + commsTotal;
+      const grossMargin = revTotal - directCostsTotal;
+      const genPurchases = filterByCustomRange(compras || [], "fecha").reduce((sum, c) => sum + (parseFloat(c.total) || 0), 0);
+      const fixedMonthly = overheadMonthly + salariesMonthly;
+      const netProfit = grossMargin - genPurchases - fixedMonthly;
+
+      historyList.push({
+        year: yr,
+        month: mo,
+        monthLabel: `${monthNamesEs[mo]} ${yr}`,
+        revenue: revTotal,
+        directCosts: directCostsTotal,
+        grossMargin,
+        purchases: genPurchases,
+        fixedCosts: fixedMonthly,
+        netProfit,
+        isProfitable: netProfit >= 0,
+        ordersCount: bTaller.length + bCarwash.length
+      });
+    }
+    return historyList;
+  };
+
+  const exportarPDFEstadoResultados = () => {
+    const pdf = new jsPDF();
+    const primaryColor = [20, 24, 33];
+    const accentColor = [245, 158, 11];
+    const successColor = [16, 185, 129];
+    const dangerColor = [239, 68, 68];
+
+    pdf.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    pdf.rect(0, 0, 210, 38, "F");
+
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(16);
+    pdf.text("LOS PITS AUTO CENTER", 15, 16);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(10);
+    pdf.text("ESTADO DE RESULTADOS (P&L) - INFORME FINANCIERO", 15, 24);
+    pdf.text(`Período Evaluado: ${currentPeriodLabel}`, 15, 31);
+    pdf.text(`Generado: ${new Date().toLocaleDateString()}`, 160, 31);
+
+    let y = 48;
+
+    const drawSectionHeader = (title) => {
+      pdf.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      pdf.rect(15, y, 180, 7, "F");
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(9);
+      pdf.text(title, 18, y + 5);
+      y += 10;
+    };
+
+    const drawRow = (label, val, isBold = false, isDanger = false, isSuccess = false) => {
+      pdf.setFont("helvetica", isBold ? "bold" : "normal");
+      pdf.setFontSize(9);
+      if (isDanger) pdf.setTextColor(dangerColor[0], dangerColor[1], dangerColor[2]);
+      else if (isSuccess) pdf.setTextColor(successColor[0], successColor[1], successColor[2]);
+      else pdf.setTextColor(40, 40, 40);
+
+      pdf.text(label, 20, y);
+      pdf.text(formatMoney(val), 190, y, { align: "right" });
+      pdf.setDrawColor(240, 240, 240);
+      pdf.line(15, y + 2, 195, y + 2);
+      y += 7;
+    };
+
+    drawSectionHeader("I. INGRESOS OPERATIVOS BRUTOS");
+    drawRow("Ingresos Taller Mecánico", totalTallerRevenue);
+    drawRow("Ingresos Carwash & Lavado", totalCarwashRevenue);
+    drawRow("Ingresos Control de Parqueo", totalParkingRevenue);
+    drawRow("Ingresos Cafetería POS", totalCafeteriaRevenue);
+    drawRow("Ingresos Tienda POS", totalTiendaRevenue);
+    drawRow("TOTAL INGRESOS OPERATIVOS", totalGrandRevenue, true, false, true);
+
+    y += 5;
+    drawSectionHeader("II. COSTOS DIRECTOS DE OPERACIÓN (COGS)");
+    drawRow("Costos Repuestos Taller", totalTallerPartsCost);
+    drawRow("Costos Insumos y Químicos Carwash", totalCarwashSuppliesCost);
+    drawRow("Costos Mercadería Cafetería", totalCafeteriaItemCost);
+    drawRow("Costos Mercadería Tienda POS", totalTiendaItemCost);
+    drawRow("Comisiones Pagadas a Colaboradores", totalCommissionsPaidPeriod);
+    drawRow("TOTAL COSTOS DIRECTOS", totalVariableCostsPeriod, true, true);
+
+    y += 5;
+    drawSectionHeader("III. MARGEN DE CONTRIBUCIÓN (UTILIDAD BRUTA)");
+    drawRow("UTILIDAD BRUTA OPERATIVA", totalContributionMarginPeriod, true, false, true);
+
+    y += 5;
+    drawSectionHeader("IV. GASTOS DE OPERACIÓN Y PLANILLA FIJA (OPEX)");
+    drawRow("Sueldos y Salarios Planilla Fija", salariesMonthly * periodScaleFactor);
+    drawRow("Alquiler y Costos Fijos Configurados", overheadMonthly * periodScaleFactor);
+    drawRow("Compras Generales y Gastos Registrados", totalGeneralPurchasesPeriod);
+    drawRow("TOTAL COSTOS FIJOS Y OPERATIVOS", periodFixedCosts + totalGeneralPurchasesPeriod, true, true);
+
+    y += 5;
+    drawSectionHeader("V. UTILIDAD / (PÉRDIDA) NETA OPERATIVA DEL PERÍODO");
+    drawRow("UTILIDAD NETA OPERATIVA", netProfitPeriod, true, !isProfitablePeriod, isProfitablePeriod);
+
+    pdf.save(`Estado_de_Resultados_${dashboardPeriod}_${new Date().toISOString().slice(0,10)}.pdf`);
+  };
 
   // Commissions Calculations per worker
   const getMechanicCommissions = (name) => {
@@ -1275,6 +1470,12 @@ export default function Finance({
           <TrendingUp size={16} /> Balance General
         </button>
         <button 
+          onClick={() => setActiveTab("pnl")} 
+          style={{...styles.tabBtn, ...(activeTab === "pnl" ? styles.tabBtnActive : {})}}
+        >
+          <DollarSign size={16} /> Estado de Resultados (P&L)
+        </button>
+        <button 
           onClick={() => setActiveTab("commissions")} 
           style={{...styles.tabBtn, ...(activeTab === "commissions" ? styles.tabBtnActive : {})}}
         >
@@ -1306,16 +1507,47 @@ export default function Finance({
             >
               <option value="dia">📅 Día Actual (Hoy)</option>
               <option value="semana">📅 Semana Actual (Lun-Dom)</option>
-              <option value="mes">📅 Mes Actual (1-Fin)</option>
-              <option value="ano">📅 Año Actual (Ene-Dic)</option>
-              <option value="personalizado">🔍 Rango Personalizado</option>
+              <option value="mes">📅 Mes Actual en Curso</option>
+              <option value="mes_anterior">⏮️ Mes Anterior Completo</option>
+              <option value="mes_especifico">🗓️ Mes Específico / Histórico</option>
+              <option value="ano">📅 Año Actual Completo</option>
+              <option value="personalizado">🔍 Fechas Específicas (Desde / Hasta)</option>
             </select>
           </div>
+
+          {dashboardPeriod === "mes_especifico" && (
+            <>
+              <div style={styles.inputGroupSelect}>
+                <label style={styles.filterLabel}>Mes Histórico</label>
+                <select
+                  value={selectedHistMonth}
+                  onChange={(e) => setSelectedHistMonth(Number(e.target.value))}
+                  style={{ ...styles.periodSelect, minWidth: "140px" }}
+                >
+                  {monthNamesEs.map((mName, idx) => (
+                    <option key={idx} value={idx}>{mName}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={styles.inputGroupSelect}>
+                <label style={styles.filterLabel}>Año</label>
+                <select
+                  value={selectedHistYear}
+                  onChange={(e) => setSelectedHistYear(Number(e.target.value))}
+                  style={{ ...styles.periodSelect, minWidth: "90px" }}
+                >
+                  {[2024, 2025, 2026, 2027, 2028].map(yr => (
+                    <option key={yr} value={yr}>{yr}</option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
 
           {dashboardPeriod === "personalizado" && (
             <>
               <div style={styles.inputGroupDate}>
-                <label style={styles.filterLabel}>Desde</label>
+                <label style={styles.filterLabel}>Desde (Fecha Inicio)</label>
                 <input
                   type="date"
                   value={customStartDate || ""}
@@ -1324,7 +1556,7 @@ export default function Finance({
                 />
               </div>
               <div style={styles.inputGroupDate}>
-                <label style={styles.filterLabel}>Hasta</label>
+                <label style={styles.filterLabel}>Hasta (Fecha Fin)</label>
                 <input
                   type="date"
                   value={customEndDate || ""}
@@ -1577,6 +1809,274 @@ export default function Finance({
                   <strong style={{ color: "var(--color-warning)" }}>{formatMoney(totalPendingAccountsPayable)}</strong>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 1B. ESTADO DE RESULTADOS (P&L) TAB */}
+      {activeTab === "pnl" && (
+        <div style={styles.tabContent}>
+          {/* Header Action Row */}
+          <div className="glass-panel hide-print" style={{ padding: "16px 20px", borderRadius: "14px", marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "15px" }}>
+            <div>
+              <h2 style={{ fontSize: "1.3rem", fontWeight: "800", color: "#fff", display: "flex", alignItems: "center", gap: "8px", margin: 0 }}>
+                📊 Estado de Resultados (P&L) - Los Pits Auto Center
+              </h2>
+              <p style={{ margin: "4px 0 0 0", color: "var(--text-muted)", fontSize: "0.85rem" }}>
+                Informe financiero formal: Ingresos brutos, Costos directos (COGS), Margen bruto, Gastos operativos (OPEX) y Utilidad neta.
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: "10px" }}>
+              <button className="btn btn-primary" onClick={exportarPDFEstadoResultados} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                📥 Descargar PDF P&L
+              </button>
+              <button className="btn btn-ghost" onClick={printReport} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <Printer size={16} /> Imprimir P&L
+              </button>
+            </div>
+          </div>
+
+          {/* Formal P&L Statement Card */}
+          <div className="glass-panel" style={{ padding: "24px", borderRadius: "16px", marginBottom: "25px", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div style={{ borderBottom: "1px solid rgba(255,255,255,0.1)", paddingBottom: "15px", marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "10px" }}>
+              <div>
+                <h2 style={{ fontSize: "1.5rem", fontWeight: "900", color: "var(--color-primary)", margin: 0 }}>
+                  LOS PITS AUTO CENTER
+                </h2>
+                <p style={{ fontSize: "0.9rem", color: "#fff", fontWeight: "700", marginTop: "2px", margin: 0 }}>
+                  ESTADO DE RESULTADOS (PROFIT & LOSS STATEMENT)
+                </p>
+                <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginTop: "3px", margin: 0 }}>
+                  Período Evaluado: <strong style={{ color: "var(--color-success)" }}>{currentPeriodLabel}</strong>
+                </p>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <span style={{ fontSize: "0.78rem", color: "var(--text-muted)", display: "block" }}>Fecha de Emisión: {new Date().toLocaleDateString()}</span>
+                <span style={{
+                  display: "inline-block",
+                  marginTop: "6px",
+                  padding: "4px 12px",
+                  borderRadius: "20px",
+                  fontSize: "0.8rem",
+                  fontWeight: "800",
+                  backgroundColor: isProfitablePeriod ? "rgba(16, 185, 129, 0.15)" : "rgba(239, 68, 68, 0.15)",
+                  color: isProfitablePeriod ? "var(--color-success)" : "#f87171",
+                  border: isProfitablePeriod ? "1px solid rgba(16, 185, 129, 0.3)" : "1px solid rgba(239, 68, 68, 0.3)"
+                }}>
+                  {isProfitablePeriod ? "🟢 GANANCIA NETA (SUPERÁVIT)" : "🔴 PÉRDIDA NETA (DÉFICIT)"}
+                </span>
+              </div>
+            </div>
+
+            {/* P&L Table Structure */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+              {/* SECTION I: INGRESOS BRUTOS */}
+              <div style={{ backgroundColor: "rgba(255,255,255,0.02)", borderRadius: "10px", padding: "14px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid rgba(59, 130, 246, 0.3)", paddingBottom: "8px", marginBottom: "10px" }}>
+                  <h3 style={{ fontSize: "0.95rem", fontWeight: "800", color: "var(--color-primary)", margin: 0 }}>
+                    I. INGRESOS OPERATIVOS BRUTOS (RECAUDACIÓN)
+                  </h3>
+                  <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", fontWeight: "600" }}>% Ingresos</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "0.88rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#fff" }}>
+                    <span>🔧 Ingresos por Taller Mecánico</span>
+                    <span>{formatMoney(totalTallerRevenue)} <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", width: "50px", display: "inline-block", textAlign: "right" }}>({(totalGrandRevenue > 0 ? (totalTallerRevenue/totalGrandRevenue)*100 : 0).toFixed(1)}%)</span></span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#fff" }}>
+                    <span>🧼 Ingresos por Carwash & Lavado</span>
+                    <span>{formatMoney(totalCarwashRevenue)} <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", width: "50px", display: "inline-block", textAlign: "right" }}>({(totalGrandRevenue > 0 ? (totalCarwashRevenue/totalGrandRevenue)*100 : 0).toFixed(1)}%)</span></span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#fff" }}>
+                    <span>🅿️ Ingresos por Control de Parqueo</span>
+                    <span>{formatMoney(totalParkingRevenue)} <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", width: "50px", display: "inline-block", textAlign: "right" }}>({(totalGrandRevenue > 0 ? (totalParkingRevenue/totalGrandRevenue)*100 : 0).toFixed(1)}%)</span></span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#fff" }}>
+                    <span>☕ Ingresos por Cafetería POS</span>
+                    <span>{formatMoney(totalCafeteriaRevenue)} <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", width: "50px", display: "inline-block", textAlign: "right" }}>({(totalGrandRevenue > 0 ? (totalCafeteriaRevenue/totalGrandRevenue)*100 : 0).toFixed(1)}%)</span></span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#fff" }}>
+                    <span>🛒 Ingresos por Tienda POS</span>
+                    <span>{formatMoney(totalTiendaRevenue)} <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", width: "50px", display: "inline-block", textAlign: "right" }}>({(totalGrandRevenue > 0 ? (totalTiendaRevenue/totalGrandRevenue)*100 : 0).toFixed(1)}%)</span></span>
+                  </div>
+                  <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "8px", marginTop: "4px", display: "flex", justifyContent: "space-between", fontWeight: "800", fontSize: "1rem", color: "var(--color-success)" }}>
+                    <span>(=) TOTAL INGRESOS OPERATIVOS BRUTOS</span>
+                    <span>{formatMoney(totalGrandRevenue)} <span style={{ fontSize: "0.8rem", color: "var(--color-success)", width: "50px", display: "inline-block", textAlign: "right" }}>(100.0%)</span></span>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION II: COSTOS DIRECTOS (COGS) */}
+              <div style={{ backgroundColor: "rgba(255,255,255,0.02)", borderRadius: "10px", padding: "14px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid rgba(239, 68, 68, 0.3)", paddingBottom: "8px", marginBottom: "10px" }}>
+                  <h3 style={{ fontSize: "0.95rem", fontWeight: "800", color: "#f87171", margin: 0 }}>
+                    II. COSTOS DIRECTOS DE OPERACIÓN (COGS / COSTOS VARIABLES)
+                  </h3>
+                  <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", fontWeight: "600" }}>% Ingresos</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "0.88rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#fff" }}>
+                    <span>⚙️ Costo Repuestos y Materiales Taller</span>
+                    <span>-{formatMoney(totalTallerPartsCost)} <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", width: "50px", display: "inline-block", textAlign: "right" }}>({(totalGrandRevenue > 0 ? (totalTallerPartsCost/totalGrandRevenue)*100 : 0).toFixed(1)}%)</span></span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#fff" }}>
+                    <span>🧪 Costo Insumos y Químicos Carwash</span>
+                    <span>-{formatMoney(totalCarwashSuppliesCost)} <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", width: "50px", display: "inline-block", textAlign: "right" }}>({(totalGrandRevenue > 0 ? (totalCarwashSuppliesCost/totalGrandRevenue)*100 : 0).toFixed(1)}%)</span></span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#fff" }}>
+                    <span>☕ Costo Mercadería Vendida Cafetería</span>
+                    <span>-{formatMoney(totalCafeteriaItemCost)} <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", width: "50px", display: "inline-block", textAlign: "right" }}>({(totalGrandRevenue > 0 ? (totalCafeteriaItemCost/totalGrandRevenue)*100 : 0).toFixed(1)}%)</span></span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#fff" }}>
+                    <span>🛒 Costo Mercadería Vendida Tienda</span>
+                    <span>-{formatMoney(totalTiendaItemCost)} <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", width: "50px", display: "inline-block", textAlign: "right" }}>({(totalGrandRevenue > 0 ? (totalTiendaItemCost/totalGrandRevenue)*100 : 0).toFixed(1)}%)</span></span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#fff" }}>
+                    <span>👥 Comisiones Pagadas a Colaboradores</span>
+                    <span>-{formatMoney(totalCommissionsPaidPeriod)} <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", width: "50px", display: "inline-block", textAlign: "right" }}>({(totalGrandRevenue > 0 ? (totalCommissionsPaidPeriod/totalGrandRevenue)*100 : 0).toFixed(1)}%)</span></span>
+                  </div>
+                  <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "8px", marginTop: "4px", display: "flex", justifyContent: "space-between", fontWeight: "800", fontSize: "1rem", color: "#f87171" }}>
+                    <span>(-) TOTAL COSTOS DIRECTOS</span>
+                    <span>-{formatMoney(totalVariableCostsPeriod)} <span style={{ fontSize: "0.8rem", color: "#f87171", width: "50px", display: "inline-block", textAlign: "right" }}>({(totalGrandRevenue > 0 ? (totalVariableCostsPeriod/totalGrandRevenue)*100 : 0).toFixed(1)}%)</span></span>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION III: MARGEN DE CONTRIBUCION (UTILIDAD BRUTA) */}
+              <div style={{ backgroundColor: "rgba(16, 185, 129, 0.05)", borderRadius: "10px", padding: "14px", border: "1px solid rgba(16, 185, 129, 0.2)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "900", fontSize: "1.1rem", color: "var(--color-success)" }}>
+                  <span>(=) III. UTILIDAD BRUTA OPERATIVA (MARGEN BRUTO)</span>
+                  <span>{formatMoney(totalContributionMarginPeriod)} <span style={{ fontSize: "0.85rem", color: "var(--color-success)" }}>({(contributionMarginRatioPeriod * 100).toFixed(1)}%)</span></span>
+                </div>
+              </div>
+
+              {/* SECTION IV: COSTOS FIJOS Y OPEX */}
+              <div style={{ backgroundColor: "rgba(255,255,255,0.02)", borderRadius: "10px", padding: "14px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid rgba(245, 158, 11, 0.3)", paddingBottom: "8px", marginBottom: "10px" }}>
+                  <h3 style={{ fontSize: "0.95rem", fontWeight: "800", color: "var(--color-secondary)", margin: 0 }}>
+                    IV. GASTOS DE OPERACIÓN Y PLANILLA FIJA (OPEX / COSTOS FIJOS)
+                  </h3>
+                  <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", fontWeight: "600" }}>Monto Q</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "0.88rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#fff" }}>
+                    <span>👥 Sueldos y Salarios Planilla Fija</span>
+                    <span>-{formatMoney(salariesMonthly * periodScaleFactor)}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#fff" }}>
+                    <span>🏢 Alquiler, Servicios y Gastos Fijos Configurados</span>
+                    <span>-{formatMoney(overheadMonthly * periodScaleFactor)}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#fff" }}>
+                    <span>💸 Compras Generales & Egresos Registrados</span>
+                    <span>-{formatMoney(totalGeneralPurchasesPeriod)}</span>
+                  </div>
+                  <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "8px", marginTop: "4px", display: "flex", justifyContent: "space-between", fontWeight: "800", fontSize: "1rem", color: "#f87171" }}>
+                    <span>(-) TOTAL COSTOS FIJOS Y OPERATIVOS</span>
+                    <span>-{formatMoney(periodFixedCosts + totalGeneralPurchasesPeriod)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION V: UTILIDAD NETA FINAL */}
+              <div style={{
+                backgroundColor: isProfitablePeriod ? "rgba(16, 185, 129, 0.1)" : "rgba(239, 68, 68, 0.1)",
+                borderRadius: "12px",
+                padding: "18px",
+                border: isProfitablePeriod ? "2px solid rgba(16, 185, 129, 0.4)" : "2px solid rgba(239, 68, 68, 0.4)",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "10px"
+              }}>
+                <div>
+                  <h2 style={{ fontSize: "1.1rem", fontWeight: "900", color: "#fff", margin: 0 }}>
+                    V. RESULTADO NETO OPERATIVO DEL PERÍODO
+                  </h2>
+                  <p style={{ margin: "2px 0 0 0", fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                    Margen Neto Final: <strong style={{ color: isProfitablePeriod ? "var(--color-success)" : "#f87171" }}>{(totalGrandRevenue > 0 ? (netProfitPeriod / totalGrandRevenue) * 100 : 0).toFixed(1)}%</strong> sobre ingresos totales.
+                  </p>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <span style={{ fontSize: "1.6rem", fontWeight: "900", color: isProfitablePeriod ? "var(--color-success)" : "#f87171", fontFamily: "var(--font-display)" }}>
+                    {formatMoney(netProfitPeriod)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* HISTORICAL COMPARISON TABLE (Últimos 12 Meses) */}
+          <div className="glass-panel" style={{ padding: "20px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div style={{ marginBottom: "15px" }}>
+              <h2 style={{ fontSize: "1.2rem", fontWeight: "800", color: "#fff", margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
+                🗓️ Histórico Comparativo de Estados de Resultados (Últimos 12 Meses)
+              </h2>
+              <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: "4px 0 0 0" }}>
+                Haz clic en el botón de cualquier mes para filtrar y evaluar su Estado de Resultados (P&L) individual.
+              </p>
+            </div>
+
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.88rem", textAlign: "left" }}>
+                <thead>
+                  <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.1)", color: "var(--text-muted)" }}>
+                    <th style={{ padding: "10px", fontWeight: "700" }}>Mes / Año</th>
+                    <th style={{ padding: "10px", fontWeight: "700" }}>Servicios</th>
+                    <th style={{ padding: "10px", fontWeight: "700", textAlign: "right" }}>Ingresos Brutos</th>
+                    <th style={{ padding: "10px", fontWeight: "700", textAlign: "right" }}>Costos Directos</th>
+                    <th style={{ padding: "10px", fontWeight: "700", textAlign: "right" }}>Gastos Fijos</th>
+                    <th style={{ padding: "10px", fontWeight: "700", textAlign: "right" }}>Utilidad Neta</th>
+                    <th style={{ padding: "10px", fontWeight: "700", textAlign: "center" }}>Margen Neto</th>
+                    <th style={{ padding: "10px", fontWeight: "700", textAlign: "center" }}>Acción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {getMonthlyHistoricalSummary().map((h, idx) => {
+                    const marginPct = h.revenue > 0 ? ((h.netProfit / h.revenue) * 100).toFixed(1) : "0.0";
+                    return (
+                      <tr key={idx} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)", backgroundColor: idx % 2 === 0 ? "rgba(255,255,255,0.01)" : "transparent" }}>
+                        <td style={{ padding: "10px", fontWeight: "700", color: "#fff" }}>{h.monthLabel}</td>
+                        <td style={{ padding: "10px", color: "var(--text-muted)" }}>{h.ordersCount} entregas</td>
+                        <td style={{ padding: "10px", textAlign: "right", color: "var(--color-success)", fontWeight: "600" }}>{formatMoney(h.revenue)}</td>
+                        <td style={{ padding: "10px", textAlign: "right", color: "#f87171" }}>-{formatMoney(h.directCosts)}</td>
+                        <td style={{ padding: "10px", textAlign: "right", color: "var(--color-secondary)" }}>-{formatMoney(h.fixedCosts + h.purchases)}</td>
+                        <td style={{ padding: "10px", textAlign: "right", fontWeight: "800", color: h.isProfitable ? "var(--color-success)" : "#f87171" }}>
+                          {formatMoney(h.netProfit)}
+                        </td>
+                        <td style={{ padding: "10px", textAlign: "center" }}>
+                          <span style={{
+                            padding: "2px 8px",
+                            borderRadius: "10px",
+                            fontSize: "0.75rem",
+                            fontWeight: "700",
+                            backgroundColor: h.isProfitable ? "rgba(16, 185, 129, 0.15)" : "rgba(239, 68, 68, 0.15)",
+                            color: h.isProfitable ? "var(--color-success)" : "#f87171"
+                          }}>
+                            {marginPct}%
+                          </span>
+                        </td>
+                        <td style={{ padding: "10px", textAlign: "center" }}>
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            onClick={() => {
+                              setSelectedHistMonth(h.month);
+                              setSelectedHistYear(h.year);
+                              setDashboardPeriod("mes_especifico");
+                            }}
+                            style={{ fontSize: "0.75rem", padding: "4px 8px" }}
+                          >
+                            🔍 Ver P&L
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
