@@ -228,6 +228,24 @@ export default function Finance({
     "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
   ];
 
+  const parseCustomDate = (dateStr, isEnd = false) => {
+    const now = new Date();
+    if (!dateStr || typeof dateStr !== "string" || !dateStr.includes("-")) {
+      return isEnd
+        ? new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999)
+        : new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    }
+    const parts = dateStr.split("-").map(Number);
+    if (parts.length === 3 && !parts.some(isNaN) && parts[0] > 1900 && parts[1] >= 1 && parts[1] <= 12 && parts[2] >= 1 && parts[2] <= 31) {
+      return isEnd
+        ? new Date(parts[0], parts[1] - 1, parts[2], 23, 59, 59, 999)
+        : new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0);
+    }
+    return isEnd
+      ? new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999)
+      : new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+  };
+
   const getPeriodBoundaries = () => {
     const now = new Date();
     let start = new Date();
@@ -272,18 +290,8 @@ export default function Finance({
         break;
       }
       case "personalizado": {
-        if (customStartDate) {
-          const [yr, mo, dy] = customStartDate.split("-").map(Number);
-          start = new Date(yr, mo - 1, dy, 0, 0, 0, 0);
-        } else {
-          start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-        }
-        if (customEndDate) {
-          const [yr, mo, dy] = customEndDate.split("-").map(Number);
-          end = new Date(yr, mo - 1, dy, 23, 59, 59, 999);
-        } else {
-          end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-        }
+        start = parseCustomDate(customStartDate, false);
+        end = parseCustomDate(customEndDate, true);
         break;
       }
       default: {
@@ -478,11 +486,11 @@ export default function Finance({
   else if (dashboardPeriod === "mes") periodScaleFactor = 1;
   else if (dashboardPeriod === "ano") periodScaleFactor = 12;
   else if (dashboardPeriod === "personalizado") {
-    if (customStartDate && customEndDate) {
-      const diffMs = new Date(customEndDate) - new Date(customStartDate);
-      const diffDays = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)) + 1);
-      periodScaleFactor = diffDays / 30;
-    }
+    const dStart = parseCustomDate(customStartDate, false);
+    const dEnd = parseCustomDate(customEndDate, true);
+    const diffMs = dEnd.getTime() - dStart.getTime();
+    const diffDays = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+    periodScaleFactor = diffDays / 30;
   }
 
   const periodFixedCosts = totalMonthlyFixed * periodScaleFactor;

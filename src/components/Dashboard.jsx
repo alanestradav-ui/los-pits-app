@@ -92,6 +92,24 @@ export default function Dashboard({
     return null;
   };
 
+  const parseCustomDate = (dateStr, isEnd = false) => {
+    const now = new Date();
+    if (!dateStr || typeof dateStr !== "string" || !dateStr.includes("-")) {
+      return isEnd
+        ? new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999)
+        : new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    }
+    const parts = dateStr.split("-").map(Number);
+    if (parts.length === 3 && !parts.some(isNaN) && parts[0] > 1900 && parts[1] >= 1 && parts[1] <= 12 && parts[2] >= 1 && parts[2] <= 31) {
+      return isEnd
+        ? new Date(parts[0], parts[1] - 1, parts[2], 23, 59, 59, 999)
+        : new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0);
+    }
+    return isEnd
+      ? new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999)
+      : new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+  };
+
   const getPeriodBoundaries = () => {
     const now = new Date();
     let start = new Date();
@@ -118,24 +136,25 @@ export default function Dashboard({
         end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
         break;
       }
+      case "mes_anterior": {
+        const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        start = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), 1, 0, 0, 0, 0);
+        end = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth() + 1, 0, 23, 59, 59, 999);
+        break;
+      }
+      case "mes_especifico": {
+        start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+        end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        break;
+      }
       case "ano": {
         start = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
         end = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
         break;
       }
       case "personalizado": {
-        if (customStartDate) {
-          const [yr, mo, dy] = customStartDate.split("-").map(Number);
-          start = new Date(yr, mo - 1, dy, 0, 0, 0, 0);
-        } else {
-          start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-        }
-        if (customEndDate) {
-          const [yr, mo, dy] = customEndDate.split("-").map(Number);
-          end = new Date(yr, mo - 1, dy, 23, 59, 59, 999);
-        } else {
-          end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-        }
+        start = parseCustomDate(customStartDate, false);
+        end = parseCustomDate(customEndDate, true);
         break;
       }
       default: {
