@@ -13,8 +13,8 @@ import {
 import { formatMoney } from "../utils/storage";
 
 export default function Dashboard({ 
-  ordenes, 
-  carwash, 
+  ordenes = [], 
+  carwash = [], 
   parkingHistory = [], 
   cafeteriaSales = [], 
   tiendaSales = [], 
@@ -29,13 +29,16 @@ export default function Dashboard({
   customEndDate,
   setCustomEndDate
 }) {
+  const safeOrdenes = Array.isArray(ordenes) ? ordenes.filter(Boolean) : [];
+  const safeCarwash = Array.isArray(carwash) ? carwash.filter(Boolean) : [];
+
   // Stat calculations
-  const activeTaller = ordenes.filter(o => o.estado !== "Listo para entrega" && o.estado !== "Entregado").length;
-  const activeCarwash = carwash.filter(c => c.estado === "En proceso").length;
+  const activeTaller = safeOrdenes.filter(o => o && o.estado !== "Listo para entrega" && o.estado !== "Entregado").length;
+  const activeCarwash = safeCarwash.filter(c => c && c.estado === "En proceso").length;
   const totalActive = activeTaller + activeCarwash;
 
-  const readyTaller = ordenes.filter(o => o.estado === "Listo para entrega").length;
-  const readyCarwash = carwash.filter(c => c.estado === "Listo para entrega").length;
+  const readyTaller = safeOrdenes.filter(o => o && o.estado === "Listo para entrega").length;
+  const readyCarwash = safeCarwash.filter(c => c && c.estado === "Listo para entrega").length;
   const totalReady = readyTaller + readyCarwash;
 
   const [showLowStockDetails, setShowLowStockDetails] = useState(false);

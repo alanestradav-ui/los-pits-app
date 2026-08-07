@@ -42,12 +42,20 @@ class ErrorBoundary extends Component {
   }
   handleReset = () => {
     try {
-      localStorage.removeItem('supabase_url');
-      localStorage.removeItem('supabase_key');
+      localStorage.setItem('supabase_url', 'https://qxgwbihypspisenmwwih.supabase.co');
+      localStorage.setItem('supabase_key', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF4Z3diaWh5cHNwaXNlbm13d2loIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NjA0OTMyOCwiZXhwIjoyMTAxNjI1MzI4fQ.1iNouSCLvape4RtUUM0eEzBaWGj7RA_rgtqLH8XRsv4');
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(regs) {
+          if (regs) { for (var i = 0; i < regs.length; i++) { regs[i].unregister(); } }
+        }).catch(function(){});
+      }
       if ('caches' in window) {
-        caches.keys().then(names => names.forEach(name => caches.delete(name)));
+        caches.keys().then(function(names) {
+          if (names) { for (var j = 0; j < names.length; j++) { caches.delete(names[j]); } }
+        }).catch(function(){});
       }
     } catch (e) {}
+    this.setState({ hasError: false, error: null });
     window.location.reload();
   };
   render() {
