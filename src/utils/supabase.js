@@ -10,19 +10,21 @@ let supabaseInstance = null;
  * Obtiene la instancia activa del cliente Supabase con credenciales por defecto de respaldo
  */
 export const getSupabaseClient = () => {
-  if (supabaseInstance) return supabaseInstance;
-
   let url = (localStorage.getItem('supabase_url') || '').trim();
   let key = (localStorage.getItem('supabase_key') || '').trim();
 
-  if (!url) {
+  if (!url || url.includes('mrpdkjhmzioyygictjua')) {
     url = DEFAULT_SUPABASE_URL;
     localStorage.setItem('supabase_url', url);
+    supabaseInstance = null;
   }
-  if (!key) {
+  if (!key || key.includes('0kZjBWa7tBuHTCXIzEYKTA')) {
     key = DEFAULT_SUPABASE_KEY;
     localStorage.setItem('supabase_key', key);
+    supabaseInstance = null;
   }
+
+  if (supabaseInstance) return supabaseInstance;
 
   try {
     supabaseInstance = createClient(url, key, {
