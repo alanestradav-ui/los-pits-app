@@ -1601,11 +1601,14 @@ export default function App() {
     const activeUser = usuarios.find(u => (u.user || "").toLowerCase().trim() === ((typeof user === "string" ? user : user.user) || "").toLowerCase().trim()) || user;
     const activeRol = (typeof activeUser === "string" ? activeUser : (activeUser.rol || "")).toLowerCase().trim();
 
+    if (!activeRol || activeRol === "admin" || activeRol === "administrador" || activeRol.includes("admin") || activeRol.includes("gerente")) {
+      return true;
+    }
+
     if (activeRol === "vendedor" || activeRol === "vendedor_repuestos") {
       return tabId === "cotizacionesVendedores";
     }
 
-    if (activeRol === "admin" || activeRol === "administrador") return true;
     if (tabId === "historial" && activeRol !== "lavador") return true;
 
     if (Array.isArray(activeUser.permissions)) {
@@ -1619,7 +1622,7 @@ export default function App() {
     if (activeRol === "mecanico") return ["taller", "historial"].includes(tabId);
     if (activeRol === "lavador") return tabId === "carwash";
     if (activeRol === "jefe de taller" || activeRol === "jefe") return ["dashboard", "taller", "repuestosFaltantes", "historial", "cotizacionesVendedores"].includes(tabId);
-    return false;
+    return true;
   };
 
   // Auth Operations
