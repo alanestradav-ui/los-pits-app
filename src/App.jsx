@@ -168,38 +168,40 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
 
   // Handle configuration keys where deletion is direct and local array is master
   const CONFIG_KEYS = ["fixedCosts", "carwashPresets", "usuarios"];
-  if (CONFIG_KEYS.includes(key) && Array.isArray(cleanLocal)) {
+  if (CONFIG_KEYS.includes(key)) {
     if (key === "usuarios") {
-      const localUsers = deduplicateUsers(cleanLocal);
-      const cloudUsersMap = new Map();
-      if (Array.isArray(cleanCloud)) {
-        deduplicateUsers(cleanCloud).forEach(u => {
-          const usernameKey = String(u.user || u.username || "").toLowerCase().trim();
-          if (usernameKey) cloudUsersMap.set(usernameKey, u);
-        });
-      }
-      return localUsers.map(lUser => {
-        const usernameKey = String(lUser.user || lUser.username || "").toLowerCase().trim();
-        const cloudUser = cloudUsersMap.get(usernameKey);
-        if (!cloudUser) return lUser;
-        return { ...cloudUser, ...lUser };
+      const cloudUsers = Array.isArray(cleanCloud) ? deduplicateUsers(cleanCloud) : [];
+      const localUsers = Array.isArray(cleanLocal) ? deduplicateUsers(cleanLocal) : [];
+      const mergedUsersMap = new Map();
+      cloudUsers.forEach(u => {
+        const uKey = String(u.user || u.username || "").toLowerCase().trim();
+        if (uKey) mergedUsersMap.set(uKey, u);
       });
+      localUsers.forEach(u => {
+        const uKey = String(u.user || u.username || "").toLowerCase().trim();
+        if (uKey) {
+          const existing = mergedUsersMap.get(uKey);
+          mergedUsersMap.set(uKey, existing ? { ...existing, ...u } : u);
+        }
+      });
+      return Array.from(mergedUsersMap.values());
     }
 
-    const cloudMap = new Map();
+    const mergedConfigMap = new Map();
     if (Array.isArray(cleanCloud)) {
       cleanCloud.forEach((cItem, idx) => {
         const cId = cItem?.id !== undefined ? String(cItem.id) : (cItem?.name || cItem?.tipo || `c_${idx}`);
-        cloudMap.set(String(cId).toLowerCase().trim(), cItem);
+        mergedConfigMap.set(String(cId).toLowerCase().trim(), cItem);
       });
     }
-
-    return cleanLocal.map((lItem, idx) => {
-      const lId = lItem?.id !== undefined ? String(lItem.id) : (lItem?.name || lItem?.tipo || `l_${idx}`);
-      const cMatch = cloudMap.get(String(lId).toLowerCase().trim());
-      if (!cMatch) return lItem;
-      return { ...cMatch, ...lItem };
-    });
+    if (Array.isArray(cleanLocal)) {
+      cleanLocal.forEach((lItem, idx) => {
+        const lId = lItem?.id !== undefined ? String(lItem.id) : (lItem?.name || lItem?.tipo || `l_${idx}`);
+        const cMatch = mergedConfigMap.get(String(lId).toLowerCase().trim());
+        mergedConfigMap.set(String(lId).toLowerCase().trim(), cMatch ? { ...cMatch, ...lItem } : lItem);
+      });
+    }
+    return Array.from(mergedConfigMap.values());
   }
 
   if (!cleanLocal || (Array.isArray(cleanLocal) && cleanLocal.length === 0)) {
