@@ -9,6 +9,12 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icons.svg', 'icon-192.png', 'icon-512.png'],
+      workbox: {
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
+        navigateFallbackDenylist: [/^\/api/]
+      },
       manifest: {
         name: 'Los Pits Auto Center',
         short_name: 'Los Pits',
