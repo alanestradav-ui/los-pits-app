@@ -552,10 +552,10 @@ export default function App() {
   ];
 
   const [ordenes, setOrdenes] = useState(() => {
-    const val = getLocalStorage("ordenes", initialOrdenes);
-    const raw = Array.isArray(val) && val.length > 0 ? val : initialOrdenes;
+    const val = getLocalStorage("ordenes", []);
+    const raw = Array.isArray(val) ? val : [];
     const filtered = filterOutMockItems("ordenes", raw);
-    const clean = (Array.isArray(filtered) ? filtered : []).filter(Boolean).map(o => {
+    return (Array.isArray(filtered) ? filtered : []).filter(Boolean).map(o => {
       if (!o || typeof o !== "object") return o;
       let migratedEstado = o.estado;
       if (o.estado === "En proceso") migratedEstado = "En proceso de reparación";
@@ -563,21 +563,19 @@ export default function App() {
       else if (o.estado === "Cobrado") migratedEstado = "Entregado";
       return { ...o, estado: migratedEstado };
     });
-    return clean.length > 0 ? clean : initialOrdenes;
   });
 
   const [carwash, setCarwash] = useState(() => {
-    const val = getLocalStorage("carwash", initialCarwash);
-    const raw = Array.isArray(val) && val.length > 0 ? val : initialCarwash;
+    const val = getLocalStorage("carwash", []);
+    const raw = Array.isArray(val) ? val : [];
     const filtered = filterOutMockItems("carwash", raw);
-    const clean = (Array.isArray(filtered) ? filtered : []).filter(Boolean).map(c => {
+    return (Array.isArray(filtered) ? filtered : []).filter(Boolean).map(c => {
       if (!c || typeof c !== "object") return c;
       let migratedEstado = c.estado;
       if (c.estado === "Listo") migratedEstado = "Listo para entrega";
       else if (c.estado === "Cobrado") migratedEstado = "Entregado";
       return { ...c, estado: migratedEstado };
     });
-    return clean.length > 0 ? clean : initialCarwash;
   });
 
   const [parkingEntries, setParkingEntries] = useState(() => {
