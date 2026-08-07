@@ -957,15 +957,6 @@ export default function App() {
     globalActiveSetters.systemSnapshots = setSystemSnapshots;
     globalActiveSetters.setIsInitialPullDone = setIsInitialPullDone;
     globalActiveSetters.setRealtimeStatus = setRealtimeStatus;
-
-    return () => {
-      // If we are still the active setters, clean up on unmount
-      if (globalActiveSetters.usuarios === setUsuarios) {
-        Object.keys(globalActiveSetters).forEach(key => {
-          globalActiveSetters[key] = null;
-        });
-      }
-    };
   });
 
   // Keep stateRef updated with the absolute latest values
