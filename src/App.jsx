@@ -562,7 +562,8 @@ export default function App() {
     const val = getLocalStorage("ordenes", []);
     const raw = Array.isArray(val) ? val : [];
     const filtered = filterOutMockItems("ordenes", raw);
-    return filtered.map(o => {
+    return (Array.isArray(filtered) ? filtered : []).filter(Boolean).map(o => {
+      if (!o || typeof o !== "object") return o;
       let migratedEstado = o.estado;
       if (o.estado === "En proceso") migratedEstado = "En proceso de reparación";
       else if (o.estado === "Listo") migratedEstado = "Listo para entrega";
@@ -575,7 +576,8 @@ export default function App() {
     const val = getLocalStorage("carwash", []);
     const raw = Array.isArray(val) ? val : [];
     const filtered = filterOutMockItems("carwash", raw);
-    return filtered.map(c => {
+    return (Array.isArray(filtered) ? filtered : []).filter(Boolean).map(c => {
+      if (!c || typeof c !== "object") return c;
       let migratedEstado = c.estado;
       if (c.estado === "Listo") migratedEstado = "Listo para entrega";
       else if (c.estado === "Cobrado") migratedEstado = "Entregado";
