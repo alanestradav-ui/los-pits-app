@@ -101,14 +101,7 @@ const ARRAY_KEYS = [
 
 const filterOutMockItems = (key, list) => {
   if (!Array.isArray(list)) return list;
-  return list.filter(item => {
-    if (!item) return false;
-    if (key === "ordenes" || key === "carwash") {
-      const mockIds = [1716301200000, 1716304800000, 1716308400000, 1716312000000, 1716315600000];
-      if (mockIds.includes(item.id)) return false;
-    }
-    return true;
-  });
+  return list.filter(item => Boolean(item));
 };
 
 export const deduplicateUsers = (userList) => {
