@@ -158,17 +158,13 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
     return false;
   };
 
-  const cleanLocal = Array.isArray(localVal) ? localVal.filter(item => !isItemDeleted(item)) : localVal;
-  const cleanCloud = Array.isArray(cloudVal) ? cloudVal.filter(item => !isItemDeleted(item)) : cloudVal;
-
-  if (!cleanCloud || (Array.isArray(cleanCloud) && cleanCloud.length === 0)) {
-    const res = Array.isArray(cleanLocal) ? cleanLocal : (cleanCloud || []);
-    return key === "usuarios" ? deduplicateUsers(res) : res;
-  }
-
-  // Handle configuration keys where deletion is direct and local array is master
   const CONFIG_KEYS = ["fixedCosts", "carwashPresets", "usuarios"];
-  if (CONFIG_KEYS.includes(key)) {
+  const isConfigKey = CONFIG_KEYS.includes(key);
+
+  const cleanLocal = isConfigKey ? (Array.isArray(localVal) ? localVal : []) : (Array.isArray(localVal) ? localVal.filter(item => !isItemDeleted(item)) : localVal);
+  const cleanCloud = isConfigKey ? (Array.isArray(cloudVal) ? cloudVal : []) : (Array.isArray(cloudVal) ? cloudVal.filter(item => !isItemDeleted(item)) : cloudVal);
+
+  if (isConfigKey) {
     if (key === "usuarios") {
       const cloudUsers = Array.isArray(cleanCloud) ? deduplicateUsers(cleanCloud) : [];
       const localUsers = Array.isArray(cleanLocal) ? deduplicateUsers(cleanLocal) : [];
@@ -202,6 +198,11 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
       });
     }
     return Array.from(mergedConfigMap.values());
+  }
+
+  if (!cleanCloud || (Array.isArray(cleanCloud) && cleanCloud.length === 0)) {
+    const res = Array.isArray(cleanLocal) ? cleanLocal : (cleanCloud || []);
+    return key === "usuarios" ? deduplicateUsers(res) : res;
   }
 
   if (!cleanLocal || (Array.isArray(cleanLocal) && cleanLocal.length === 0)) {
@@ -406,7 +407,12 @@ export default function App() {
   // 🔐 USER DEFINITIONS
   const [usuarios, setUsuarios] = useState(() => {
     const defaultUsers = [
-      { user: "admin", pass: "1234", rol: "admin", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"], salarioBase: 0, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 0 }
+      { user: "admin", pass: "1234", rol: "admin", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"], salarioBase: 15000, comisionTaller: 10, comisionCarwash: 5, comisionarLabor: true, comisionarRepuestos: true, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Alan Estrada" },
+      { user: "armando avila", pass: "Armando123", rol: "admin", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "repuestosFaltantes", "historial", "tienda", "cuentas", "configuracion", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios", "finanzas"], salarioBase: 4000, comisionTaller: 10, comisionCarwash: 5, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Armando Avila" },
+      { user: "leandro", pass: "Leandro123", rol: "lavador", permissions: ["carwash"], salarioBase: 3200, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Leandro" },
+      { user: "carlos", pass: "Carlos123", rol: "lavador", permissions: ["carwash"], salarioBase: 3200, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Carlos" },
+      { user: "mario kestler", pass: "Mario123", rol: "jefe de taller", permissions: ["dashboard", "parqueo", "repuestosFaltantes", "historial", "taller", "bodega", "tienda", "carwash", "cafeteria", "cuentas", "finanzas"], salarioBase: 0, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: false, comisionRepuestos: 5, nombreCompleto: "Mario Kestler" },
+      { user: "marco henrnadez", pass: "Marco7890", rol: "mecanico", permissions: ["taller"], salarioBase: 5000, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: false, comisionRepuestos: 5, nombreCompleto: "Marco Henrnadez" }
     ];
     const val = getLocalStorage("usuarios", null);
     const loaded = deduplicateUsers(Array.isArray(val) && val.length > 0 ? val : defaultUsers);
@@ -676,9 +682,16 @@ export default function App() {
     return Array.isArray(val) ? val : [];
   });
 
+  const initialFixedCosts = [
+    { id: 1, nit: "C/F", name: "Alquiler del Taller", amount: 24000, fotos: [], saldo: 0, total: 0, anticipo: 0 },
+    { id: 3, nit: "C/F", name: "Servicios Públicos (Luz y Agua)", amount: 800, fotos: [], saldo: 0, total: 0, anticipo: 0 },
+    { id: 1781836594982, nit: "C/F", name: "Financistas", amount: 20000, fotos: [], saldo: 0, total: 0, anticipo: 0 },
+    { id: 1781836650914, nit: "C/F", name: "Contador", amount: 500, fotos: [], saldo: 0, total: 0, anticipo: 0 }
+  ];
+
   const [fixedCosts, setFixedCosts] = useState(() => {
-    const val = getLocalStorage("fixedCosts", null);
-    return Array.isArray(val) ? val : [];
+    const val = getLocalStorage("fixedCosts", initialFixedCosts);
+    return Array.isArray(val) && val.length > 0 ? val : initialFixedCosts;
   });
 
   const [clientes, setClientes] = useState(() => {
