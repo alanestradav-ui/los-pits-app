@@ -1,8 +1,8 @@
 // src/utils/supabase.js
 import { createClient } from '@supabase/supabase-js';
 
-const DEFAULT_SUPABASE_URL = 'https://mrpdkjhmzioyygictjua.supabase.co';
-const DEFAULT_SUPABASE_KEY = 'sb_publishable_0kZjBWa7tBuHTCXIzEYKTA_3QusIMTf';
+const DEFAULT_SUPABASE_URL = 'https://qxgwbihypspisenmwwih.supabase.co';
+const DEFAULT_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF4Z3diaWh5cHNwaXNlbm13d2loIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NjA0OTMyOCwiZXhwIjoyMTAxNjI1MzI4fQ.1iNouSCLvape4RtUUM0eEzBaWGj7RA_rgtqLH8XRsv4';
 
 let supabaseInstance = null;
 
