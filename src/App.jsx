@@ -132,14 +132,22 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
   const cloudVal = filterOutMockItems(key, safeParseJSON(cloudValRaw));
 
   // 🗑️ SOFT-DELETE REGISTRY: Extraer todos los IDs resguardados en Papelera para evitar que resuciten
+  const activeTenant = getActiveTenantId();
   const deletedItemIds = new Set();
-  const trashItems = trashRaw !== null ? safeParseJSON(trashRaw) : safeParseJSON(getLocalStorage("papeleraSistema", []));
+  const trashItems = trashRaw !== null ? safeParseJSON(trashRaw) : safeParseJSON(getTenantLocalStorage("papeleraSistema", [], activeTenant));
   if (Array.isArray(trashItems)) {
     trashItems.forEach(entry => {
       if (!entry) return;
-      const entryKey = entry.module || entry.key || entry.tablaOriginal || entry.origen || "";
-      if (entryKey && String(entryKey).toLowerCase().trim() !== String(key).toLowerCase().trim()) {
-        return; // Ignorar elementos eliminados de otros módulos
+      const entryTenant = (entry.tenantId || "lospits").toLowerCase().trim();
+      if (entryTenant !== activeTenant) {
+        return; // 🔒 Ignorar elementos eliminados de otros talleres / sucursales!
+      }
+      const entryKey = (entry.moduloOrigen || entry.module || entry.key || entry.tablaOriginal || entry.origen || "").toLowerCase().trim();
+      const targetKey = String(key).toLowerCase().trim();
+      if (entryKey && entryKey !== targetKey) {
+        if (!(entryKey === "taller" && targetKey === "ordenes") && !(entryKey === "ordenes" && targetKey === "taller")) {
+          return; // Ignorar elementos eliminados de otros módulos
+        }
       }
       const origId = entry.originalId || (entry.itemOriginal && entry.itemOriginal.id) || (entry.originalData && entry.originalData.id);
       if (origId !== undefined && origId !== null && String(origId).trim() !== "" && String(origId) !== "undefined" && String(origId) !== "null") {
@@ -871,8 +879,10 @@ export default function App() {
   // 🗑️ SOFT-DELETE HELPER: Moves deleted item to 30-day Trash Bin instead of destroying it
   const softDelete = (modulo, item, user) => {
     if (!item) return;
+    const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
     const deletedEntry = {
       id: `trash_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      tenantId: activeTenant,
       moduloOrigen: modulo,
       itemOriginal: item,
       fechaEliminacion: new Date().toISOString(),
