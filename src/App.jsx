@@ -1650,6 +1650,9 @@ export default function App() {
 
     const activeRol = (typeof activeUser === "string" ? activeUser : (activeUser.rol || "")).toLowerCase().trim();
 
+    // Secondary admin or other accounts must have explicit permissions array containing "finanzas"
+    if (tabId === "finanzas") return false;
+
     if (!activeRol || activeRol === "admin" || activeRol === "administrador" || activeRol.includes("admin") || activeRol.includes("gerente")) {
       return true;
     }
