@@ -1835,6 +1835,7 @@ export default function App() {
             softDelete={softDelete}
             compras={compras}
             setCompras={setCompras}
+            tenantId={tenantId}
           />
         )}
 
@@ -1862,6 +1863,7 @@ export default function App() {
             setClientes={setClientes}
             vehiculos={vehiculos}
             setVehiculos={setVehiculos}
+            tenantId={tenantId}
           />
         )}
 

@@ -162,7 +162,8 @@ export default function Taller({
   setCotizacionesRepuestos,
   softDelete,
   compras = [],
-  setCompras
+  setCompras,
+  tenantId = "lospits"
 }) {
   const [viewingVendorQuotesOrder, setViewingVendorQuotesOrder] = useState(null);
   const [cliente, setCliente] = useState("");
@@ -658,7 +659,7 @@ export default function Taller({
           nombreFacturacion: order.nombreFacturacion || order.cliente.trim(),
           fechaRegistro: new Date().toISOString()
         }];
-        setTenantLocalStorage("clientes", updated);
+        setTenantLocalStorage("clientes", updated, tenantId);
         return updated;
       });
     }
@@ -690,7 +691,7 @@ export default function Taller({
           clienteTelefono: tel || "",
           fechaRegistro: new Date().toISOString()
         }];
-        setTenantLocalStorage("vehiculos", updated);
+        setTenantLocalStorage("vehiculos", updated, tenantId);
         return updated;
       });
     }
@@ -796,7 +797,7 @@ export default function Taller({
       const safePrev = Array.isArray(prev) ? prev : [];
       const exists = safePrev.some(o => String(o.id) === String(nueva.id));
       const updated = exists ? safePrev : [nueva, ...safePrev];
-      setTenantLocalStorage("ordenes", updated);
+      setTenantLocalStorage("ordenes", updated, tenantId);
       return updated;
     });
     registrarClienteYVehiculo(nueva);

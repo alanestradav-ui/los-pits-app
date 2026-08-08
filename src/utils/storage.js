@@ -39,21 +39,14 @@ export const getTenantLocalStorage = (key, defaultValue, tenantId = null) => {
     }
   }
 
-  // Backwards compatibility fallback for original "lospits" tenant
-  if (activeTenant === "lospits") {
-    return getLocalStorage(key, defaultValue);
-  }
-
-  return defaultValue;
+  // Fallback for initial load if scoped key has not been written yet
+  return getLocalStorage(key, defaultValue);
 };
 
 export const setTenantLocalStorage = (key, value, tenantId = null) => {
   const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
   const scopedKey = `${activeTenant}_${key}`;
   setLocalStorage(scopedKey, value);
-  if (activeTenant === "lospits") {
-    setLocalStorage(key, value);
-  }
 };
 
 export const formatMoney = (amount) => {

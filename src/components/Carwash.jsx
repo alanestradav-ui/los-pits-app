@@ -82,7 +82,8 @@ export default function Carwash({
   clientes = [],
   setClientes,
   vehiculos = [],
-  setVehiculos
+  setVehiculos,
+  tenantId = "lospits"
 }) {
   const [activeSubTab, setActiveSubTab] = useState("servicios"); // 'servicios' or 'inventario'
 
@@ -600,7 +601,7 @@ export default function Carwash({
             nombreFacturacion: order.nombreFacturacion || order.cliente.trim(),
             fechaRegistro: new Date().toISOString()
           }];
-          setTenantLocalStorage("clientes", updated);
+          setTenantLocalStorage("clientes", updated, tenantId);
           return updated;
         });
       }
@@ -632,7 +633,7 @@ export default function Carwash({
             clienteTelefono: tel || "",
             fechaRegistro: new Date().toISOString()
           }];
-          setTenantLocalStorage("vehiculos", updated);
+          setTenantLocalStorage("vehiculos", updated, tenantId);
           return updated;
         });
       }
@@ -642,7 +643,7 @@ export default function Carwash({
       const safePrev = Array.isArray(prev) ? prev : [];
       const exists = safePrev.some(c => String(c.id) === String(nuevo.id));
       const updated = exists ? safePrev : [nuevo, ...safePrev];
-      setTenantLocalStorage("carwash", updated);
+      setTenantLocalStorage("carwash", updated, tenantId);
       return updated;
     });
     registrarClienteYVehiculo(nuevo);
