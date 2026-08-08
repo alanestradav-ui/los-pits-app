@@ -18,8 +18,17 @@ export const setLocalStorage = (key, value) => {
   }
 };
 
-export const getTenantLocalStorage = (key, defaultValue, tenantId = "lospits") => {
-  const activeTenant = (tenantId || "lospits").toLowerCase().trim();
+export const getActiveTenantId = () => {
+  try {
+    const stored = localStorage.getItem("current_tenant_id");
+    return stored ? stored.toLowerCase().trim().replace(/"/g, "") : "lospits";
+  } catch (e) {
+    return "lospits";
+  }
+};
+
+export const getTenantLocalStorage = (key, defaultValue, tenantId = null) => {
+  const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
   const scopedKey = `${activeTenant}_${key}`;
   const stored = localStorage.getItem(scopedKey);
   if (stored !== null) {
@@ -38,8 +47,8 @@ export const getTenantLocalStorage = (key, defaultValue, tenantId = "lospits") =
   return defaultValue;
 };
 
-export const setTenantLocalStorage = (key, value, tenantId = "lospits") => {
-  const activeTenant = (tenantId || "lospits").toLowerCase().trim();
+export const setTenantLocalStorage = (key, value, tenantId = null) => {
+  const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
   const scopedKey = `${activeTenant}_${key}`;
   setLocalStorage(scopedKey, value);
   if (activeTenant === "lospits") {

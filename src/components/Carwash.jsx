@@ -14,7 +14,7 @@ import {
   AlertTriangle,
   Edit
 } from "lucide-react";
-import { formatMoney, setLocalStorage } from "../utils/storage";
+import { formatMoney, setLocalStorage, setTenantLocalStorage } from "../utils/storage";
 import { syncKeyToCloud } from "../utils/supabase";
 import { jsPDF } from "jspdf";
 
@@ -600,7 +600,7 @@ export default function Carwash({
             nombreFacturacion: order.nombreFacturacion || order.cliente.trim(),
             fechaRegistro: new Date().toISOString()
           }];
-          setLocalStorage("clientes", updated);
+          setTenantLocalStorage("clientes", updated);
           return updated;
         });
       }
@@ -632,7 +632,7 @@ export default function Carwash({
             clienteTelefono: tel || "",
             fechaRegistro: new Date().toISOString()
           }];
-          setLocalStorage("vehiculos", updated);
+          setTenantLocalStorage("vehiculos", updated);
           return updated;
         });
       }
@@ -642,7 +642,7 @@ export default function Carwash({
       const safePrev = Array.isArray(prev) ? prev : [];
       const exists = safePrev.some(c => String(c.id) === String(nuevo.id));
       const updated = exists ? safePrev : [nuevo, ...safePrev];
-      setLocalStorage("carwash", updated);
+      setTenantLocalStorage("carwash", updated);
       return updated;
     });
     registrarClienteYVehiculo(nuevo);

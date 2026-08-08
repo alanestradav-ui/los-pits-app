@@ -1152,33 +1152,39 @@ export default function App() {
   };
 
   // Sync a key-value pair to cloud if it has actually changed
-  const syncToCloud = async (key, value) => {
+  const syncToCloud = async (baseKey, value) => {
     if (!isInitialPullDone) return; // Guard: prevent syncing local states before initial setup completes
     
     const client = getSupabaseClient();
     if (!client) return;
 
-    const cleanVal = filterOutMockItems(key, safeParseJSON(value));
+    const activeTenant = (tenantId || "lospits").toLowerCase().trim();
+    const cloudKey = activeTenant === "lospits" ? baseKey : `${activeTenant}_${baseKey}`;
+
+    const cleanVal = filterOutMockItems(baseKey, safeParseJSON(value));
     const valueStr = JSON.stringify(cleanVal);
-    if (globalLastSynced[key] === valueStr) {
+    if (globalLastSynced[cloudKey] === valueStr) {
       return; // Already in sync, avoid loops
     }
     
-    const ok = await syncKeyToCloud(key, cleanVal);
+    const ok = await syncKeyToCloud(cloudKey, cleanVal);
     if (ok) {
-      globalLastSynced[key] = valueStr;
+      globalLastSynced[cloudKey] = valueStr;
+      if (activeTenant === "lospits") {
+        syncKeyToCloud(`lospits_${baseKey}`, cleanVal);
+      }
       // 🚀 Emit instant WebSocket Broadcast event to all active clients
       try {
         if (globalBroadcastChannel.current) {
           globalBroadcastChannel.current.send({
             type: 'broadcast',
             event: 'app_key_changed',
-            payload: { key, senderId: instanceId.current }
+            payload: { key: cloudKey, senderId: instanceId.current }
           });
         }
       } catch (e) {}
     } else {
-      console.warn(`[Sync] Falló la sincronización para la llave "${key}". Se reintentará en la próxima actualización.`);
+      console.warn(`[Sync] Falló la sincronización para la llave "${cloudKey}". Se reintentará en la próxima actualización.`);
     }
   };
 
@@ -1202,14 +1208,22 @@ export default function App() {
         activeSetRealtimeStatus("connecting");
       }
       
+      const activeTenant = (tenantId || "lospits").toLowerCase().trim();
+      const getScopedKey = (k) => activeTenant === "lospits" ? k : `${activeTenant}_${k}`;
+
       const cloudDataMap = new Map();
       const allKeysList = Array.from(new Set([...ARRAY_KEYS, "usuarios", "ordenes", "carwash", "parkingEntries", "parkingHistory", "vehiculosVenta", "workshopInventory", "cafeteriaInventory", "cafeteriaSales", "carwashPresets", "carwashInventory", "carwashConsumption", "tiendaSales", "cuentasPorCobrar", "cuentasPorPagar", "fixedCosts", "clientes", "vehiculos", "compras", "toolsInventory", "accesoriosInventory", "papeleraSistema", "cotizacionesRepuestos"])).filter(k => k !== "systemSnapshots" && k !== "app_data_backup_snapshot");
+
+      const scopedQueryKeys = allKeysList.map(k => getScopedKey(k));
+      if (activeTenant === "lospits") {
+        allKeysList.forEach(k => scopedQueryKeys.push(`lospits_${k}`));
+      }
 
       // Consultar llaves en paralelo en lotes de 8 para respuesta ultrarrápida (< 300ms)
       const chunkSize = 8;
       const promises = [];
-      for (let i = 0; i < allKeysList.length; i += chunkSize) {
-        const chunk = allKeysList.slice(i, i + chunkSize);
+      for (let i = 0; i < scopedQueryKeys.length; i += chunkSize) {
+        const chunk = scopedQueryKeys.slice(i, i + chunkSize);
         const queryPromise = client
           .from('app_data')
           .select('key, value')
@@ -1226,16 +1240,22 @@ export default function App() {
         }
       });
 
-      allKeysList.forEach(key => {
-        const activeSetter = globalActiveSetters[key];
-        const cloudRaw = cloudDataMap.get(key);
+      allKeysList.forEach(baseKey => {
+        const activeSetter = globalActiveSetters[baseKey];
+        const scopedKey = getScopedKey(baseKey);
+
+        let cloudRaw = cloudDataMap.get(scopedKey);
+        if (cloudRaw === undefined && activeTenant === "lospits") {
+          cloudRaw = cloudDataMap.get(`lospits_${baseKey}`) || cloudDataMap.get(baseKey);
+        }
+
         const cloudValue = cloudRaw !== undefined ? safeParseJSON(cloudRaw) : null;
-        const localValue = getLatestLocalValue(key);
+        const localValue = getTenantLocalStorage(baseKey, null, activeTenant);
 
-        const papeleraRaw = cloudDataMap.get("papeleraSistema");
-        let mergedValue = mergeCollections(key, localValue, cloudValue, papeleraRaw);
+        const papeleraRaw = cloudDataMap.get(getScopedKey("papeleraSistema"));
+        let mergedValue = mergeCollections(baseKey, localValue, cloudValue, papeleraRaw);
 
-        if (ARRAY_KEYS.includes(key) && !Array.isArray(mergedValue)) {
+        if (ARRAY_KEYS.includes(baseKey) && !Array.isArray(mergedValue)) {
           if (mergedValue && typeof mergedValue === "object") {
             mergedValue = Object.values(mergedValue);
           } else {
@@ -1246,13 +1266,13 @@ export default function App() {
         const mergedValStr = JSON.stringify(mergedValue);
         const cloudValStr = JSON.stringify(cloudValue);
 
-        globalLastSynced[key] = mergedValStr;
+        globalLastSynced[scopedKey] = mergedValStr;
         if (activeSetter) activeSetter(mergedValue);
-        setLocalStorage(key, mergedValue);
+        setTenantLocalStorage(baseKey, mergedValue, activeTenant);
 
         // Subir a Supabase solo si hay datos locales legítimos recién creados sin sincronizar
         if (mergedValStr !== cloudValStr && mergedValue !== null && mergedValue !== undefined) {
-          syncKeyToCloud(key, mergedValue);
+          syncKeyToCloud(scopedKey, mergedValue);
         }
       });
 
@@ -1321,6 +1341,8 @@ export default function App() {
     const client = getSupabaseClient();
     if (!client || !isInitialPullDone) return;
 
+    const activeTenant = (tenantId || "lospits").toLowerCase().trim();
+
     const channel = client
       .channel('schema-db-changes')
       .on(
@@ -1331,42 +1353,59 @@ export default function App() {
           const { key, value } = payload.new;
           
           if (value === null || value === undefined) {
-            console.warn(`[Realtime Sync] Recibido valor nulo o indefinido para la llave "${key}". Se ignora para evitar pérdida de datos locales.`);
+            return;
+          }
+
+          // 🔒 TENANT ISOLATION GUARD: Parse tenant and baseKey from key
+          let eventTenant = "lospits";
+          let baseKey = key;
+
+          if (key.includes("_")) {
+            const parts = key.split("_");
+            const possibleTenant = parts[0].toLowerCase().trim();
+            const restKey = parts.slice(1).join("_");
+            if (restKey) {
+              eventTenant = possibleTenant;
+              baseKey = restKey;
+            }
+          }
+
+          // 🛑 IF EVENT IS FOR A DIFFERENT TENANT, IGNORE IMMEDIATELY!
+          if (eventTenant !== activeTenant) {
             return;
           }
 
           let sanitizedValue = safeParseJSON(value);
           
-          if (ARRAY_KEYS.includes(key)) {
-            sanitizedValue = filterOutMockItems(key, sanitizedValue);
-            if (key === "usuarios") {
+          if (ARRAY_KEYS.includes(baseKey)) {
+            sanitizedValue = filterOutMockItems(baseKey, sanitizedValue);
+            if (baseKey === "usuarios") {
               sanitizedValue = deduplicateUsers(sanitizedValue);
             }
             if (!Array.isArray(sanitizedValue)) {
               if (sanitizedValue && typeof sanitizedValue === "object") {
                 sanitizedValue = Object.values(sanitizedValue);
               } else {
-                console.warn(`[Realtime Sync] Se recibió un valor que no es arreglo para la llave "${key}". Ignorando.`);
                 return;
               }
             }
           }
 
-          const currentLocalVal = getLatestLocalValue(key);
+          const currentLocalVal = getLatestLocalValue(baseKey);
 
-          const mergedValue = mergeCollections(key, currentLocalVal, sanitizedValue);
+          const mergedValue = mergeCollections(baseKey, currentLocalVal, sanitizedValue);
           const mergedValStr = JSON.stringify(mergedValue);
-          const localValStr = stateRef.current ? JSON.stringify(stateRef.current[key]) : "";
+          const localValStr = stateRef.current ? JSON.stringify(stateRef.current[baseKey]) : "";
 
           if (localValStr === mergedValStr) {
             return; // No actual change, skip to avoid loop
           }
 
-          const activeSetter = globalActiveSetters[key];
+          const activeSetter = globalActiveSetters[baseKey];
           if (activeSetter) {
             globalLastSynced[key] = mergedValStr;
             activeSetter(mergedValue);
-            setLocalStorage(key, mergedValue);
+            setTenantLocalStorage(baseKey, mergedValue, activeTenant);
           }
         }
       )
@@ -1407,74 +1446,74 @@ export default function App() {
   }, [isInitialPullDone]);
 
   useEffect(() => {
-    setLocalStorage("ordenes", ordenes);
+    setTenantLocalStorage("ordenes", ordenes, tenantId);
     syncToCloud("ordenes", ordenes);
-  }, [ordenes]);
+  }, [ordenes, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("carwash", carwash);
+    setTenantLocalStorage("carwash", carwash, tenantId);
     syncToCloud("carwash", carwash);
-  }, [carwash]);
+  }, [carwash, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("parkingEntries", parkingEntries);
+    setTenantLocalStorage("parkingEntries", parkingEntries, tenantId);
     syncToCloud("parkingEntries", parkingEntries);
-  }, [parkingEntries]);
+  }, [parkingEntries, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("parkingRate", parkingRate);
+    setTenantLocalStorage("parkingRate", parkingRate, tenantId);
     syncToCloud("parkingRate", parkingRate);
-  }, [parkingRate]);
+  }, [parkingRate, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("parkingHistory", parkingHistory);
+    setTenantLocalStorage("parkingHistory", parkingHistory, tenantId);
     syncToCloud("parkingHistory", parkingHistory);
-  }, [parkingHistory]);
+  }, [parkingHistory, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("vehiculosVenta", vehiculosVenta);
+    setTenantLocalStorage("vehiculosVenta", vehiculosVenta, tenantId);
     syncToCloud("vehiculosVenta", vehiculosVenta);
-  }, [vehiculosVenta]);
+  }, [vehiculosVenta, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("payrollHistory", payrollHistory);
+    setTenantLocalStorage("payrollHistory", payrollHistory, tenantId);
     syncToCloud("payrollHistory", payrollHistory);
-  }, [payrollHistory]);
+  }, [payrollHistory, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("workshopInventory", workshopInventory);
+    setTenantLocalStorage("workshopInventory", workshopInventory, tenantId);
     syncToCloud("workshopInventory", workshopInventory);
-  }, [workshopInventory]);
+  }, [workshopInventory, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("cafeteriaInventory", cafeteriaInventory);
+    setTenantLocalStorage("cafeteriaInventory", cafeteriaInventory, tenantId);
     syncToCloud("cafeteriaInventory", cafeteriaInventory);
-  }, [cafeteriaInventory]);
+  }, [cafeteriaInventory, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("cafeteriaSales", cafeteriaSales);
+    setTenantLocalStorage("cafeteriaSales", cafeteriaSales, tenantId);
     syncToCloud("cafeteriaSales", cafeteriaSales);
-  }, [cafeteriaSales]);
+  }, [cafeteriaSales, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("comisionMecanico", comisionMecanico);
+    setTenantLocalStorage("comisionMecanico", comisionMecanico, tenantId);
     syncToCloud("comisionMecanico", comisionMecanico);
-  }, [comisionMecanico]);
+  }, [comisionMecanico, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("dashboardPeriod", dashboardPeriod);
+    setTenantLocalStorage("dashboardPeriod", dashboardPeriod, tenantId);
     syncToCloud("dashboardPeriod", dashboardPeriod);
-  }, [dashboardPeriod]);
+  }, [dashboardPeriod, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("customStartDate", customStartDate);
+    setTenantLocalStorage("customStartDate", customStartDate, tenantId);
     syncToCloud("customStartDate", customStartDate);
-  }, [customStartDate]);
+  }, [customStartDate, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("customEndDate", customEndDate);
+    setTenantLocalStorage("customEndDate", customEndDate, tenantId);
     syncToCloud("customEndDate", customEndDate);
-  }, [customEndDate]);
+  }, [customEndDate, tenantId]);
 
   useEffect(() => {
     const clean = (carwashPresets || []).filter((p, idx, self) => 
@@ -1483,31 +1522,31 @@ export default function App() {
     if (clean.length !== (carwashPresets || []).length) {
       setCarwashPresets(clean);
     } else {
-      setLocalStorage("carwashPresets", clean);
+      setTenantLocalStorage("carwashPresets", clean, tenantId);
       syncToCloud("carwashPresets", clean);
     }
-  }, [carwashPresets]);
+  }, [carwashPresets, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("carwashInventory", carwashInventory);
+    setTenantLocalStorage("carwashInventory", carwashInventory, tenantId);
     syncToCloud("carwashInventory", carwashInventory);
-  }, [carwashInventory]);
+  }, [carwashInventory, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("carwashConsumption", carwashConsumption);
+    setTenantLocalStorage("carwashConsumption", carwashConsumption, tenantId);
     syncToCloud("carwashConsumption", carwashConsumption);
-  }, [carwashConsumption]);
+  }, [carwashConsumption, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("fixedCosts", fixedCosts);
+    setTenantLocalStorage("fixedCosts", fixedCosts, tenantId);
     syncToCloud("fixedCosts", fixedCosts);
-  }, [fixedCosts]);
+  }, [fixedCosts, tenantId]);
 
   useEffect(() => {
     const cleanUsers = deduplicateUsers(usuarios);
-    setLocalStorage("usuarios", cleanUsers);
+    setTenantLocalStorage("usuarios", cleanUsers, tenantId);
     syncToCloud("usuarios", cleanUsers);
-  }, [usuarios]);
+  }, [usuarios, tenantId]);
 
   // Auto-recover missing clients and vehicles from orders/carwash/parking history deterministically
   useEffect(() => {
@@ -1585,74 +1624,74 @@ export default function App() {
   }, [isInitialPullDone, ordenes, carwash, parkingEntries, parkingHistory, vehiculosVenta]);
 
   useEffect(() => {
-    setLocalStorage("clientes", clientes);
+    setTenantLocalStorage("clientes", clientes, tenantId);
     syncToCloud("clientes", clientes);
-  }, [clientes]);
+  }, [clientes, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("vehiculos", vehiculos);
+    setTenantLocalStorage("vehiculos", vehiculos, tenantId);
     syncToCloud("vehiculos", vehiculos);
-  }, [vehiculos]);
+  }, [vehiculos, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("tiendaSales", tiendaSales);
+    setTenantLocalStorage("tiendaSales", tiendaSales, tenantId);
     syncToCloud("tiendaSales", tiendaSales);
-  }, [tiendaSales]);
+  }, [tiendaSales, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("cuentasPorCobrar", cuentasPorCobrar);
+    setTenantLocalStorage("cuentasPorCobrar", cuentasPorCobrar, tenantId);
     syncToCloud("cuentasPorCobrar", cuentasPorCobrar);
-  }, [cuentasPorCobrar]);
+  }, [cuentasPorCobrar, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("cuentasPorPagar", cuentasPorPagar);
+    setTenantLocalStorage("cuentasPorPagar", cuentasPorPagar, tenantId);
     syncToCloud("cuentasPorPagar", cuentasPorPagar);
-  }, [cuentasPorPagar]);
+  }, [cuentasPorPagar, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("compras", compras);
+    setTenantLocalStorage("compras", compras, tenantId);
     syncToCloud("compras", compras);
-  }, [compras]);
+  }, [compras, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("toolsInventory", toolsInventory);
+    setTenantLocalStorage("toolsInventory", toolsInventory, tenantId);
     syncToCloud("toolsInventory", toolsInventory);
-  }, [toolsInventory]);
+  }, [toolsInventory, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("accesoriosInventory", accesoriosInventory);
+    setTenantLocalStorage("accesoriosInventory", accesoriosInventory, tenantId);
     syncToCloud("accesoriosInventory", accesoriosInventory);
-  }, [accesoriosInventory]);
+  }, [accesoriosInventory, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("cotizacionesRepuestos", cotizacionesRepuestos);
+    setTenantLocalStorage("cotizacionesRepuestos", cotizacionesRepuestos, tenantId);
     syncToCloud("cotizacionesRepuestos", cotizacionesRepuestos);
-  }, [cotizacionesRepuestos]);
+  }, [cotizacionesRepuestos, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("papeleraSistema", papeleraSistema);
+    setTenantLocalStorage("papeleraSistema", papeleraSistema, tenantId);
     syncToCloud("papeleraSistema", papeleraSistema);
-  }, [papeleraSistema]);
+  }, [papeleraSistema, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("systemSnapshots", systemSnapshots);
+    setTenantLocalStorage("systemSnapshots", systemSnapshots, tenantId);
     syncToCloud("systemSnapshots", systemSnapshots);
-  }, [systemSnapshots]);
+  }, [systemSnapshots, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("puntosRecompensas", puntosRecompensas);
+    setTenantLocalStorage("puntosRecompensas", puntosRecompensas, tenantId);
     syncToCloud("puntosRecompensas", puntosRecompensas);
-  }, [puntosRecompensas]);
+  }, [puntosRecompensas, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("catalogoPremios", catalogoPremios);
+    setTenantLocalStorage("catalogoPremios", catalogoPremios, tenantId);
     syncToCloud("catalogoPremios", catalogoPremios);
-  }, [catalogoPremios]);
+  }, [catalogoPremios, tenantId]);
 
   useEffect(() => {
-    setLocalStorage("reglasPrograma", reglasPrograma);
+    setTenantLocalStorage("reglasPrograma", reglasPrograma, tenantId);
     syncToCloud("reglasPrograma", reglasPrograma);
-  }, [reglasPrograma]);
+  }, [reglasPrograma, tenantId]);
 
   const usuarioActivo = usuarios.find(u => (u.user || "").toLowerCase().trim() === (usuarioActual?.user || "").toLowerCase().trim()) || usuarioActual;
 

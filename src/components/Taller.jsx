@@ -18,7 +18,7 @@ import {
   Pencil,
   ShoppingBag
 } from "lucide-react";
-import { formatMoney, getLocalStorage, setLocalStorage } from "../utils/storage";
+import { formatMoney, getLocalStorage, setLocalStorage, setTenantLocalStorage } from "../utils/storage";
 import { syncKeyToCloud } from "../utils/supabase";
 import { jsPDF } from "jspdf";
 
@@ -658,7 +658,7 @@ export default function Taller({
           nombreFacturacion: order.nombreFacturacion || order.cliente.trim(),
           fechaRegistro: new Date().toISOString()
         }];
-        setLocalStorage("clientes", updated);
+        setTenantLocalStorage("clientes", updated);
         return updated;
       });
     }
@@ -690,7 +690,7 @@ export default function Taller({
           clienteTelefono: tel || "",
           fechaRegistro: new Date().toISOString()
         }];
-        setLocalStorage("vehiculos", updated);
+        setTenantLocalStorage("vehiculos", updated);
         return updated;
       });
     }
@@ -796,7 +796,7 @@ export default function Taller({
       const safePrev = Array.isArray(prev) ? prev : [];
       const exists = safePrev.some(o => String(o.id) === String(nueva.id));
       const updated = exists ? safePrev : [nueva, ...safePrev];
-      setLocalStorage("ordenes", updated);
+      setTenantLocalStorage("ordenes", updated);
       return updated;
     });
     registrarClienteYVehiculo(nueva);
