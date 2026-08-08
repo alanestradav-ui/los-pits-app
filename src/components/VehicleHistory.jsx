@@ -42,44 +42,249 @@ const defaultChecklistItems = [
   { id: "suspension", label: "Suspensión" }
 ];
 
-const FinancialPieChart = ({ costoRepuestos = 0, costoManoObra = 0, costoServiciosExternos = 0, utilidadNeta = 0 }) => {
-  const total = (costoRepuestos + costoManoObra + costoServiciosExternos + (utilidadNeta > 0 ? utilidadNeta : 0)) || 1;
-  
-  const slices = [
-    { label: "Costos Repuestos", value: costoRepuestos, color: "#ef4444" },
-    { label: "Mano de Obra / Comisiones", value: costoManoObra, color: "#3b82f6" },
-    { label: "Trabajos Subcontratados", value: costoServiciosExternos, color: "#f59e0b" },
-    { label: "Utilidad Neta", value: Math.max(0, utilidadNeta), color: "#10b981" }
-  ].filter(s => s.value > 0);
+const EnhancedFinancialBudgetReport = ({ presupuesto, fallbackItem }) => {
+  if (!presupuesto && !fallbackItem) return null;
 
-  let cumulativeAngle = 0;
+  const labor = presupuesto?.labor || [];
+  const parts = presupuesto?.parts || [];
+  const services = presupuesto?.services || [];
+
+  let rows = [];
+  let costoManoObra = 0;
+  let ventaManoObra = 0;
+
+  let costoRepuestos = 0;
+  let ventaRepuestos = 0;
+
+  let costoServicios = 0;
+  let ventaServicios = 0;
+
+  if (presupuesto && (labor.length > 0 || parts.length > 0 || services.length > 0)) {
+    // Process Labor
+    labor.forEach(l => {
+      const price = parseFloat(l.price) || 0;
+      const cost = parseFloat(l.cost) || (parseFloat(fallbackItem?.comision) || (price * 0.15));
+      const utility = price - cost;
+      costoManoObra += cost;
+      ventaManoObra += price;
+      rows.push({
+        typeIcon: "🛠️",
+        desc: l.desc,
+        tipo: "Mano de Obra",
+        costo: cost,
+        venta: price,
+        utilidad: utility
+      });
+    });
+
+    // Process Parts
+    parts.forEach(p => {
+      const qty = parseFloat(p.qty) || 1;
+      const price = (parseFloat(p.price) || 0) * qty;
+      const unitCost = p.purchasePrice !== undefined ? parseFloat(p.purchasePrice) : (p.cost !== undefined ? parseFloat(p.cost) : (parseFloat(p.price) || 0) * 0.65);
+      const cost = unitCost * qty;
+      const utility = price - cost;
+      costoRepuestos += cost;
+      ventaRepuestos += price;
+      rows.push({
+        typeIcon: "📦",
+        desc: `${p.desc} ${p.code ? `(${p.code})` : ""} x${qty}`,
+        tipo: "Repuesto",
+        costo: cost,
+        venta: price,
+        utilidad: utility
+      });
+    });
+
+    // Process Services
+    services.forEach(s => {
+      const price = parseFloat(s.price) || 0;
+      const cost = parseFloat(s.cost) || (price * 0.70);
+      const utility = price - cost;
+      costoServicios += cost;
+      ventaServicios += price;
+      rows.push({
+        typeIcon: "⚙️",
+        desc: s.desc,
+        tipo: "Servicio Externo / Torno",
+        costo: cost,
+        venta: price,
+        utilidad: utility
+      });
+    });
+  } else if (fallbackItem) {
+    const price = parseFloat(fallbackItem.total) || parseFloat(fallbackItem.precio) || 0;
+    const cost = (price * 0.5);
+    const utility = price - cost;
+    rows.push({
+      typeIcon: "🛠️",
+      desc: fallbackItem.trabajo || fallbackItem.tipoLavado || "Servicio General",
+      tipo: fallbackItem.tipo || "General",
+      costo: cost,
+      venta: price,
+      utilidad: utility
+    });
+    ventaManoObra = price;
+    costoManoObra = cost;
+  }
+
+  const utilidadManoObra = ventaManoObra - costoManoObra;
+  const utilidadRepuestos = ventaRepuestos - costoRepuestos;
+  const utilidadServicios = ventaServicios - costoServicios;
+
+  const totalCosto = costoManoObra + costoRepuestos + costoServicios;
+  const totalVenta = ventaManoObra + ventaRepuestos + ventaServicios;
+  const totalUtilidad = totalVenta - totalCosto;
+
+  // Pie chart calculation (Costo Total vs Utilidad Neta)
+  const pieTotal = (totalCosto + Math.max(0, totalUtilidad)) || 1;
+  const costoPct = ((totalCosto / pieTotal) * 100).toFixed(1);
+  const utilidadPct = ((Math.max(0, totalUtilidad) / pieTotal) * 100).toFixed(1);
+
+  // SVG Pie chart angles
+  const costoAngle = (totalCosto / pieTotal) * 2 * Math.PI;
+  const startX = 1;
+  const startY = 0;
+  const endX = Math.cos(costoAngle);
+  const endY = Math.sin(costoAngle);
+  const largeArcFlag = costoAngle > Math.PI ? 1 : 0;
+
+  const pathCosto = `M 0 0 L ${startX} ${startY} A 1 1 0 ${largeArcFlag} 1 ${endX} ${endY} Z`;
+  const pathUtilidad = `M 0 0 L ${endX} ${endY} A 1 1 0 ${costoAngle <= Math.PI ? 1 : 0} 1 ${startX} ${startY} Z`;
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "24px", flexWrap: "wrap", justifyContent: "center", margin: "14px 0" }}>
-      <svg width="140" height="140" viewBox="-1 -1 2 2" style={{ transform: "rotate(-90deg)", filter: "drop-shadow(0 4px 10px rgba(0,0,0,0.4))" }}>
-        {slices.map((slice, i) => {
-          const sliceAngle = (slice.value / total) * 2 * Math.PI;
-          const startX = Math.cos(cumulativeAngle);
-          const startY = Math.sin(cumulativeAngle);
-          cumulativeAngle += sliceAngle;
-          const endX = Math.cos(cumulativeAngle);
-          const endY = Math.sin(cumulativeAngle);
-          const largeArcFlag = sliceAngle > Math.PI ? 1 : 0;
-          const pathData = slices.length === 1
-            ? "M -1 0 A 1 1 0 1 1 1 0 A 1 1 0 1 1 -1 0"
-            : `M 0 0 L ${startX} ${startY} A 1 1 0 ${largeArcFlag} 1 ${endX} ${endY} Z`;
-          return <path key={i} d={pathData} fill={slice.color} stroke="#111827" strokeWidth="0.04" />;
-        })}
-      </svg>
+    <div style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "20px" }}>
+      {/* 1. TABLE MATCHING DRAWING (Trabajo realizado | Costo | Venta | Utilidad) */}
+      <div style={{ overflowX: "auto", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.12)", backgroundColor: "rgba(0,0,0,0.4)" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", color: "#fff", fontSize: "0.88rem" }}>
+          <thead>
+            <tr style={{ backgroundColor: "rgba(255,255,255,0.08)", borderBottom: "1px solid rgba(255,255,255,0.15)" }}>
+              <th style={{ padding: "12px 12px", textAlign: "left", color: "#e2e8f0", fontSize: "0.8rem", fontWeight: "800", textTransform: "uppercase" }}>
+                Trabajo realizado / Repuesto
+              </th>
+              <th style={{ padding: "12px 12px", textAlign: "right", color: "#ef4444", fontSize: "0.8rem", fontWeight: "800", textTransform: "uppercase" }}>
+                Costo (Q)
+              </th>
+              <th style={{ padding: "12px 12px", textAlign: "right", color: "#60a5fa", fontSize: "0.8rem", fontWeight: "800", textTransform: "uppercase" }}>
+                Venta (Q)
+              </th>
+              <th style={{ padding: "12px 12px", textAlign: "right", color: "#10b981", fontSize: "0.8rem", fontWeight: "800", textTransform: "uppercase" }}>
+                Utilidad (Q)
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, idx) => (
+              <tr key={idx} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                <td style={{ padding: "10px 12px", color: "#fff", fontWeight: "600" }}>
+                  <span style={{ marginRight: "6px" }}>{row.typeIcon}</span>
+                  {row.desc}
+                </td>
+                <td style={{ padding: "10px 12px", textAlign: "right", color: "#f87171", fontFamily: "var(--font-display)" }}>
+                  {formatMoney(row.costo)}
+                </td>
+                <td style={{ padding: "10px 12px", textAlign: "right", color: "#93c5fd", fontFamily: "var(--font-display)" }}>
+                  {formatMoney(row.venta)}
+                </td>
+                <td style={{ padding: "10px 12px", textAlign: "right", color: "#34d399", fontWeight: "800", fontFamily: "var(--font-display)" }}>
+                  {formatMoney(row.utilidad)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr style={{ backgroundColor: "rgba(255,255,255,0.1)", borderTop: "2px solid rgba(255,255,255,0.25)" }}>
+              <td style={{ padding: "14px 12px", fontWeight: "900", color: "#fff", fontSize: "1rem" }}>
+                TOTAL
+              </td>
+              <td style={{ padding: "14px 12px", textAlign: "right", fontWeight: "900", color: "#ef4444", fontSize: "1.05rem", fontFamily: "var(--font-display)" }}>
+                {formatMoney(totalCosto)}
+              </td>
+              <td style={{ padding: "14px 12px", textAlign: "right", fontWeight: "900", color: "#60a5fa", fontSize: "1.05rem", fontFamily: "var(--font-display)" }}>
+                {formatMoney(totalVenta)}
+              </td>
+              <td style={{ padding: "14px 12px", textAlign: "right", fontWeight: "900", color: "#10b981", fontSize: "1.15rem", fontFamily: "var(--font-display)" }}>
+                {formatMoney(totalUtilidad)}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.8rem", textAlign: "left" }}>
-        {slices.map((s, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ width: "12px", height: "12px", borderRadius: "3px", backgroundColor: s.color, display: "inline-block" }} />
-            <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>{s.label}:</span>
-            <strong style={{ color: "#fff", fontSize: "0.82rem" }}>{formatMoney(s.value)} ({((s.value / total) * 100).toFixed(1)}%)</strong>
+      {/* 2. PIE CHART & SUBDIVISIONS BREAKDOWN PANEL MATCHING DRAWING */}
+      <div className="glass-panel" style={{ padding: "18px", borderRadius: "14px", display: "flex", flexDirection: "column", gap: "16px", backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.1)" }}>
+        <h4 style={{ margin: 0, fontSize: "0.95rem", color: "#fff", display: "flex", alignItems: "center", gap: "8px", fontWeight: "800" }}>
+          📊 Gráfica Financiera y Subdimensiones de Costos / Utilidad
+        </h4>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-around", flexWrap: "wrap", gap: "24px" }}>
+          {/* Pie Chart Visual */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "12px" }}>
+            <svg width="160" height="160" viewBox="-1.1 -1.1 2.2 2.2" style={{ transform: "rotate(-90deg)", filter: "drop-shadow(0 6px 16px rgba(0,0,0,0.6))" }}>
+              {totalCosto > 0 && <path d={pathCosto} fill="#ef4444" stroke="#111827" strokeWidth="0.04" />}
+              {totalUtilidad > 0 && <path d={pathUtilidad} fill="#10b981" stroke="#111827" strokeWidth="0.04" />}
+            </svg>
+            <div style={{ display: "flex", gap: "16px", fontSize: "0.82rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ width: "12px", height: "12px", borderRadius: "3px", backgroundColor: "#ef4444" }} />
+                <span style={{ color: "#ef4444", fontWeight: "800" }}>Costo: {costoPct}%</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ width: "12px", height: "12px", borderRadius: "3px", backgroundColor: "#10b981" }} />
+                <span style={{ color: "#10b981", fontWeight: "800" }}>Utilidad: {utilidadPct}%</span>
+              </div>
+            </div>
           </div>
-        ))}
+
+          {/* Subdivisions breakdown grid */}
+          <div style={{ flex: 1, minWidth: "270px", display: "flex", flexDirection: "column", gap: "14px" }}>
+            {/* Utilidad Breakdown */}
+            <div style={{ backgroundColor: "rgba(16, 185, 129, 0.1)", border: "1px solid rgba(16, 185, 129, 0.25)", borderRadius: "10px", padding: "12px 16px" }}>
+              <span style={{ fontSize: "0.8rem", fontWeight: "800", color: "#10b981", textTransform: "uppercase", display: "block", marginBottom: "8px" }}>
+                📈 Subdivisión de Utilidad Neta (Total: {formatMoney(totalUtilidad)})
+              </span>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "0.82rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#fff" }}>
+                  <span>🛠️ Utilidad Mano de Obra:</span>
+                  <strong style={{ color: "#34d399" }}>{formatMoney(utilidadManoObra)} ({totalUtilidad > 0 ? ((utilidadManoObra / totalUtilidad) * 100).toFixed(1) : 0}%)</strong>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#fff" }}>
+                  <span>📦 Utilidad Repuestos:</span>
+                  <strong style={{ color: "#34d399" }}>{formatMoney(utilidadRepuestos)} ({totalUtilidad > 0 ? ((utilidadRepuestos / totalUtilidad) * 100).toFixed(1) : 0}%)</strong>
+                </div>
+                {ventaServicios > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#fff" }}>
+                    <span>⚙️ Utilidad Servicios Externos / Torno:</span>
+                    <strong style={{ color: "#34d399" }}>{formatMoney(utilidadServicios)} ({totalUtilidad > 0 ? ((utilidadServicios / totalUtilidad) * 100).toFixed(1) : 0}%)</strong>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Costo Breakdown */}
+            <div style={{ backgroundColor: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.25)", borderRadius: "10px", padding: "12px 16px" }}>
+              <span style={{ fontSize: "0.8rem", fontWeight: "800", color: "#ef4444", textTransform: "uppercase", display: "block", marginBottom: "8px" }}>
+                📉 Subdivisión de Costos e Inversión (Total: {formatMoney(totalCosto)})
+              </span>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "0.82rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#fff" }}>
+                  <span>🛠️ Costo Mano de Obra / Comisiones:</span>
+                  <strong style={{ color: "#f87171" }}>{formatMoney(costoManoObra)} ({totalCosto > 0 ? ((costoManoObra / totalCosto) * 100).toFixed(1) : 0}%)</strong>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#fff" }}>
+                  <span>📦 Costo Repuestos / Insumos:</span>
+                  <strong style={{ color: "#f87171" }}>{formatMoney(costoRepuestos)} ({totalCosto > 0 ? ((costoRepuestos / totalCosto) * 100).toFixed(1) : 0}%)</strong>
+                </div>
+                {costoServicios > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#fff" }}>
+                    <span>⚙️ Costo Servicios Externos / Torno:</span>
+                    <strong style={{ color: "#f87171" }}>{formatMoney(costoServicios)} ({totalCosto > 0 ? ((costoServicios / totalCosto) * 100).toFixed(1) : 0}%)</strong>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1171,47 +1376,11 @@ export default function VehicleHistory({
                                     </div>
                                   )}
 
-                                  {/* Detailed Budget Table */}
+                                   {/* Detailed Budget Table */}
                                   {item.presupuesto && (item.presupuesto.labor?.length > 0 || item.presupuesto.parts?.length > 0 || item.presupuesto.services?.length > 0) ? (
                                     <div style={{ textAlign: "left" }}>
-                                      <span style={styles.detailLabel}>📋 Presupuesto Elaborado:</span>
-                                      <div style={styles.tableWrapper}>
-                                        <table style={styles.budgetTable}>
-                                          <thead>
-                                            <tr>
-                                              <th style={styles.bTh}>Descripción / Ítem</th>
-                                              <th style={styles.bTh}>Tipo</th>
-                                              <th style={{ ...styles.bTh, textAlign: "right" }}>Precio</th>
-                                            </tr>
-                                          </thead>
-                                          <tbody>
-                                            {/* Labor */}
-                                            {(item.presupuesto.labor || []).map((l, i) => (
-                                              <tr key={`l-${i}`} style={styles.bTr}>
-                                                <td style={styles.bTd}>🛠️ {l.desc}</td>
-                                                <td style={styles.bTd}>Mano de Obra</td>
-                                                <td style={{ ...styles.bTd, textAlign: "right", color: "#fff" }}>{formatMoney(l.price)}</td>
-                                              </tr>
-                                            ))}
-                                            {/* Parts */}
-                                            {(item.presupuesto.parts || []).map((p, i) => (
-                                              <tr key={`p-${i}`} style={styles.bTr}>
-                                                <td style={styles.bTd}>📦 {p.desc} {p.code ? `(${p.code})` : ""} x{p.qty}</td>
-                                                <td style={styles.bTd}>Repuesto</td>
-                                                <td style={{ ...styles.bTd, textAlign: "right", color: "#fff" }}>{formatMoney((p.price || 0) * (p.qty || 1))}</td>
-                                              </tr>
-                                            ))}
-                                            {/* Services */}
-                                            {(item.presupuesto.services || []).map((s, i) => (
-                                              <tr key={`s-${i}`} style={styles.bTr}>
-                                                <td style={styles.bTd}>⚙️ {s.desc}</td>
-                                                <td style={styles.bTd}>Servicio Externo</td>
-                                                <td style={{ ...styles.bTd, textAlign: "right", color: "#fff" }}>{formatMoney(s.price)}</td>
-                                              </tr>
-                                            ))}
-                                          </tbody>
-                                        </table>
-                                      </div>
+                                      <span style={styles.detailLabel}>📋 Presupuesto Elaborado y Análisis de Utilidad:</span>
+                                      <EnhancedFinancialBudgetReport presupuesto={item.presupuesto} fallbackItem={item} />
                                     </div>
                                   ) : (
                                     <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", fontStyle: "italic", textAlign: "left", margin: "10px 0" }}>
@@ -1757,78 +1926,13 @@ export default function VehicleHistory({
                     {financialReportModal.item ? (
                       /* Single Order Done Works Table */
                       <>
-                        <h4 style={{ margin: "0 0 10px 0", fontSize: "0.9rem", color: "#fff", textTransform: "uppercase", display: "flex", alignItems: "center", gap: "6px" }}>
-                          <FileCheck size={16} color="var(--color-success)" /> Detalle de Trabajos y Repuestos (Utilidad por Rubro)
+                        <h4 style={{ margin: "0 0 10px 0", fontSize: "0.95rem", color: "#fff", textTransform: "uppercase", display: "flex", alignItems: "center", gap: "6px", fontWeight: "800" }}>
+                          <FileCheck size={16} color="var(--color-success)" /> Reporte Financiero Completo (Costos, Precios, Utilidad y Subdimensiones)
                         </h4>
-                        <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "20px" }}>
-                          <thead>
-                            <tr style={{ backgroundColor: "rgba(255,255,255,0.05)", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
-                              <th style={{ padding: "10px", textAlign: "left", fontSize: "0.78rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Descripción de Trabajo / Ítem</th>
-                              <th style={{ padding: "10px", textAlign: "center", fontSize: "0.78rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Tipo</th>
-                              <th style={{ padding: "10px", textAlign: "right", fontSize: "0.78rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Costo Operativo</th>
-                              <th style={{ padding: "10px", textAlign: "right", fontSize: "0.78rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Precio Cliente</th>
-                              <th style={{ padding: "10px", textAlign: "right", fontSize: "0.78rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Utilidad Neta</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {financialReportModal.item.presupuesto ? (
-                              <>
-                                {(financialReportModal.item.presupuesto.labor || []).map((l, i) => {
-                                  const price = parseFloat(l.price) || 0;
-                                  const cost = parseFloat(l.cost) || (parseFloat(financialReportModal.item.comision) || (price * 0.15));
-                                  const utility = price - cost;
-                                  return (
-                                    <tr key={`l-${i}`} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                                      <td style={{ padding: "10px", fontSize: "0.85rem", color: "#fff" }}>🛠️ {l.desc}</td>
-                                      <td style={{ padding: "10px", textAlign: "center", fontSize: "0.8rem", color: "var(--text-muted)" }}>Mano de Obra</td>
-                                      <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "#f87171" }}>{formatMoney(cost)}</td>
-                                      <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "#fff" }}>{formatMoney(price)}</td>
-                                      <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "var(--color-success)", fontWeight: "bold" }}>{formatMoney(utility)}</td>
-                                    </tr>
-                                  );
-                                })}
-                                {(financialReportModal.item.presupuesto.parts || []).map((p, i) => {
-                                  const qty = parseFloat(p.qty) || 1;
-                                  const price = (parseFloat(p.price) || 0) * qty;
-                                  const unitCost = p.purchasePrice !== undefined ? parseFloat(p.purchasePrice) : (p.cost !== undefined ? parseFloat(p.cost) : (parseFloat(p.price) || 0) * 0.65);
-                                  const cost = unitCost * qty;
-                                  const utility = price - cost;
-                                  return (
-                                    <tr key={`p-${i}`} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                                      <td style={{ padding: "10px", fontSize: "0.85rem", color: "#fff" }}>📦 {p.desc} {p.code ? `(${p.code})` : ""} x{qty}</td>
-                                      <td style={{ padding: "10px", textAlign: "center", fontSize: "0.8rem", color: "var(--text-muted)" }}>Repuesto</td>
-                                      <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "#f87171" }}>{formatMoney(cost)}</td>
-                                      <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "#fff" }}>{formatMoney(price)}</td>
-                                      <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "var(--color-success)", fontWeight: "bold" }}>{formatMoney(utility)}</td>
-                                    </tr>
-                                  );
-                                })}
-                                {(financialReportModal.item.presupuesto.services || []).map((s, i) => {
-                                  const price = parseFloat(s.price) || 0;
-                                  const cost = parseFloat(s.cost) || (price * 0.70);
-                                  const utility = price - cost;
-                                  return (
-                                    <tr key={`s-${i}`} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                                      <td style={{ padding: "10px", fontSize: "0.85rem", color: "#fff" }}>⚙️ {s.desc}</td>
-                                      <td style={{ padding: "10px", textAlign: "center", fontSize: "0.8rem", color: "var(--text-muted)" }}>Servicio Técnico</td>
-                                      <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "#f87171" }}>{formatMoney(cost)}</td>
-                                      <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "#fff" }}>{formatMoney(price)}</td>
-                                      <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "var(--color-success)", fontWeight: "bold" }}>{formatMoney(utility)}</td>
-                                    </tr>
-                                  );
-                                })}
-                              </>
-                            ) : (
-                              <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                                <td style={{ padding: "10px", fontSize: "0.85rem", color: "#fff" }}>{financialReportModal.item.trabajo || financialReportModal.item.tipoLavado || "Servicio General"}</td>
-                                <td style={{ padding: "10px", textAlign: "center", fontSize: "0.8rem", color: "var(--text-muted)" }}>{financialReportModal.item.tipo}</td>
-                                <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "#f87171" }}>{formatMoney(fin.costoRepuestos + fin.costoManoObra)}</td>
-                                <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "#fff" }}>{formatMoney(fin.totalVenta)}</td>
-                                <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", color: "var(--color-success)", fontWeight: "bold" }}>{formatMoney(fin.utilidadNeta)}</td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
+                        <EnhancedFinancialBudgetReport 
+                          presupuesto={financialReportModal.item.presupuesto} 
+                          fallbackItem={financialReportModal.item} 
+                        />
                       </>
                     ) : (
                       /* Accumulated Vehicles History Done Works Table */
