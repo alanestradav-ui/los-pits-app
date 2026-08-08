@@ -177,23 +177,61 @@ export default function Login({
 
           <div style={styles.inputGroup}>
             <label style={styles.label}>🏢 Código de Taller / Empresa</label>
+            <div style={{ display: "flex", gap: "8px", marginBottom: "6px" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setTenantCode("lospits");
+                  if (onTenantChange) onTenantChange("lospits");
+                }}
+                style={{
+                  flex: 1,
+                  padding: "6px 10px",
+                  fontSize: "0.75rem",
+                  borderRadius: "6px",
+                  border: tenantCode === "lospits" ? "1px solid #3b82f6" : "1px solid rgba(255,255,255,0.1)",
+                  background: tenantCode === "lospits" ? "rgba(59, 130, 246, 0.2)" : "rgba(255,255,255,0.03)",
+                  color: tenantCode === "lospits" ? "#60a5fa" : "#94a3b8",
+                  cursor: "pointer",
+                  fontWeight: "600"
+                }}
+              >
+                🏢 Los Pits (Oficial)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTenantCode("pruebas");
+                  if (onTenantChange) onTenantChange("pruebas");
+                }}
+                style={{
+                  flex: 1,
+                  padding: "6px 10px",
+                  fontSize: "0.75rem",
+                  borderRadius: "6px",
+                  border: tenantCode === "pruebas" ? "1px solid #f59e0b" : "1px solid rgba(255,255,255,0.1)",
+                  background: tenantCode === "pruebas" ? "rgba(245, 158, 11, 0.2)" : "rgba(255,255,255,0.03)",
+                  color: tenantCode === "pruebas" ? "#fbbf24" : "#94a3b8",
+                  cursor: "pointer",
+                  fontWeight: "600"
+                }}
+              >
+                🧪 Pruebas Generales
+              </button>
+            </div>
             <div style={styles.inputWrapper}>
               <Shield size={18} style={styles.inputIcon} />
               <input
                 type="text"
-                placeholder="ej: lospits, triunfo, miami..."
+                placeholder="ej: lospits, pruebas..."
                 className="input-field"
                 value={tenantCode}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setTenantCode(val);
-                  if (onTenantChange) onTenantChange(val.toLowerCase().trim());
-                }}
+                onChange={(e) => setTenantCode(e.target.value)}
                 style={styles.input}
               />
             </div>
             <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "2px" }}>
-              Código asignado a tu taller o sucursal.
+              Selecciona o escribe el código de tu taller.
             </span>
           </div>
 

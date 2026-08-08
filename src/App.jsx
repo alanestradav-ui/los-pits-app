@@ -1767,6 +1767,8 @@ export default function App() {
         setIsOpen={setIsSidebarOpen}
         realtimeStatus={realtimeStatus}
         handleForceSyncMobile={forcePullFromCloud}
+        activeTenantId={tenantId}
+        onTenantChange={handleSwitchTenant}
       />
 
       {/* Floating Menu Button for mobile */}
