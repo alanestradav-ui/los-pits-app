@@ -32,6 +32,18 @@ export default function SaaSAdmin({ activeTenantId, onSwitchTenant }) {
         fechaRegistro: "2026-01-01",
         contactoNombre: "Alan Estrada",
         telefono: "5544-3322"
+      },
+      {
+        id: "pruebas",
+        nombre: "Pruebas Generales (Entorno Staging)",
+        codigo: "pruebas",
+        adminUser: "admin",
+        pass: "1234",
+        plan: "Pruebas / Desarrollo",
+        estado: "activo",
+        fechaRegistro: "2026-01-01",
+        contactoNombre: "Alan Estrada (Pruebas)",
+        telefono: "5544-3322"
       }
     ];
   });
