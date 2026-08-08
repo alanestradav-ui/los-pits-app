@@ -27,10 +27,16 @@ export default function Dashboard({
   customStartDate,
   setCustomStartDate,
   customEndDate,
-  setCustomEndDate
+  setCustomEndDate,
+  usuarioActual,
+  userHasPermission
 }) {
   const safeOrdenes = Array.isArray(ordenes) ? ordenes.filter(Boolean) : [];
   const safeCarwash = Array.isArray(carwash) ? carwash.filter(Boolean) : [];
+
+  const canSeeFinanzas = userHasPermission 
+    ? userHasPermission(usuarioActual, "finanzas") 
+    : (Array.isArray(usuarioActual?.permissions) ? usuarioActual.permissions.includes("finanzas") : usuarioActual?.user === "admin");
 
   // Stat calculations
   const activeTaller = safeOrdenes.filter(o => o && o.estado !== "Listo para entrega" && o.estado !== "Entregado").length;
@@ -409,47 +415,51 @@ export default function Dashboard({
           </div>
         </div>
 
-        {/* Card 3: Caja (Efectivo) */}
-        <div className="glass-panel" style={styles.statCard}>
-          <div style={{ ...styles.iconContainer, backgroundColor: "rgba(16, 185, 129, 0.15)" }}>
-            <Coins size={24} color="#10b981" />
-          </div>
-          <div style={styles.statDetails}>
-            <span style={styles.statLabel}>Caja (Efectivo) ({currentPeriodLabel})</span>
-            <span style={{ ...styles.statVal, color: "#10b981", fontFamily: "var(--font-display)" }}>
-              {formatMoney(cashRevenue)}
-            </span>
-            <span style={styles.statSubText}>Total cobrado en efectivo</span>
-          </div>
-        </div>
+        {canSeeFinanzas && (
+          <>
+            {/* Card 3: Caja (Efectivo) */}
+            <div className="glass-panel" style={styles.statCard}>
+              <div style={{ ...styles.iconContainer, backgroundColor: "rgba(16, 185, 129, 0.15)" }}>
+                <Coins size={24} color="#10b981" />
+              </div>
+              <div style={styles.statDetails}>
+                <span style={styles.statLabel}>Caja (Efectivo) ({currentPeriodLabel})</span>
+                <span style={{ ...styles.statVal, color: "#10b981", fontFamily: "var(--font-display)" }}>
+                  {formatMoney(cashRevenue)}
+                </span>
+                <span style={styles.statSubText}>Total cobrado en efectivo</span>
+              </div>
+            </div>
 
-        {/* Card 3.5: Bancos */}
-        <div className="glass-panel" style={styles.statCard}>
-          <div style={{ ...styles.iconContainer, backgroundColor: "rgba(59, 130, 246, 0.15)" }}>
-            <TrendingUp size={24} color="var(--color-primary)" />
-          </div>
-          <div style={styles.statDetails}>
-            <span style={styles.statLabel}>Bancos ({currentPeriodLabel})</span>
-            <span style={{ ...styles.statVal, color: "var(--color-primary)", fontFamily: "var(--font-display)" }}>
-              {formatMoney(bankRevenue)}
-            </span>
-            <span style={styles.statSubText}>Tarjetas, transferencias, cheques</span>
-          </div>
-        </div>
+            {/* Card 3.5: Bancos */}
+            <div className="glass-panel" style={styles.statCard}>
+              <div style={{ ...styles.iconContainer, backgroundColor: "rgba(59, 130, 246, 0.15)" }}>
+                <TrendingUp size={24} color="var(--color-primary)" />
+              </div>
+              <div style={styles.statDetails}>
+                <span style={styles.statLabel}>Bancos ({currentPeriodLabel})</span>
+                <span style={{ ...styles.statVal, color: "var(--color-primary)", fontFamily: "var(--font-display)" }}>
+                  {formatMoney(bankRevenue)}
+                </span>
+                <span style={styles.statSubText}>Tarjetas, transferencias, cheques</span>
+              </div>
+            </div>
 
-        {/* Card 3.8: Total Recaudado (Efectivo + Bancos, sin flujo) */}
-        <div className="glass-panel" style={styles.statCard}>
-          <div style={{ ...styles.iconContainer, backgroundColor: "rgba(16, 185, 129, 0.15)" }}>
-            <Wallet size={24} color="#10b981" />
-          </div>
-          <div style={styles.statDetails}>
-            <span style={styles.statLabel}>Total Recaudado ({currentPeriodLabel})</span>
-            <span style={{ ...styles.statVal, color: "#10b981", fontFamily: "var(--font-display)" }}>
-              {formatMoney(totalRevenue)}
-            </span>
-            <span style={styles.statSubText}>Efectivo + Bancos (sin flujo pendiente)</span>
-          </div>
-        </div>
+            {/* Card 3.8: Total Recaudado */}
+            <div className="glass-panel" style={styles.statCard}>
+              <div style={{ ...styles.iconContainer, backgroundColor: "rgba(16, 185, 129, 0.15)" }}>
+                <Wallet size={24} color="#10b981" />
+              </div>
+              <div style={styles.statDetails}>
+                <span style={styles.statLabel}>Total Recaudado ({currentPeriodLabel})</span>
+                <span style={{ ...styles.statVal, color: "#10b981", fontFamily: "var(--font-display)" }}>
+                  {formatMoney(totalRevenue)}
+                </span>
+                <span style={styles.statSubText}>Efectivo + Bancos (sin flujo pendiente)</span>
+              </div>
+            </div>
+          </>
+        )}
 
         {/* Card 4 */}
         <div className="glass-panel" style={styles.statCard}>
@@ -546,14 +556,16 @@ export default function Dashboard({
                 <Car size={18} />
                 Gestión de Carwash
               </button>
-              <button 
-                className="btn btn-ghost" 
-                style={{ ...styles.actionBtn, borderColor: "rgba(255,255,255,0.08)" }}
-                onClick={() => setCurrentTab("finanzas")}
-              >
-                <Coins size={18} />
-                Cierre de Caja y Reportes
-              </button>
+              {canSeeFinanzas && (
+                <button 
+                  className="btn btn-ghost" 
+                  style={{ ...styles.actionBtn, borderColor: "rgba(255,255,255,0.08)" }}
+                  onClick={() => setCurrentTab("finanzas")}
+                >
+                  <Coins size={18} />
+                  Cierre de Caja y Reportes
+                </button>
+              )}
             </div>
           </div>
 

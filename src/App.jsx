@@ -1745,6 +1745,8 @@ export default function App() {
             setCustomStartDate={setCustomStartDate}
             customEndDate={customEndDate}
             setCustomEndDate={setCustomEndDate}
+            usuarioActual={usuarioActivo}
+            userHasPermission={userHasPermission}
           />
         )}
 
