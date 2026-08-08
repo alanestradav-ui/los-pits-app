@@ -19,7 +19,9 @@ import {
   Users,
   Edit,
   Edit2,
-  X
+  X,
+  Eye,
+  EyeOff
 } from "lucide-react";
 import { formatMoney } from "../utils/storage";
 import { getSupabaseClient, resetSupabaseClient, syncKeyToCloud, testSupabaseConnection } from "../utils/supabase";
@@ -139,8 +141,13 @@ export default function SettingsComponent({
   const [uFechaIngreso, setUFechaIngreso] = useState("");
   const [uFechaNacimiento, setUFechaNacimiento] = useState("");
 
+  // Password visibility & handle editing states
+  const [showAddPass, setShowAddPass] = useState(false);
+  const [showEditPass, setShowEditPass] = useState(false);
+
   // Edit User states
   const [editingUser, setEditingUser] = useState(null);
+  const [editUserHandle, setEditUserHandle] = useState("");
   const [editPass, setEditPass] = useState("");
   const [editRol, setEditRol] = useState("");
   const [editRolCustom, setEditRolCustom] = useState("");
@@ -612,7 +619,9 @@ export default function SettingsComponent({
   // Edit User handlers
   const handleEditUserClick = (userObj) => {
     setEditingUser(userObj);
+    setEditUserHandle(userObj.user || "");
     setEditPass(userObj.pass || "");
+    setShowEditPass(false);
     
     const predefinedRoles = ["admin", "cajero", "mecanico", "lavador", "jefe de taller"];
     const isPredefined = predefinedRoles.includes(userObj.rol);
@@ -651,11 +660,26 @@ export default function SettingsComponent({
       alert("Por favor ingresa el nombre del rol personalizado.");
       return;
     }
+    const cleanNewUser = editUserHandle.toLowerCase().trim();
+    if (!cleanNewUser) {
+      alert("Por favor ingresa el nombre de usuario.");
+      return;
+    }
+    const duplicate = usuarios.some(u => 
+      u.user.toLowerCase().trim() === cleanNewUser && 
+      u.user.toLowerCase().trim() !== editingUser.user.toLowerCase().trim()
+    );
+    if (duplicate) {
+      alert(`El nombre de usuario "${cleanNewUser}" ya existe. Por favor elige otro.`);
+      return;
+    }
+
     setUsuarios(
       usuarios.map((u) => {
         if (u.user.toLowerCase().trim() === editingUser.user.toLowerCase().trim()) {
           return {
             ...u,
+            user: cleanNewUser,
             pass: editPass.trim(),
             rol: finalRole,
             permissions: editPermissions,
@@ -681,7 +705,7 @@ export default function SettingsComponent({
     setEditingUser(null);
     setEditRolCustom("");
     setShowCustomEditRolInput(false);
-    alert("Usuario modificado con éxito.");
+    alert(`Usuario "${cleanNewUser}" modificado con éxito.`);
   };
 
   // Remove a user
@@ -1859,14 +1883,36 @@ export default function SettingsComponent({
                   <div style={{ display: "flex", gap: "10px" }}>
                     <div style={{ ...styles.inputGroup, flex: 1 }}>
                       <label style={styles.label}>Contraseña *</label>
-                      <input
-                        type="password"
-                        placeholder="••••"
-                        className="input-field"
-                        value={uPass}
-                        onChange={(e) => setUPass(e.target.value)}
-                        required
-                      />
+                      <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                        <input
+                          type={showAddPass ? "text" : "password"}
+                          placeholder="••••"
+                          className="input-field"
+                          value={uPass}
+                          onChange={(e) => setUPass(e.target.value)}
+                          style={{ paddingRight: "40px", width: "100%" }}
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowAddPass(!showAddPass)}
+                          style={{
+                            position: "absolute",
+                            right: "10px",
+                            background: "none",
+                            border: "none",
+                            color: "var(--text-muted)",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            padding: "4px"
+                          }}
+                          title={showAddPass ? "Ocultar contraseña" : "Ver contraseña"}
+                        >
+                          {showAddPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
                     </div>
                     <div style={{ ...styles.inputGroup, flex: 1 }}>
                       <label style={styles.label}>Rol *</label>
@@ -2770,19 +2816,52 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.app_data;`}
 
             <form onSubmit={handleSaveEditUser} style={styles.form}>
               
-              <div style={{ display: "flex", gap: "10px" }}>
-                <div style={{ ...styles.inputGroup, flex: 1 }}>
-                  <label style={styles.label}>Contraseña *</label>
+              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                <div style={{ ...styles.inputGroup, flex: 1, minWidth: "200px" }}>
+                  <label style={styles.label}>Usuario (Ingreso al Sistema) *</label>
                   <input
-                    type="password"
-                    placeholder="••••"
+                    type="text"
+                    placeholder="Ej. armando avila, mecanico..."
                     className="input-field"
-                    value={editPass}
-                    onChange={(e) => setEditPass(e.target.value)}
+                    value={editUserHandle}
+                    onChange={(e) => setEditUserHandle(e.target.value)}
                     required
                   />
                 </div>
-                <div style={{ ...styles.inputGroup, flex: 1 }}>
+                <div style={{ ...styles.inputGroup, flex: 1, minWidth: "200px" }}>
+                  <label style={styles.label}>Contraseña *</label>
+                  <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                    <input
+                      type={showEditPass ? "text" : "password"}
+                      placeholder="••••"
+                      className="input-field"
+                      value={editPass}
+                      onChange={(e) => setEditPass(e.target.value)}
+                      style={{ paddingRight: "40px", width: "100%" }}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowEditPass(!showEditPass)}
+                      style={{
+                        position: "absolute",
+                        right: "10px",
+                        background: "none",
+                        border: "none",
+                        color: "var(--text-muted)",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        padding: "4px"
+                      }}
+                      title={showEditPass ? "Ocultar contraseña" : "Ver contraseña"}
+                    >
+                      {showEditPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                </div>
+                <div style={{ ...styles.inputGroup, flex: 1, minWidth: "200px" }}>
                   <label style={styles.label}>Rol *</label>
                   <select
                     className="input-field"

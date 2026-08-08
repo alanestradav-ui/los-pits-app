@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Wrench, Shield, Lock, User, KeyRound, Loader2 } from "lucide-react";
+import { Wrench, Shield, Lock, User, KeyRound, Loader2, Eye, EyeOff } from "lucide-react";
 
 const getLevenshteinDistance = (a, b) => {
   const tmp = [];
@@ -48,7 +48,7 @@ const matchNameFlexible = (dbName, inputName) => {
     return inputWords.some(anyInWord => {
       if (dbWord === anyInWord) return true;
       if (sortStr(dbWord) === sortStr(anyInWord)) return true;
-      return getLevenshteinDistance(dbWord, anyInWord) <= 2;
+      if (getLevenshteinDistance(dbWord, anyInWord) <= 2) return true;
     });
   });
 };
@@ -56,6 +56,7 @@ const matchNameFlexible = (dbName, inputName) => {
 export default function Login({ usuarios = [], onLogin, isInitialPullDone = true, realtimeStatus = "connected" }) {
   const [user, setUser] = useState("");
   const [pass, setPass] = useState("");
+  const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState("");
 
   const defaultUsersList = [
@@ -73,32 +74,21 @@ export default function Login({ usuarios = [], onLogin, isInitialPullDone = true
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!user.trim()) {
-      setError("Por favor ingresa un usuario.");
+    if (!user.trim() || !pass.trim()) {
+      setError("Por favor ingresa usuario y contraseña.");
       return;
     }
 
     const cleanInput = user.toLowerCase().trim().replace(/[\.\_\-]/g, " ");
     const cleanPass = pass.trim();
 
-    // Dedicated auto-match for Armando
-    if (cleanInput.includes("armando")) {
-      const armandoUser = defaultUsersList.find(d => d.user === "armando avila") || {
-        user: "armando avila", pass: "Armando123", rol: "admin", nombreCompleto: "Armando Avila",
-        permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "repuestosFaltantes", "historial", "tienda", "cuentas", "configuracion", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios", "finanzas"]
-      };
-      setError("");
-      onLogin(armandoUser);
-      return;
-    }
-
     const encontrado = allUsersList.find((u) => {
       const uName = (u.user || "").toLowerCase().trim().replace(/[\.\_\-]/g, " ");
       const uFullName = (u.nombreCompleto || "").toLowerCase().trim().replace(/[\.\_\-]/g, " ");
       
-      const passMatch = (u.pass || "").toLowerCase().trim() === cleanPass.toLowerCase() || cleanPass === "1234";
+      const isPasswordMatch = (u.pass || "").trim() === cleanPass || (u.pass || "").toLowerCase().trim() === cleanPass.toLowerCase();
 
-      if (!passMatch) return false;
+      if (!isPasswordMatch) return false;
 
       if (uName === cleanInput || matchNameFlexible(uName, cleanInput)) return true;
       if (uFullName && (uFullName === cleanInput || matchNameFlexible(uFullName, cleanInput))) return true;
@@ -114,14 +104,27 @@ export default function Login({ usuarios = [], onLogin, isInitialPullDone = true
     }
   };
 
-  const fillCredentials = (username) => {
-    setUser(username);
-    const matchedUser = usuarios.find(u => (u.user || "").toLowerCase().trim() === username.toLowerCase().trim());
-    setPass(matchedUser ? matchedUser.pass : "1234");
+  const fillCredentials = (role) => {
+    if (role === "admin") {
+      setUser("admin");
+      setPass("1234");
+    } else if (role === "armando") {
+      setUser("armando avila");
+      setPass("Armando123");
+    } else if (role === "cajero") {
+      setUser("cajero");
+      setPass("1234");
+    } else if (role === "mecanico") {
+      setUser("mecanico");
+      setPass("1234");
+    } else if (role === "lavador") {
+      setUser("lavador");
+      setPass("1234");
+    }
     setError("");
   };
 
-  const isConnecting = !isInitialPullDone;
+  const isConnecting = !isInitialPullDone || realtimeStatus === "connecting";
 
   return (
     <div style={styles.container}>
@@ -131,7 +134,7 @@ export default function Login({ usuarios = [], onLogin, isInitialPullDone = true
           to { transform: rotate(360deg); }
         }
         .animate-spin {
-          animation: spin 1s linear infinite;
+          animation: spin 1x linear infinite;
         }
       `}</style>
       <div className="glass-panel" style={styles.card}>
@@ -164,7 +167,7 @@ export default function Login({ usuarios = [], onLogin, isInitialPullDone = true
               <User size={18} style={styles.inputIcon} />
               <input
                 type="text"
-                placeholder="Ej. admin, mecanico..."
+                placeholder="Ej. admin, armando avila..."
                 className="input-field"
                 value={user}
                 onChange={(e) => setUser(e.target.value)}
@@ -178,13 +181,32 @@ export default function Login({ usuarios = [], onLogin, isInitialPullDone = true
             <div style={styles.inputWrapper}>
               <Lock size={18} style={styles.inputIcon} />
               <input
-                type="password"
+                type={showPass ? "text" : "password"}
                 placeholder="••••"
                 className="input-field"
                 value={pass}
                 onChange={(e) => setPass(e.target.value)}
-                style={styles.input}
+                style={{ ...styles.input, paddingRight: "40px" }}
               />
+              <button
+                type="button"
+                onClick={() => setShowPass(!showPass)}
+                style={{
+                  position: "absolute",
+                  right: "12px",
+                  background: "none",
+                  border: "none",
+                  color: "#94a3b8",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "4px"
+                }}
+                title={showPass ? "Ocultar contraseña" : "Ver contraseña"}
+              >
+                {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
             </div>
           </div>
 
