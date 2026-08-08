@@ -1327,7 +1327,7 @@ export default function App() {
       if (navigator.onLine && !document.hidden && failedPullCount.current < 2) {
         forcePullFromCloud(false);
       }
-    }, 15000);
+    }, 5000);
 
     return () => {
       window.removeEventListener("online", handleSyncEvent);
@@ -1436,10 +1436,10 @@ export default function App() {
       .subscribe((status, err) => {
         console.log(`[Realtime Sync] Status changed: ${status}`, err || '');
         const activeSetRealtimeStatus = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
-        if (status === 'SUBSCRIBED') {
+        if (status === 'SUBSCRIBED' || globalSyncFlags.isInitialPullSucceeded) {
           activeSetRealtimeStatus('connected');
-        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          // Reintento silencioso en segundo plano sin falsas alarmas si REST sigue funcionando
+        }
+        if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           setTimeout(() => {
             try {
               if (channel) channel.subscribe();
@@ -1453,7 +1453,7 @@ export default function App() {
     return () => {
       client.removeChannel(channel);
     };
-  }, [isInitialPullDone]);
+  }, [isInitialPullDone, tenantId]);
 
   useEffect(() => {
     setTenantLocalStorage("ordenes", ordenes, tenantId);
@@ -1732,10 +1732,12 @@ export default function App() {
       }
     }
     setUsuarioActual(cleanUserObj);
+    setLocalStorage("usuarioActual", cleanUserObj);
   };
 
   const handleLogout = () => {
     setUsuarioActual(null);
+    localStorage.removeItem("usuarioActual");
   };
 
   // Render Login page if not authenticated
