@@ -42,6 +42,49 @@ const defaultChecklistItems = [
   { id: "suspension", label: "Suspensión" }
 ];
 
+const FinancialPieChart = ({ costoRepuestos = 0, costoManoObra = 0, costoServiciosExternos = 0, utilidadNeta = 0 }) => {
+  const total = (costoRepuestos + costoManoObra + costoServiciosExternos + (utilidadNeta > 0 ? utilidadNeta : 0)) || 1;
+  
+  const slices = [
+    { label: "Costos Repuestos", value: costoRepuestos, color: "#ef4444" },
+    { label: "Mano de Obra / Comisiones", value: costoManoObra, color: "#3b82f6" },
+    { label: "Trabajos Subcontratados", value: costoServiciosExternos, color: "#f59e0b" },
+    { label: "Utilidad Neta", value: Math.max(0, utilidadNeta), color: "#10b981" }
+  ].filter(s => s.value > 0);
+
+  let cumulativeAngle = 0;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "24px", flexWrap: "wrap", justifyContent: "center", margin: "14px 0" }}>
+      <svg width="140" height="140" viewBox="-1 -1 2 2" style={{ transform: "rotate(-90deg)", filter: "drop-shadow(0 4px 10px rgba(0,0,0,0.4))" }}>
+        {slices.map((slice, i) => {
+          const sliceAngle = (slice.value / total) * 2 * Math.PI;
+          const startX = Math.cos(cumulativeAngle);
+          const startY = Math.sin(cumulativeAngle);
+          cumulativeAngle += sliceAngle;
+          const endX = Math.cos(cumulativeAngle);
+          const endY = Math.sin(cumulativeAngle);
+          const largeArcFlag = sliceAngle > Math.PI ? 1 : 0;
+          const pathData = slices.length === 1
+            ? "M -1 0 A 1 1 0 1 1 1 0 A 1 1 0 1 1 -1 0"
+            : `M 0 0 L ${startX} ${startY} A 1 1 0 ${largeArcFlag} 1 ${endX} ${endY} Z`;
+          return <path key={i} d={pathData} fill={slice.color} stroke="#111827" strokeWidth="0.04" />;
+        })}
+      </svg>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.8rem", textAlign: "left" }}>
+        {slices.map((s, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ width: "12px", height: "12px", borderRadius: "3px", backgroundColor: s.color, display: "inline-block" }} />
+            <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>{s.label}:</span>
+            <strong style={{ color: "#fff", fontSize: "0.82rem" }}>{formatMoney(s.value)} ({((s.value / total) * 100).toFixed(1)}%)</strong>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 const EnhancedFinancialBudgetReport = ({ presupuesto, fallbackItem }) => {
   if (!presupuesto && !fallbackItem) return null;
 
