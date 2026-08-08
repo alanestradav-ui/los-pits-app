@@ -132,15 +132,16 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
   const cloudVal = filterOutMockItems(key, safeParseJSON(cloudValRaw));
 
   // 🗑️ SOFT-DELETE REGISTRY: Extraer todos los IDs resguardados en Papelera para evitar que resuciten
-  const activeTenant = getActiveTenantId();
+  const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
   const deletedItemIds = new Set();
+  const deletedScopedIds = new Set();
   const trashItems = trashRaw !== null ? safeParseJSON(trashRaw) : safeParseJSON(getTenantLocalStorage("papeleraSistema", [], activeTenant));
   if (Array.isArray(trashItems)) {
     trashItems.forEach(entry => {
       if (!entry) return;
       const entryTenant = (entry.tenantId || "lospits").toLowerCase().trim();
       if (entryTenant !== activeTenant) {
-        return; // 🔒 Ignorar elementos eliminados de otros talleres / sucursales!
+        return; // 🔒 Ignorar estricta y absolutamente elementos eliminados de otros talleres!
       }
       const entryKey = (entry.moduloOrigen || entry.module || entry.key || entry.tablaOriginal || entry.origen || "").toLowerCase().trim();
       const targetKey = String(key).toLowerCase().trim();
@@ -149,9 +150,14 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
           return; // Ignorar elementos eliminados de otros módulos
         }
       }
-      const origId = entry.originalId || (entry.itemOriginal && entry.itemOriginal.id) || (entry.originalData && entry.originalData.id);
+      const origId = entry.targetOriginalId || entry.originalId || (entry.itemOriginal && entry.itemOriginal.id) || (entry.originalData && entry.originalData.id);
       if (origId !== undefined && origId !== null && String(origId).trim() !== "" && String(origId) !== "undefined" && String(origId) !== "null") {
-        deletedItemIds.add(String(origId).trim());
+        const cleanId = String(origId).trim();
+        deletedItemIds.add(cleanId);
+        deletedScopedIds.add(`${activeTenant}_${cleanId}`);
+      }
+      if (entry.targetScopedId) {
+        deletedScopedIds.add(String(entry.targetScopedId).trim());
       }
     });
   }
@@ -160,8 +166,10 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
     if (!item) return true;
     if (item.id !== undefined && item.id !== null) {
       const strId = String(item.id).trim();
-      if (strId !== "" && strId !== "undefined" && strId !== "null" && deletedItemIds.has(strId)) {
-        return true;
+      if (strId !== "" && strId !== "undefined" && strId !== "null") {
+        if (deletedScopedIds.has(`${activeTenant}_${strId}`) || deletedItemIds.has(strId)) {
+          return true;
+        }
       }
     }
     return false;
@@ -880,11 +888,14 @@ export default function App() {
   const softDelete = (modulo, item, user) => {
     if (!item) return;
     const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
+    const rawId = String(item.id || "").trim();
     const deletedEntry = {
       id: `trash_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
       tenantId: activeTenant,
       moduloOrigen: modulo,
       itemOriginal: item,
+      targetOriginalId: rawId,
+      targetScopedId: `${activeTenant}_${rawId}`,
       fechaEliminacion: new Date().toISOString(),
       usuarioEliminador: user || usuarioActual?.user || "admin"
     };
