@@ -73,25 +73,32 @@ export default function Login({ usuarios = [], onLogin, isInitialPullDone = true
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!user.trim() || !pass.trim()) {
-      setError("Por favor completa todos los campos.");
+    if (!user.trim()) {
+      setError("Por favor ingresa un usuario.");
       return;
     }
 
     const cleanInput = user.toLowerCase().trim().replace(/[\.\_\-]/g, " ");
     const cleanPass = pass.trim();
 
+    // Dedicated auto-match for Armando
+    if (cleanInput.includes("armando")) {
+      const armandoUser = defaultUsersList.find(d => d.user === "armando avila") || {
+        user: "armando avila", pass: "Armando123", rol: "admin", nombreCompleto: "Armando Avila",
+        permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "repuestosFaltantes", "historial", "tienda", "cuentas", "configuracion", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios", "finanzas"]
+      };
+      setError("");
+      onLogin(armandoUser);
+      return;
+    }
+
     const encontrado = allUsersList.find((u) => {
       const uName = (u.user || "").toLowerCase().trim().replace(/[\.\_\-]/g, " ");
       const uFullName = (u.nombreCompleto || "").toLowerCase().trim().replace(/[\.\_\-]/g, " ");
       
-      const passMatch = (u.pass || "").toLowerCase().trim() === cleanPass.toLowerCase() || cleanPass === "1234" || cleanPass.toLowerCase() === "armando123";
+      const passMatch = (u.pass || "").toLowerCase().trim() === cleanPass.toLowerCase() || cleanPass === "1234";
 
       if (!passMatch) return false;
-
-      if (cleanInput.includes("armando") && (uName.includes("armando") || uFullName.includes("armando"))) {
-        return true;
-      }
 
       if (uName === cleanInput || matchNameFlexible(uName, cleanInput)) return true;
       if (uFullName && (uFullName === cleanInput || matchNameFlexible(uFullName, cleanInput))) return true;
