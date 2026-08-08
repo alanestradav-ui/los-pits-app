@@ -414,8 +414,9 @@ export default function App() {
       { user: "mario kestler", pass: "Mario123", rol: "jefe de taller", permissions: ["dashboard", "parqueo", "repuestosFaltantes", "historial", "taller", "bodega", "tienda", "carwash", "cafeteria", "cuentas", "finanzas"], salarioBase: 0, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: false, comisionRepuestos: 5, nombreCompleto: "Mario Kestler" },
       { user: "marco henrnadez", pass: "Marco7890", rol: "mecanico", permissions: ["taller"], salarioBase: 5000, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: false, comisionRepuestos: 5, nombreCompleto: "Marco Henrnadez" }
     ];
-    const val = getLocalStorage("usuarios", null);
-    const loaded = deduplicateUsers(Array.isArray(val) && val.length > 0 ? val : defaultUsers);
+    const val = getLocalStorage("usuarios", []);
+    const localUsers = Array.isArray(val) ? val : [];
+    const loaded = deduplicateUsers([...defaultUsers, ...localUsers]);
     return loaded.map(u => {
       const perms = u.permissions || [];
       const updatedPerms = (u.rol === "admin" || u.rol === "cajero")
