@@ -169,11 +169,11 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
       const cloudUsers = Array.isArray(cleanCloud) ? deduplicateUsers(cleanCloud) : [];
       const localUsers = Array.isArray(cleanLocal) ? deduplicateUsers(cleanLocal) : [];
       const mergedUsersMap = new Map();
-      cloudUsers.forEach(u => {
+      localUsers.forEach(u => {
         const uKey = String(u.user || u.username || "").toLowerCase().trim();
         if (uKey) mergedUsersMap.set(uKey, u);
       });
-      localUsers.forEach(u => {
+      cloudUsers.forEach(u => {
         const uKey = String(u.user || u.username || "").toLowerCase().trim();
         if (uKey) {
           const existing = mergedUsersMap.get(uKey);
@@ -940,6 +940,19 @@ export default function App() {
       syncKeyToCloud("usuarios", usuarios);
     }
   }, [usuarios]);
+
+  // 🧹 Purge stale finanzas permission for Armando if cached locally
+  useEffect(() => {
+    if (usuarioActual && (usuarioActual.user || "").toLowerCase().trim() === "armando avila") {
+      if (Array.isArray(usuarioActual.permissions) && usuarioActual.permissions.includes("finanzas")) {
+        const cleanedPerms = usuarioActual.permissions.filter(p => p !== "finanzas");
+        const updated = { ...usuarioActual, permissions: cleanedPerms };
+        setUsuarioActual(updated);
+        setLocalStorage("usuarioActual", updated);
+        setUsuarios(prev => (Array.isArray(prev) ? prev.map(u => (u.user || "").toLowerCase().trim() === "armando avila" ? updated : u) : [updated]));
+      }
+    }
+  }, [usuarioActual]);
 
   // ☁️ CLOUD SYNC ENGINE (Supabase)
   const [isInitialPullDone, setIsInitialPullDone] = useState(globalSyncFlags.isInitialPullDone);
