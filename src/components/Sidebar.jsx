@@ -160,22 +160,16 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
   // Sync menu list with permissions and saved order
   useEffect(() => {
     const visible = menuItems.filter(item => {
-      // 1. Primary master admin ("admin") retains full access
+      // 1. Primary master super-admin ("admin") retains full access
       if (usuarioActual?.user?.toLowerCase()?.trim() === "admin") return true;
 
-      // 2. If explicit permissions array is set on the user object, strictly enforce checked/unchecked modules
+      // 2. STRICT EXCLUSIVE ENFORCEMENT: Only show modules explicitly checked in the user's permissions array!
       if (Array.isArray(usuarioActual?.permissions)) {
         return usuarioActual.permissions.includes(item.id);
       }
 
-      // 3. Fallbacks if no permissions array exists (finanzas and configuracion default OFF)
-      if (item.id === "finanzas" || item.id === "configuracion") return false;
-
-      if (rol === "vendedor" || rol === "vendedor_repuestos") {
-        return item.id === "cotizacionesVendedores";
-      }
-      if (rol === "admin" || rol === "administrador") return true;
-      return item.roles.includes(rol);
+      // 3. No fallback defaults: If permissions array is missing, hide module
+      return false;
     });
 
     try {

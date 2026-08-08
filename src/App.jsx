@@ -1626,11 +1626,6 @@ export default function App() {
   }, [catalogoPremios]);
 
   useEffect(() => {
-    setLocalStorage("historialCanjes", historialCanjes);
-    syncToCloud("historialCanjes", historialCanjes);
-  }, [historialCanjes]);
-
-  useEffect(() => {
     setLocalStorage("reglasPrograma", reglasPrograma);
     syncToCloud("reglasPrograma", reglasPrograma);
   }, [reglasPrograma]);
@@ -1643,37 +1638,16 @@ export default function App() {
     const activeUser = usuarios.find(u => (u.user || "").toLowerCase().trim() === ((typeof user === "string" ? user : user.user) || "").toLowerCase().trim()) || user;
     const activeUsername = ((typeof activeUser === "string" ? activeUser : activeUser.user) || "").toLowerCase().trim();
 
-    // Master super-admin account "admin" retains full access
+    // Primary master super-admin ("admin") retains full access
     if (activeUsername === "admin") return true;
 
-    // If explicit permissions array is set on the user object, strictly follow checked/unchecked modules
+    // STRICT EXCLUSIVE ENFORCEMENT: ONLY grant access if module is explicitly listed in user's permissions array!
     if (Array.isArray(activeUser.permissions)) {
       return activeUser.permissions.includes(tabId);
     }
 
-    const activeRol = (typeof activeUser === "string" ? activeUser : (activeUser.rol || "")).toLowerCase().trim();
-
-    // finanzas & configuracion default OFF for non-master admin accounts
-    if (tabId === "finanzas" || tabId === "configuracion") return false;
-
-    if (!activeRol || activeRol === "admin" || activeRol === "administrador" || activeRol.includes("admin") || activeRol.includes("gerente")) {
-      return true;
-    }
-
-    if (activeRol === "vendedor" || activeRol === "vendedor_repuestos") {
-      return tabId === "cotizacionesVendedores";
-    }
-
-    if (tabId === "historial" && activeRol !== "lavador") return true;
-
-    // Fallbacks
-    if (activeRol === "cajero") {
-      return ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios", "cotizacionesVendedores", "recompensas"].includes(tabId);
-    }
-    if (activeRol === "mecanico") return ["taller", "historial"].includes(tabId);
-    if (activeRol === "lavador") return tabId === "carwash";
-    if (activeRol === "jefe de taller" || activeRol === "jefe") return ["dashboard", "taller", "repuestosFaltantes", "historial", "cotizacionesVendedores"].includes(tabId);
-    return true;
+    // No fallback defaults: If permissions array is missing, deny access
+    return false;
   };
 
   // Auth Operations

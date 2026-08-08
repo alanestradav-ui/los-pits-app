@@ -522,22 +522,9 @@ export default function SettingsComponent({
     }
   };
 
-  // Helper to get default permissions based on role
+  // Helper to get default permissions based on role (returns empty array so admin explicitly checks permissions)
   const getDefaultPermissionsForRole = (role) => {
-    switch (role) {
-      case "admin":
-        return ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "repuestosFaltantes", "historial", "tienda", "cuentas", "compras"];
-      case "cajero":
-        return ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "repuestosFaltantes", "historial", "tienda", "cuentas", "compras"];
-      case "mecanico":
-        return ["taller", "historial"];
-      case "lavador":
-        return ["carwash"];
-      case "jefe de taller":
-        return ["dashboard", "taller", "repuestosFaltantes", "historial"];
-      default:
-        return [];
-    }
+    return [];
   };
 
   // Handler for role changes (auto-update permissions checkboxes)
