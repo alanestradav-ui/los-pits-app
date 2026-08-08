@@ -526,9 +526,9 @@ export default function SettingsComponent({
   const getDefaultPermissionsForRole = (role) => {
     switch (role) {
       case "admin":
-        return ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "compras"];
+        return ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "repuestosFaltantes", "historial", "tienda", "cuentas", "compras"];
       case "cajero":
-        return ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "configuracion", "historial", "tienda", "cuentas", "compras"];
+        return ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "repuestosFaltantes", "historial", "tienda", "cuentas", "compras"];
       case "mecanico":
         return ["taller", "historial"];
       case "lavador":

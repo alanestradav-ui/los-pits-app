@@ -947,15 +947,18 @@ export default function App() {
     }
   }, [usuarios]);
 
-  // 🧹 Purge stale finanzas permission for Armando if cached locally
+  // 🧹 Purge stale finanzas & configuracion permissions for Armando if cached locally
   useEffect(() => {
-    if (usuarioActual && (usuarioActual.user || "").toLowerCase().trim() === "armando avila") {
-      if (Array.isArray(usuarioActual.permissions) && usuarioActual.permissions.includes("finanzas")) {
-        const cleanedPerms = usuarioActual.permissions.filter(p => p !== "finanzas");
+    if (usuarioActual && (usuarioActual.user || "").toLowerCase().trim().includes("armando")) {
+      const perms = Array.isArray(usuarioActual.permissions) ? usuarioActual.permissions : [];
+      const hasFinanzas = perms.includes("finanzas");
+      const hasConfig = perms.includes("configuracion");
+      if (hasFinanzas || hasConfig) {
+        const cleanedPerms = perms.filter(p => p !== "finanzas" && p !== "configuracion");
         const updated = { ...usuarioActual, permissions: cleanedPerms };
         setUsuarioActual(updated);
         setLocalStorage("usuarioActual", updated);
-        setUsuarios(prev => (Array.isArray(prev) ? prev.map(u => (u.user || "").toLowerCase().trim() === "armando avila" ? updated : u) : [updated]));
+        setUsuarios(prev => (Array.isArray(prev) ? prev.map(u => (u.user || "").toLowerCase().trim().includes("armando") ? updated : u) : [updated]));
       }
     }
   }, [usuarioActual]);
@@ -1650,8 +1653,8 @@ export default function App() {
 
     const activeRol = (typeof activeUser === "string" ? activeUser : (activeUser.rol || "")).toLowerCase().trim();
 
-    // Secondary admin or other accounts must have explicit permissions array containing "finanzas"
-    if (tabId === "finanzas") return false;
+    // finanzas & configuracion default OFF for non-master admin accounts
+    if (tabId === "finanzas" || tabId === "configuracion") return false;
 
     if (!activeRol || activeRol === "admin" || activeRol === "administrador" || activeRol.includes("admin") || activeRol.includes("gerente")) {
       return true;
@@ -1665,7 +1668,7 @@ export default function App() {
 
     // Fallbacks
     if (activeRol === "cajero") {
-      return ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios", "cotizacionesVendedores", "recompensas"].includes(tabId);
+      return ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios", "cotizacionesVendedores", "recompensas"].includes(tabId);
     }
     if (activeRol === "mecanico") return ["taller", "historial"].includes(tabId);
     if (activeRol === "lavador") return tabId === "carwash";

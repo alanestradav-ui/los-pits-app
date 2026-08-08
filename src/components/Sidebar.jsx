@@ -136,13 +136,13 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
       id: "finanzas", 
       label: "Finanzas & Reportes", 
       icon: TrendingUp, 
-      roles: ["admin", "cajero"] 
+      roles: ["admin"] 
     },
     { 
       id: "configuracion", 
       label: "Configuración", 
       icon: Settings, 
-      roles: ["admin", "cajero"] 
+      roles: ["admin"] 
     }
   ];
 
@@ -168,8 +168,8 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
         return usuarioActual.permissions.includes(item.id);
       }
 
-      // 3. Fallbacks if no permissions array exists (finanzas default off for secondary admin accounts)
-      if (item.id === "finanzas") return false;
+      // 3. Fallbacks if no permissions array exists (finanzas and configuracion default OFF)
+      if (item.id === "finanzas" || item.id === "configuracion") return false;
 
       if (rol === "vendedor" || rol === "vendedor_repuestos") {
         return item.id === "cotizacionesVendedores";
