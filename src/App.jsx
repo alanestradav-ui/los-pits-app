@@ -596,7 +596,7 @@ export default function App() {
   ];
 
   const [ordenes, setOrdenes] = useState(() => {
-    const val = getLocalStorage("ordenes", []);
+    const val = getTenantLocalStorage("ordenes", [], tenantId);
     const raw = Array.isArray(val) ? val : [];
     const filtered = filterOutMockItems("ordenes", raw);
     return (Array.isArray(filtered) ? filtered : []).filter(Boolean).map(o => {
@@ -610,7 +610,7 @@ export default function App() {
   });
 
   const [carwash, setCarwash] = useState(() => {
-    const val = getLocalStorage("carwash", []);
+    const val = getTenantLocalStorage("carwash", [], tenantId);
     const raw = Array.isArray(val) ? val : [];
     const filtered = filterOutMockItems("carwash", raw);
     return (Array.isArray(filtered) ? filtered : []).filter(Boolean).map(c => {
@@ -623,58 +623,58 @@ export default function App() {
   });
 
   const [parkingEntries, setParkingEntries] = useState(() => {
-    const val = getLocalStorage("parkingEntries", []);
+    const val = getTenantLocalStorage("parkingEntries", [], tenantId);
     return Array.isArray(val) ? val : [];
   });
 
   const [parkingRate, setParkingRate] = useState(() => {
-    return getLocalStorage("parkingRate", 10.0);
+    return getTenantLocalStorage("parkingRate", 10.0, tenantId);
   });
 
   const [parkingHistory, setParkingHistory] = useState(() => {
-    const val = getLocalStorage("parkingHistory", []);
+    const val = getTenantLocalStorage("parkingHistory", [], tenantId);
     return Array.isArray(val) ? val : [];
   });
 
   const [vehiculosVenta, setVehiculosVenta] = useState(() => {
-    const val = getLocalStorage("vehiculosVenta", []);
+    const val = getTenantLocalStorage("vehiculosVenta", [], tenantId);
     return Array.isArray(val) ? val : [];
   });
 
   const [workshopInventory, setWorkshopInventory] = useState(() => {
-    const val = getLocalStorage("workshopInventory", initialWorkshopInventory);
+    const val = getTenantLocalStorage("workshopInventory", initialWorkshopInventory, tenantId);
     return Array.isArray(val) ? val : initialWorkshopInventory;
   });
 
   const [cafeteriaInventory, setCafeteriaInventory] = useState(() => {
-    const val = getLocalStorage("cafeteriaInventory", initialCafeteriaInventory);
+    const val = getTenantLocalStorage("cafeteriaInventory", initialCafeteriaInventory, tenantId);
     return Array.isArray(val) ? val : initialCafeteriaInventory;
   });
 
   const [cafeteriaSales, setCafeteriaSales] = useState(() => {
-    const val = getLocalStorage("cafeteriaSales", []);
+    const val = getTenantLocalStorage("cafeteriaSales", [], tenantId);
     return Array.isArray(val) ? val : [];
   });
 
   const [comisionMecanico, setComisionMecanico] = useState(() => {
-    return getLocalStorage("comisionMecanico", 0.10);
+    return getTenantLocalStorage("comisionMecanico", 0.10, tenantId);
   });
 
   const [cotizacionesRepuestos, setCotizacionesRepuestos] = useState(() => {
-    const val = getLocalStorage("cotizacionesRepuestos", []);
+    const val = getTenantLocalStorage("cotizacionesRepuestos", [], tenantId);
     return Array.isArray(val) ? val : [];
   });
 
   const [dashboardPeriod, setDashboardPeriod] = useState(() => {
-    return getLocalStorage("dashboardPeriod", "mes");
+    return getTenantLocalStorage("dashboardPeriod", "mes", tenantId);
   });
 
   const [customStartDate, setCustomStartDate] = useState(() => {
-    return getLocalStorage("customStartDate", "");
+    return getTenantLocalStorage("customStartDate", "", tenantId);
   });
 
   const [customEndDate, setCustomEndDate] = useState(() => {
-    return getLocalStorage("customEndDate", "");
+    return getTenantLocalStorage("customEndDate", "", tenantId);
   });
 
   const [carwashPresets, setCarwashPresets] = useState(() => {
@@ -683,7 +683,7 @@ export default function App() {
       { tipo: "Mediano", precio: 90, comision: 7 },
       { tipo: "Grande", precio: 110, comision: 10 }
     ];
-    const val = getLocalStorage("carwashPresets", defaultPresets);
+    const val = getTenantLocalStorage("carwashPresets", defaultPresets, tenantId);
     return Array.isArray(val) ? val : defaultPresets;
   });
 
@@ -694,27 +694,27 @@ export default function App() {
       { id: 3, name: "Microfibras", quantity: 20, purchasePrice: 15.00 },
       { id: 4, name: "Aromatizante (Galón)", quantity: 2, purchasePrice: 80.00 }
     ];
-    const val = getLocalStorage("carwashInventory", defaultInventory);
+    const val = getTenantLocalStorage("carwashInventory", defaultInventory, tenantId);
     return Array.isArray(val) ? val : defaultInventory;
   });
 
   const [carwashConsumption, setCarwashConsumption] = useState(() => {
-    const val = getLocalStorage("carwashConsumption", []);
+    const val = getTenantLocalStorage("carwashConsumption", [], tenantId);
     return Array.isArray(val) ? val : [];
   });
 
   const [tiendaSales, setTiendaSales] = useState(() => {
-    const val = getLocalStorage("tiendaSales", []);
+    const val = getTenantLocalStorage("tiendaSales", [], tenantId);
     return Array.isArray(val) ? val : [];
   });
 
   const [cuentasPorCobrar, setCuentasPorCobrar] = useState(() => {
-    const val = getLocalStorage("cuentasPorCobrar", []);
+    const val = getTenantLocalStorage("cuentasPorCobrar", [], tenantId);
     return Array.isArray(val) ? val : [];
   });
 
   const [cuentasPorPagar, setCuentasPorPagar] = useState(() => {
-    const val = getLocalStorage("cuentasPorPagar", []);
+    const val = getTenantLocalStorage("cuentasPorPagar", [], tenantId);
     return Array.isArray(val) ? val : [];
   });
 
@@ -726,44 +726,44 @@ export default function App() {
   ];
 
   const [fixedCosts, setFixedCosts] = useState(() => {
-    const val = getLocalStorage("fixedCosts", initialFixedCosts);
+    const val = getTenantLocalStorage("fixedCosts", initialFixedCosts, tenantId);
     return Array.isArray(val) && val.length > 0 ? val : initialFixedCosts;
   });
 
   const [clientes, setClientes] = useState(() => {
-    const val = getLocalStorage("clientes", []);
+    const val = getTenantLocalStorage("clientes", [], tenantId);
     const raw = Array.isArray(val) ? val : [];
     return filterOutMockItems("clientes", raw);
   });
 
   const [vehiculos, setVehiculos] = useState(() => {
-    const val = getLocalStorage("vehiculos", []);
+    const val = getTenantLocalStorage("vehiculos", [], tenantId);
     const raw = Array.isArray(val) ? val : [];
     return filterOutMockItems("vehiculos", raw);
   });
 
   const [compras, setCompras] = useState(() => {
-    const val = getLocalStorage("compras", []);
+    const val = getTenantLocalStorage("compras", [], tenantId);
     return Array.isArray(val) ? val : [];
   });
 
   const [payrollHistory, setPayrollHistory] = useState(() => {
-    const val = getLocalStorage("payrollHistory", []);
+    const val = getTenantLocalStorage("payrollHistory", [], tenantId);
     return Array.isArray(val) ? val : [];
   });
 
   const [toolsInventory, setToolsInventory] = useState(() => {
-    const val = getLocalStorage("toolsInventory", []);
+    const val = getTenantLocalStorage("toolsInventory", [], tenantId);
     return Array.isArray(val) ? val : [];
   });
 
   const [accesoriosInventory, setAccesoriosInventory] = useState(() => {
-    const val = getLocalStorage("accesoriosInventory", []);
+    const val = getTenantLocalStorage("accesoriosInventory", [], tenantId);
     return Array.isArray(val) ? val : [];
   });
 
   const [papeleraSistema, setPapeleraSistema] = useState(() => {
-    const val = getLocalStorage("papeleraSistema", []);
+    const val = getTenantLocalStorage("papeleraSistema", [], tenantId);
     const clean = Array.isArray(val) ? val : [];
     const now = Date.now();
     const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
@@ -771,7 +771,7 @@ export default function App() {
   });
 
   const [systemSnapshots, setSystemSnapshots] = useState(() => {
-    const val = getLocalStorage("systemSnapshots", []);
+    const val = getTenantLocalStorage("systemSnapshots", [], tenantId);
     const clean = Array.isArray(val) ? val : [];
     const now = Date.now();
     const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
@@ -779,17 +779,17 @@ export default function App() {
   });
 
   const [puntosRecompensas, setPuntosRecompensas] = useState(() => {
-    const val = getLocalStorage("puntosRecompensas", []);
+    const val = getTenantLocalStorage("puntosRecompensas", [], tenantId);
     return Array.isArray(val) ? val : [];
   });
 
   const [catalogoPremios, setCatalogoPremios] = useState(() => {
-    const val = getLocalStorage("catalogoPremios", []);
+    const val = getTenantLocalStorage("catalogoPremios", [], tenantId);
     return Array.isArray(val) ? val : [];
   });
 
   const [historialCanjes, setHistorialCanjes] = useState(() => {
-    const val = getLocalStorage("historialCanjes", []);
+    const val = getTenantLocalStorage("historialCanjes", [], tenantId);
     return Array.isArray(val) ? val : [];
   });
 
