@@ -1599,6 +1599,16 @@ export default function App() {
     if (!user) return false;
     if (tabId === "pantalla") return true; // Pantalla de monitoreo accesible para todos los usuarios registrados
     const activeUser = usuarios.find(u => (u.user || "").toLowerCase().trim() === ((typeof user === "string" ? user : user.user) || "").toLowerCase().trim()) || user;
+    const activeUsername = ((typeof activeUser === "string" ? activeUser : activeUser.user) || "").toLowerCase().trim();
+
+    // Master super-admin account "admin" retains full access
+    if (activeUsername === "admin") return true;
+
+    // If explicit permissions array is set on the user object, strictly follow checked/unchecked modules
+    if (Array.isArray(activeUser.permissions)) {
+      return activeUser.permissions.includes(tabId);
+    }
+
     const activeRol = (typeof activeUser === "string" ? activeUser : (activeUser.rol || "")).toLowerCase().trim();
 
     if (!activeRol || activeRol === "admin" || activeRol === "administrador" || activeRol.includes("admin") || activeRol.includes("gerente")) {
@@ -1610,10 +1620,6 @@ export default function App() {
     }
 
     if (tabId === "historial" && activeRol !== "lavador") return true;
-
-    if (Array.isArray(activeUser.permissions)) {
-      if (activeUser.permissions.includes(tabId)) return true;
-    }
 
     // Fallbacks
     if (activeRol === "cajero") {

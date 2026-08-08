@@ -160,15 +160,19 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
   // Sync menu list with permissions and saved order
   useEffect(() => {
     const visible = menuItems.filter(item => {
+      // 1. If explicit permissions array is set on the user object, strictly enforce checked/unchecked modules
+      if (Array.isArray(usuarioActual?.permissions)) {
+        if (usuarioActual?.user?.toLowerCase()?.trim() === "admin") return true;
+        return usuarioActual.permissions.includes(item.id);
+      }
+
+      // 2. Role-based fallbacks if no permissions array exists
       if (rol === "vendedor" || rol === "vendedor_repuestos") {
         return item.id === "cotizacionesVendedores";
       }
       if (rol === "admin") return true;
       if (item.id === "finanzas" || item.id === "configuracion") {
-        if (rol === "admin" || rol === "cajero") return true;
-      }
-      if (usuarioActual?.permissions) {
-        return usuarioActual.permissions.includes(item.id);
+        return rol === "admin" || rol === "cajero";
       }
       return item.roles.includes(rol);
     });
