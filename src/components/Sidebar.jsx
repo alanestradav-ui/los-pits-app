@@ -181,6 +181,7 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
       const savedOrderStr = localStorage.getItem(storageKey) || localStorage.getItem("sidebar_modules_order");
       if (savedOrderStr) {
         const savedOrder = JSON.parse(savedOrderStr);
+        const visibleIds = new Set(visible.map(v => v.id));
         const sorted = [...visible].sort((a, b) => {
           const idxA = savedOrder.indexOf(a.id);
           const idxB = savedOrder.indexOf(b.id);
@@ -188,7 +189,7 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
           if (idxA === -1) return 1;
           if (idxB === -1) return -1;
           return idxA - idxB;
-        });
+        }).filter(item => visibleIds.has(item.id));
         setOrderedItems(sorted);
       } else {
         setOrderedItems(visible);

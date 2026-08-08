@@ -918,6 +918,21 @@ export default function App() {
     }
   }, [usuarioActual]);
 
+  // 🔄 Sync logged-in user permissions & role with updated usuarios array (e.g. when Admin updates permissions)
+  useEffect(() => {
+    if (usuarioActual && Array.isArray(usuarios) && usuarios.length > 0) {
+      const match = usuarios.find(u => (u.user || "").toLowerCase().trim() === (usuarioActual.user || "").toLowerCase().trim());
+      if (match) {
+        const permsMatch = JSON.stringify(match.permissions) === JSON.stringify(usuarioActual.permissions);
+        const roleMatch = match.rol === usuarioActual.rol;
+        const passMatch = match.pass === usuarioActual.pass;
+        if (!permsMatch || !roleMatch || !passMatch) {
+          setUsuarioActual(match);
+        }
+      }
+    }
+  }, [usuarios]);
+
   // ☁️ CLOUD SYNC ENGINE (Supabase)
   const [isInitialPullDone, setIsInitialPullDone] = useState(globalSyncFlags.isInitialPullDone);
   const stateRef = useRef(null);
