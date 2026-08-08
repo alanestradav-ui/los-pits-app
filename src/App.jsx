@@ -460,7 +460,13 @@ export default function App() {
 
   // 🔑 LOGIN STATES
   const [usuarioActual, setUsuarioActual] = useState(() => {
-    return getLocalStorage("usuarioActual", null);
+    const saved = getLocalStorage("usuarioActual", null);
+    if (saved && (saved.user || "").toLowerCase().trim() === "armando avila") {
+      if (Array.isArray(saved.permissions)) {
+        saved.permissions = saved.permissions.filter(p => p !== "finanzas");
+      }
+    }
+    return saved;
   });
 
   // 📂 ROUTING TAB STATE
@@ -1666,7 +1672,13 @@ export default function App() {
 
   // Auth Operations
   const handleLogin = (userObj) => {
-    setUsuarioActual(userObj);
+    let cleanUserObj = userObj;
+    if (userObj && (userObj.user || "").toLowerCase().trim() === "armando avila") {
+      if (Array.isArray(userObj.permissions)) {
+        cleanUserObj = { ...userObj, permissions: userObj.permissions.filter(p => p !== "finanzas") };
+      }
+    }
+    setUsuarioActual(cleanUserObj);
   };
 
   const handleLogout = () => {
