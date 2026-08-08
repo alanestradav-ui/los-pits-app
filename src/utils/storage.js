@@ -18,6 +18,35 @@ export const setLocalStorage = (key, value) => {
   }
 };
 
+export const getTenantLocalStorage = (key, defaultValue, tenantId = "lospits") => {
+  const activeTenant = (tenantId || "lospits").toLowerCase().trim();
+  const scopedKey = `${activeTenant}_${key}`;
+  const stored = localStorage.getItem(scopedKey);
+  if (stored !== null) {
+    try {
+      return JSON.parse(stored);
+    } catch (e) {
+      return defaultValue;
+    }
+  }
+
+  // Backwards compatibility fallback for original "lospits" tenant
+  if (activeTenant === "lospits") {
+    return getLocalStorage(key, defaultValue);
+  }
+
+  return defaultValue;
+};
+
+export const setTenantLocalStorage = (key, value, tenantId = "lospits") => {
+  const activeTenant = (tenantId || "lospits").toLowerCase().trim();
+  const scopedKey = `${activeTenant}_${key}`;
+  setLocalStorage(scopedKey, value);
+  if (activeTenant === "lospits") {
+    setLocalStorage(key, value);
+  }
+};
+
 export const formatMoney = (amount) => {
   const val = parseFloat(amount);
   if (isNaN(val)) return 'Q 0.00';

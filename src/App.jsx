@@ -20,7 +20,8 @@ import Accesorios from "./components/Accesorios";
 import Pantalla from "./components/Pantalla";
 import VendorQuotes from "./components/VendorQuotes";
 import LoyaltyRewards from "./components/LoyaltyRewards";
-import { getLocalStorage, setLocalStorage } from "./utils/storage";
+import SaaSAdmin from "./components/SaaSAdmin";
+import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocalStorage } from "./utils/storage";
 import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout, processOfflineQueue } from "./utils/supabase";
 import { initHourlyBackupScheduler, checkAndCreateHourlyBackup } from "./services/backupService";
 import { autoPurgeTrash } from "./services/trashService";
@@ -404,6 +405,29 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
 
 
 export default function App() {
+  // 🏢 MULTI-TENANT SAAS ARCHITECTURE STATE
+  const [tenantId, setTenantId] = useState(() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlTenant = urlParams.get("taller") || urlParams.get("tenant");
+      if (urlTenant) {
+        const clean = urlTenant.toLowerCase().trim().replace(/[^a-z0-9_-]/g, "");
+        if (clean) {
+          setLocalStorage("current_tenant_id", clean);
+          return clean;
+        }
+      }
+    } catch (e) {}
+    return getLocalStorage("current_tenant_id", "lospits");
+  });
+
+  const handleSwitchTenant = (newTenant) => {
+    const clean = (newTenant || "lospits").toLowerCase().trim().replace(/[^a-z0-9_-]/g, "");
+    setTenantId(clean);
+    setLocalStorage("current_tenant_id", clean);
+    window.location.reload();
+  };
+
   // 🔐 USER DEFINITIONS
   const [usuarios, setUsuarios] = useState(() => {
     const defaultUsers = [
@@ -414,7 +438,7 @@ export default function App() {
       { user: "mario kestler", pass: "Mario123", rol: "jefe de taller", permissions: ["dashboard", "parqueo", "repuestosFaltantes", "historial", "taller", "bodega", "tienda", "carwash", "cafeteria", "cuentas", "finanzas"], salarioBase: 0, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: false, comisionRepuestos: 5, nombreCompleto: "Mario Kestler" },
       { user: "marco henrnadez", pass: "Marco7890", rol: "mecanico", permissions: ["taller"], salarioBase: 5000, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: false, comisionRepuestos: 5, nombreCompleto: "Marco Henrnadez" }
     ];
-    const val = getLocalStorage("usuarios", []);
+    const val = getTenantLocalStorage("usuarios", [], tenantId);
     const localUsers = Array.isArray(val) ? val : [];
     const loaded = deduplicateUsers([...defaultUsers, ...localUsers]);
     return loaded.map(u => {
@@ -1673,6 +1697,8 @@ export default function App() {
         onLogin={handleLogin} 
         isInitialPullDone={isInitialPullDone} 
         realtimeStatus={realtimeStatus} 
+        activeTenantId={tenantId}
+        onTenantChange={handleSwitchTenant}
       />
     );
   }
@@ -2060,6 +2086,13 @@ export default function App() {
             carwash={carwash}
             usuarioActual={usuarioActivo}
             usuarios={usuarios}
+          />
+        )}
+
+        {currentTab === "saasAdmin" && (usuarioActivo?.user || "").toLowerCase().trim() === "admin" && (
+          <SaaSAdmin 
+            activeTenantId={tenantId}
+            onSwitchTenant={handleSwitchTenant}
           />
         )}
       </main>

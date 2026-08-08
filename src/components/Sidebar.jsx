@@ -21,7 +21,10 @@ import {
   Tv,
   GripVertical,
   RotateCcw,
-  Gift
+  Gift,
+  Gem,
+  Award,
+  Sparkles
 } from "lucide-react";
 import { testSupabaseConnection } from "../utils/supabase";
 
@@ -143,6 +146,12 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
       label: "Configuración", 
       icon: Settings, 
       roles: ["admin"] 
+    },
+    {
+      id: "saasAdmin",
+      label: "👑 Panel SaaS Maestro",
+      icon: Sparkles,
+      roles: ["admin"]
     }
   ];
 

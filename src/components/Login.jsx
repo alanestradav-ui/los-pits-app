@@ -53,7 +53,15 @@ const matchNameFlexible = (dbName, inputName) => {
   });
 };
 
-export default function Login({ usuarios = [], onLogin, isInitialPullDone = true, realtimeStatus = "connected" }) {
+export default function Login({ 
+  usuarios = [], 
+  onLogin, 
+  isInitialPullDone = true, 
+  realtimeStatus = "connected",
+  activeTenantId = "lospits",
+  onTenantChange
+}) {
+  const [tenantCode, setTenantCode] = useState(activeTenantId || "lospits");
   const [user, setUser] = useState("");
   const [pass, setPass] = useState("");
   const [showPass, setShowPass] = useState(false);
@@ -77,6 +85,11 @@ export default function Login({ usuarios = [], onLogin, isInitialPullDone = true
     if (!user.trim() || !pass.trim()) {
       setError("Por favor ingresa usuario y contraseña.");
       return;
+    }
+
+    const cleanTenant = (tenantCode || "lospits").toLowerCase().trim().replace(/[^a-z0-9_-]/g, "");
+    if (onTenantChange && cleanTenant !== activeTenantId) {
+      onTenantChange(cleanTenant);
     }
 
     const cleanInput = user.toLowerCase().trim().replace(/[\.\_\-]/g, " ");
@@ -135,7 +148,7 @@ export default function Login({ usuarios = [], onLogin, isInitialPullDone = true
           to { transform: rotate(360deg); }
         }
         .animate-spin {
-          animation: spin 1x linear infinite;
+          animation: spin 1s linear infinite;
         }
       `}</style>
       <div className="glass-panel" style={styles.card}>
@@ -161,6 +174,28 @@ export default function Login({ usuarios = [], onLogin, isInitialPullDone = true
 
         <form onSubmit={handleSubmit} style={styles.form}>
           {error && <div style={styles.error}>{error}</div>}
+
+          <div style={styles.inputGroup}>
+            <label style={styles.label}>🏢 Código de Taller / Empresa</label>
+            <div style={styles.inputWrapper}>
+              <Shield size={18} style={styles.inputIcon} />
+              <input
+                type="text"
+                placeholder="ej: lospits, triunfo, miami..."
+                className="input-field"
+                value={tenantCode}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setTenantCode(val);
+                  if (onTenantChange) onTenantChange(val.toLowerCase().trim());
+                }}
+                style={styles.input}
+              />
+            </div>
+            <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "2px" }}>
+              Código asignado a tu taller o sucursal.
+            </span>
+          </div>
 
           <div style={styles.inputGroup}>
             <label style={styles.label}>Usuario</label>
