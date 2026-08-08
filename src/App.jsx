@@ -418,10 +418,7 @@ export default function App() {
     const localUsers = Array.isArray(val) ? val : [];
     const loaded = deduplicateUsers([...defaultUsers, ...localUsers]);
     return loaded.map(u => {
-      const perms = u.permissions || [];
-      const updatedPerms = (u.rol === "admin" || u.rol === "cajero")
-        ? [...new Set([...perms, "finanzas", "configuracion", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"])]
-        : perms;
+      const updatedPerms = Array.isArray(u.permissions) ? u.permissions : [];
       
       const comisionarLabor = u.comisionarLabor !== undefined ? u.comisionarLabor : (u.rol?.toLowerCase() !== "lavador");
       const comisionarRepuestos = u.comisionarRepuestos !== undefined ? u.comisionarRepuestos : (u.rol?.toLowerCase() === "jefe de taller");
