@@ -825,7 +825,7 @@ export default function App() {
       puntosGanados = Math.floor(parseFloat(monto) || 0);
     } else if (area === "taller") {
       // Q4 in Labor = 1 Punto Pits (Excludes parts, max 1,500 pts per invoice)
-      const laborMonto = parseFloat(tallerLaborMonto) || 0;
+      const laborMonto = parseFloat(tallerLaborMonto) || parseFloat(monto) || 0;
       puntosGanados = Math.min(1500, Math.floor(laborMonto / 4));
     }
 
@@ -1850,6 +1850,7 @@ export default function App() {
             compras={compras}
             setCompras={setCompras}
             tenantId={tenantId}
+            addPuntosLealtad={addPuntosLealtad}
           />
         )}
 
@@ -1878,6 +1879,7 @@ export default function App() {
             vehiculos={vehiculos}
             setVehiculos={setVehiculos}
             tenantId={tenantId}
+            addPuntosLealtad={addPuntosLealtad}
           />
         )}
 

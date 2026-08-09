@@ -163,7 +163,8 @@ export default function Taller({
   softDelete,
   compras = [],
   setCompras,
-  tenantId = "lospits"
+  tenantId = "lospits",
+  addPuntosLealtad
 }) {
   const [viewingVendorQuotesOrder, setViewingVendorQuotesOrder] = useState(null);
   const [cliente, setCliente] = useState("");
@@ -801,6 +802,9 @@ export default function Taller({
       return updated;
     });
     registrarClienteYVehiculo(nueva);
+    if (typeof addPuntosLealtad === "function") {
+      addPuntosLealtad(nueva.telefono, nueva.cliente, nueva.total, "taller", nueva.total);
+    }
     setCliente("");
     setTelefono("");
     setPlatePrefix("P");

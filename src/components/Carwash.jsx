@@ -83,7 +83,8 @@ export default function Carwash({
   setClientes,
   vehiculos = [],
   setVehiculos,
-  tenantId = "lospits"
+  tenantId = "lospits",
+  addPuntosLealtad
 }) {
   const [activeSubTab, setActiveSubTab] = useState("servicios"); // 'servicios' or 'inventario'
 
@@ -647,6 +648,9 @@ export default function Carwash({
       return updated;
     });
     registrarClienteYVehiculo(nuevo);
+    if (typeof addPuntosLealtad === "function") {
+      addPuntosLealtad(nuevo.telefono, nuevo.cliente, nuevo.precio, "carwash");
+    }
     setWashFilterTab("activos");
     setSearchQuery("");
     setCliente("");
