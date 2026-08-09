@@ -1046,6 +1046,10 @@ export default function App() {
     globalActiveSetters.accesoriosInventory = setAccesoriosInventory;
     globalActiveSetters.papeleraSistema = setPapeleraSistema;
     globalActiveSetters.systemSnapshots = setSystemSnapshots;
+    globalActiveSetters.puntosRecompensas = setPuntosRecompensas;
+    globalActiveSetters.catalogoPremios = setCatalogoPremios;
+    globalActiveSetters.historialCanjes = setHistorialCanjes;
+    globalActiveSetters.reglasPrograma = setReglasPrograma;
     globalActiveSetters.setIsInitialPullDone = setIsInitialPullDone;
     globalActiveSetters.setRealtimeStatus = setRealtimeStatus;
   });
@@ -1078,7 +1082,11 @@ export default function App() {
       vehiculos,
       compras,
       toolsInventory,
-      accesoriosInventory
+      accesoriosInventory,
+      puntosRecompensas,
+      catalogoPremios,
+      historialCanjes,
+      reglasPrograma
     };
   }, [
     usuarios,
@@ -1106,7 +1114,11 @@ export default function App() {
     vehiculos,
     compras,
     toolsInventory,
-    accesoriosInventory
+    accesoriosInventory,
+    puntosRecompensas,
+    catalogoPremios,
+    historialCanjes,
+    reglasPrograma
   ]);
 
   const globalBroadcastChannel = useRef(null);
@@ -1236,7 +1248,7 @@ export default function App() {
       const getScopedKey = (k) => activeTenant === "lospits" ? k : `${activeTenant}_${k}`;
 
       const cloudDataMap = new Map();
-      const allKeysList = Array.from(new Set([...ARRAY_KEYS, "usuarios", "ordenes", "carwash", "parkingEntries", "parkingHistory", "vehiculosVenta", "workshopInventory", "cafeteriaInventory", "cafeteriaSales", "carwashPresets", "carwashInventory", "carwashConsumption", "tiendaSales", "cuentasPorCobrar", "cuentasPorPagar", "fixedCosts", "clientes", "vehiculos", "compras", "toolsInventory", "accesoriosInventory", "papeleraSistema", "cotizacionesRepuestos"])).filter(k => k !== "systemSnapshots" && k !== "app_data_backup_snapshot");
+      const allKeysList = Array.from(new Set([...ARRAY_KEYS, "usuarios", "ordenes", "carwash", "parkingEntries", "parkingHistory", "vehiculosVenta", "workshopInventory", "cafeteriaInventory", "cafeteriaSales", "carwashPresets", "carwashInventory", "carwashConsumption", "tiendaSales", "cuentasPorCobrar", "cuentasPorPagar", "fixedCosts", "clientes", "vehiculos", "compras", "toolsInventory", "accesoriosInventory", "papeleraSistema", "cotizacionesRepuestos", "puntosRecompensas", "catalogoPremios", "historialCanjes", "reglasPrograma"])).filter(k => k !== "systemSnapshots" && k !== "app_data_backup_snapshot");
 
       const scopedQueryKeys = allKeysList.map(k => getScopedKey(k));
       if (activeTenant === "lospits") {
