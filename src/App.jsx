@@ -263,6 +263,30 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
       return Array.from(mergedMap.values());
     }
 
+    if (key === "puntosRecompensas") {
+      const mergedMap = new Map();
+      cleanCloud.forEach((p, idx) => {
+        const id = (p.telefono && String(p.telefono).trim()) || (p.nombre && String(p.nombre).trim().toLowerCase()) || `cloud_p_${idx}`;
+        mergedMap.set(id, p);
+      });
+      cleanLocal.forEach((p, idx) => {
+        const id = (p.telefono && String(p.telefono).trim()) || (p.nombre && String(p.nombre).trim().toLowerCase()) || `local_p_${idx}`;
+        if (!mergedMap.has(id)) {
+          mergedMap.set(id, p);
+        } else {
+          const cloudItem = mergedMap.get(id);
+          const ptsCloud = parseInt(cloudItem.puntos) || 0;
+          const ptsLocal = parseInt(p.puntos) || 0;
+          mergedMap.set(id, {
+            ...cloudItem,
+            ...p,
+            puntos: Math.max(ptsCloud, ptsLocal)
+          });
+        }
+      });
+      return Array.from(mergedMap.values());
+    }
+
     // For all other array keys (ordenes, carwash, parkingHistory, workshopInventory, etc.)
     const mergedMap = new Map();
 
@@ -330,6 +354,11 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
         const pl = String(item.placa || '').toLowerCase().trim();
         const h = item.horaEntrada || item.fecha || idx;
         return `park_${pl}_${h}`;
+      }
+      if (key === "puntosRecompensas") {
+        const tel = String(item.telefono || '').trim();
+        const nm = String(item.nombre || '').toLowerCase().trim();
+        return `pts_${tel || nm || idx}`;
       }
       const fallbackSig = (item.name || item.tipo || item.descripcion || item.total || item.fecha);
       if (fallbackSig) {
