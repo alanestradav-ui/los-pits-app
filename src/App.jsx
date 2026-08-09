@@ -822,6 +822,35 @@ export default function App() {
     const val = getTenantLocalStorage("puntosRecompensas", [], tenantId);
     return Array.isArray(val) ? val : [];
   });
+  // Load puntosRecompensas from Supabase on initial mount if not present locally
+  useEffect(() => {
+    if (puntosRecompensas.length === 0) {
+      (async () => {
+        try {
+          const client = getSupabaseClient();
+          if (!client) return;
+          const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
+          // For pruebas tenant, the key is prefixed; for lospits it's the base key
+          const cloudKey = activeTenant === "lospits" ? "puntosRecompensas" : `${activeTenant}_puntosRecompensas`;
+          const { data, error } = await client
+            .from('app_data')
+            .select('value')
+            .eq('key', cloudKey)
+            .single();
+          if (error) {
+            console.error(`Error fetching ${cloudKey} from cloud:`, error);
+            return;
+          }
+          if (data && Array.isArray(data.value) && data.value.length > 0) {
+            setPuntosRecompensas(data.value);
+            setTenantLocalStorage("puntosRecompensas", data.value, tenantId);
+          }
+        } catch (e) {
+          console.error('Exception while loading puntosRecompensas:', e);
+        }
+      })();
+    }
+  }, [tenantId]);
 
   const [catalogoPremios, setCatalogoPremios] = useState(() => {
     const val = getTenantLocalStorage("catalogoPremios", [], tenantId);
@@ -839,7 +868,7 @@ export default function App() {
       { id: "r2", titulo: "Taller Automotriz (Mano de Obra)", formula: "Q4.00 en Mano de Obra = 1 Punto Pits", descripcion: "Calculado exclusivamente sobre la Mano de Obra (excluye repuestos). Tope máximo: 1,500 pts por factura.", tipo: "acumulacion" },
       { id: "r3", titulo: "Caducidad de Puntos por Inactividad", formula: "Vencimiento a los 6 Meses (180 Días)", descripcion: "Los puntos vencerán si el cliente pasa más de 6 meses sin registrar una sola visita.", tipo: "caducidad" }
     ];
-    const val = getLocalStorage("reglasPrograma", defaultReglas);
+    const val = getTenantLocalStorage("reglasPrograma", defaultReglas, tenantId);
     return Array.isArray(val) && val.length > 0 ? val : defaultReglas;
   });
 
@@ -847,47 +876,65 @@ export default function App() {
   const addPuntosLealtad = (clienteKey, clienteNombre, monto, area, tallerLaborMonto = 0) => {
     if (!clienteKey && !clienteNombre) return;
 
-    let puntosGanados = 0;
+    // Determine active tenant
+    const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
+    // Only apply for pruebas tenant
+    if (activeTenant !== "pruebas") {
+      // Update local state without cloud sync for other tenants
+      setPuntosRecompensas(prev => {
+        const list = Array.isArray(prev) ? [...prev] : [];
+        const targetKey = String(clienteKey || clienteNombre).toLowerCase().trim();
+        const idx = list.findIndex(p =>
+          String(p.telefono || "").toLowerCase().trim() === targetKey ||
+          String(p.nombre || "").toLowerCase().trim() === targetKey
+        );
+        const nowIso = new Date().toISOString();
+        let puntosGanados = 0;
+        if (area === "carwash" || area === "cafeteria" || area === "detailing") {
+          puntosGanados = Math.floor(parseFloat(monto) || 0);
+        } else if (area === "taller") {
+          const laborMonto = parseFloat(tallerLaborMonto) || parseFloat(monto) || 0;
+          puntosGanados = Math.min(1500, Math.floor(laborMonto / 4));
+        }
+        if (puntosGanados <= 0) return list;
+        if (idx >= 0) {
+          const existing = list[idx];
+          list[idx] = { ...existing, puntos: (parseInt(existing.puntos) || 0) + puntosGanados, ultimaVisita: nowIso };
+        } else {
+          list.push({ telefono: String(clienteKey || "").trim(), nombre: String(clienteNombre || "Cliente").trim(), puntos: puntosGanados, fechaRegistro: nowIso, ultimaVisita: nowIso });
+        }
+        return list;
+      });
+      return;
+    }
 
+    // Calculate points for pruebas tenant
+    let puntosGanados = 0;
     if (area === "carwash" || area === "cafeteria" || area === "detailing") {
-      // Q1 = 1 Punto Pits
       puntosGanados = Math.floor(parseFloat(monto) || 0);
     } else if (area === "taller") {
-      // Q4 in Labor = 1 Punto Pits (Excludes parts, max 1,500 pts per invoice)
       const laborMonto = parseFloat(tallerLaborMonto) || parseFloat(monto) || 0;
       puntosGanados = Math.min(1500, Math.floor(laborMonto / 4));
     }
-
     if (puntosGanados <= 0) return;
 
     const targetKey = String(clienteKey || clienteNombre).toLowerCase().trim();
 
     setPuntosRecompensas(prev => {
       const list = Array.isArray(prev) ? [...prev] : [];
-      const idx = list.findIndex(p => 
+      const idx = list.findIndex(p =>
         String(p.telefono || "").toLowerCase().trim() === targetKey ||
         String(p.nombre || "").toLowerCase().trim() === targetKey
       );
-
       const nowIso = new Date().toISOString();
-
       if (idx >= 0) {
         const existing = list[idx];
-        list[idx] = {
-          ...existing,
-          puntos: (parseInt(existing.puntos) || 0) + puntosGanados,
-          ultimaVisita: nowIso
-        };
+        list[idx] = { ...existing, puntos: (parseInt(existing.puntos) || 0) + puntosGanados, ultimaVisita: nowIso };
       } else {
-        list.push({
-          telefono: String(clienteKey || "").trim(),
-          nombre: String(clienteNombre || "Cliente").trim(),
-          puntos: puntosGanados,
-          fechaRegistro: nowIso,
-          ultimaVisita: nowIso
-        });
+        list.push({ telefono: String(clienteKey || "").trim(), nombre: String(clienteNombre || "Cliente").trim(), puntos: puntosGanados, fechaRegistro: nowIso, ultimaVisita: nowIso });
       }
-
+      // Sync to cloud
+      syncKeyToCloud("puntosRecompensas", list);
       return list;
     });
   };
