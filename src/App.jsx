@@ -97,7 +97,9 @@ const ARRAY_KEYS = [
   "puntosRecompensas",
   "catalogoPremios",
   "historialCanjes",
-  "reglasPrograma"
+  "reglasPrograma",
+  "cotizacionesRepuestos",
+  "payrollHistory"
 ];
 
 const filterOutMockItems = (key, list) => {
@@ -127,12 +129,12 @@ export const deduplicateUsers = (userList) => {
 };
 
 // Helper to merge local cached array data with cloud data to prevent silent data wipes on initial connection
-const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null) => {
+const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null, activeTenantOverride = null) => {
   const localVal = filterOutMockItems(key, safeParseJSON(localValRaw));
   const cloudVal = filterOutMockItems(key, safeParseJSON(cloudValRaw));
 
   // 🗑️ SOFT-DELETE REGISTRY: Extraer todos los IDs resguardados en Papelera para evitar que resuciten
-  const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
+  const activeTenant = (activeTenantOverride || getActiveTenantId()).toLowerCase().trim();
   const deletedItemIds = new Set();
   const deletedScopedIds = new Set();
   const trashItems = trashRaw !== null ? safeParseJSON(trashRaw) : safeParseJSON(getTenantLocalStorage("papeleraSistema", [], activeTenant));
@@ -1201,7 +1203,8 @@ export default function App() {
   const instanceId = useRef(Math.random().toString(36).substring(2, 9));
 
   const getLatestLocalValue = (k) => {
-    const fromStorage = safeParseJSON(getLocalStorage(k, null));
+    const activeTenant = (tenantId || "lospits").toLowerCase().trim();
+    const fromStorage = safeParseJSON(getTenantLocalStorage(k, null, activeTenant));
     const fromRef = stateRef.current ? stateRef.current[k] : null;
     if (!fromStorage && !fromRef) return null;
     if (!fromStorage) return fromRef;
@@ -1255,9 +1258,9 @@ export default function App() {
       // Use baseKey for local value lookup (stateRef uses base keys like "ordenes")
       const localValue = getLatestLocalValue(baseKey);
 
-      const papeleraRaw = safeParseJSON(getLocalStorage("papeleraSistema", []));
+      const papeleraRaw = safeParseJSON(getTenantLocalStorage("papeleraSistema", [], activeTenant));
       // Use baseKey for mergeCollections so ARRAY_KEYS checks and merge logic work correctly
-      let mergedValue = mergeCollections(baseKey, localValue, cloudValue, papeleraRaw);
+      let mergedValue = mergeCollections(baseKey, localValue, cloudValue, papeleraRaw, activeTenant);
 
       if (ARRAY_KEYS.includes(baseKey) && !Array.isArray(mergedValue)) {
         if (mergedValue && typeof mergedValue === "object") {
@@ -1383,7 +1386,7 @@ export default function App() {
         const localValue = getTenantLocalStorage(baseKey, null, activeTenant);
 
         const papeleraRaw = cloudDataMap.get(getScopedKey("papeleraSistema"));
-        let mergedValue = mergeCollections(baseKey, localValue, cloudValue, papeleraRaw);
+        let mergedValue = mergeCollections(baseKey, localValue, cloudValue, papeleraRaw, activeTenant);
 
         if (ARRAY_KEYS.includes(baseKey) && !Array.isArray(mergedValue)) {
           if (mergedValue && typeof mergedValue === "object") {
@@ -1443,8 +1446,15 @@ export default function App() {
     window.addEventListener("focus", handleSyncEvent);
     document.addEventListener("visibilitychange", handleSyncEvent);
 
+    // Reset failedPullCount periodically so sync can recover from transient failures
+    const resetInterval = setInterval(() => {
+      if (failedPullCount.current > 0) {
+        failedPullCount.current = Math.max(0, failedPullCount.current - 1);
+      }
+    }, 60000);
+
     const interval = setInterval(() => {
-      if (navigator.onLine && !document.hidden && failedPullCount.current < 2) {
+      if (navigator.onLine && !document.hidden && failedPullCount.current < 5) {
         forcePullFromCloud(false);
       }
     }, 5000);
@@ -1454,6 +1464,7 @@ export default function App() {
       window.removeEventListener("focus", handleSyncEvent);
       document.removeEventListener("visibilitychange", handleSyncEvent);
       clearInterval(interval);
+      clearInterval(resetInterval);
     };
   }, []);
 
@@ -1523,7 +1534,7 @@ export default function App() {
 
           const currentLocalVal = getLatestLocalValue(baseKey);
 
-          const mergedValue = mergeCollections(baseKey, currentLocalVal, sanitizedValue);
+          const mergedValue = mergeCollections(baseKey, currentLocalVal, sanitizedValue, null, activeTenant);
           const mergedValStr = JSON.stringify(mergedValue);
           const localValStr = stateRef.current ? JSON.stringify(stateRef.current[baseKey]) : "";
 
@@ -1817,6 +1828,11 @@ export default function App() {
     setTenantLocalStorage("catalogoPremios", catalogoPremios, tenantId);
     syncToCloud("catalogoPremios", catalogoPremios);
   }, [catalogoPremios]);
+
+  useEffect(() => {
+    setTenantLocalStorage("historialCanjes", historialCanjes, tenantId);
+    syncToCloud("historialCanjes", historialCanjes);
+  }, [historialCanjes]);
 
   useEffect(() => {
     setTenantLocalStorage("reglasPrograma", reglasPrograma, tenantId);
