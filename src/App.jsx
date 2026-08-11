@@ -1229,6 +1229,19 @@ export default function App() {
     const client = getSupabaseClient();
     if (!client) return;
     try {
+      // 🔑 Parse the scoped key to extract the base key (e.g., "lospits_ordenes" → "ordenes")
+      // This mirrors the same logic used in the postgres_changes handler
+      const activeTenant = (tenantId || "lospits").toLowerCase().trim();
+      let baseKey = targetKey;
+      if (targetKey.includes("_")) {
+        const parts = targetKey.split("_");
+        const possibleTenant = parts[0].toLowerCase().trim();
+        const restKey = parts.slice(1).join("_");
+        if (restKey && (possibleTenant === activeTenant || possibleTenant === "lospits")) {
+          baseKey = restKey;
+        }
+      }
+
       const queryPromise = client
         .from('app_data')
         .select('key, value')
@@ -1239,12 +1252,14 @@ export default function App() {
 
       const cloudRaw = data[0].value;
       const cloudValue = safeParseJSON(cloudRaw);
-      const localValue = getLatestLocalValue(targetKey);
+      // Use baseKey for local value lookup (stateRef uses base keys like "ordenes")
+      const localValue = getLatestLocalValue(baseKey);
 
       const papeleraRaw = safeParseJSON(getLocalStorage("papeleraSistema", []));
-      let mergedValue = mergeCollections(targetKey, localValue, cloudValue, papeleraRaw);
+      // Use baseKey for mergeCollections so ARRAY_KEYS checks and merge logic work correctly
+      let mergedValue = mergeCollections(baseKey, localValue, cloudValue, papeleraRaw);
 
-      if (ARRAY_KEYS.includes(targetKey) && !Array.isArray(mergedValue)) {
+      if (ARRAY_KEYS.includes(baseKey) && !Array.isArray(mergedValue)) {
         if (mergedValue && typeof mergedValue === "object") {
           mergedValue = Object.values(mergedValue);
         } else {
@@ -1253,11 +1268,14 @@ export default function App() {
       }
 
       const mergedValStr = JSON.stringify(mergedValue);
-      const activeSetter = globalActiveSetters[targetKey];
+      // Use baseKey for setter lookup (globalActiveSetters uses base keys like "ordenes")
+      const activeSetter = globalActiveSetters[baseKey];
 
       globalLastSynced[targetKey] = mergedValStr;
-      if (activeSetter) activeSetter(mergedValue);
-      setLocalStorage(targetKey, mergedValue);
+      if (activeSetter) {
+        activeSetter(mergedValue);
+        setTenantLocalStorage(baseKey, mergedValue, activeTenant);
+      }
     } catch (err) {
       console.warn(`[Sync] Error en fetch rápido de "${targetKey}":`, err.message);
     }
