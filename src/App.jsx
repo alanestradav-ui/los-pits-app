@@ -1351,31 +1351,46 @@ export default function App() {
       if (activeTenant === "lospits") {
         allKeysList.forEach(k => scopedQueryKeys.push(`lospits_${k}`));
       }
-
-      // Consultar llaves en paralelo en lotes de 8 para respuesta ultrarrápida (< 300ms)
-      const chunkSize = 8;
+      // Consultar llaves en paralelo en lotes de 15 con timeout generoso
+      const chunkSize = 15;
+      const batchChunks = [];
       const promises = [];
       for (let i = 0; i < scopedQueryKeys.length; i += chunkSize) {
         const chunk = scopedQueryKeys.slice(i, i + chunkSize);
+        batchChunks.push(chunk);
         const queryPromise = client
           .from('app_data')
           .select('key, value')
           .in('key', chunk);
-        promises.push(withTimeout(queryPromise, 3500, `Timeout en lote`));
+        promises.push(withTimeout(queryPromise, 8000, `Timeout en lote`));
       }
 
+      // 🛡️ Track which keys were in FAILED batches to prevent stale local data from overwriting cloud
+      const failedBatchKeys = new Set();
       const results = await Promise.allSettled(promises);
-      results.forEach(res => {
+      results.forEach((res, batchIdx) => {
         if (res.status === "fulfilled" && res.value && res.value.data) {
           res.value.data.forEach(item => {
             cloudDataMap.set(item.key, item.value);
           });
+        } else {
+          // Mark all keys in this failed batch — we must NOT push local data for these keys
+          console.warn(`[Sync] Lote ${batchIdx + 1} falló. Protegiendo ${batchChunks[batchIdx]?.length || 0} llaves contra sobreescritura.`);
+          if (batchChunks[batchIdx]) {
+            batchChunks[batchIdx].forEach(k => failedBatchKeys.add(k));
+          }
         }
       });
 
       allKeysList.forEach(baseKey => {
         const activeSetter = globalActiveSetters[baseKey];
         const scopedKey = getScopedKey(baseKey);
+
+        // 🛡️ If this key was in a FAILED batch, skip entirely — don't touch state or cloud
+        const prefixedKey = `lospits_${baseKey}`;
+        if (failedBatchKeys.has(scopedKey) && (activeTenant !== "lospits" || failedBatchKeys.has(prefixedKey))) {
+          return; // Protect: don't merge with null cloud data, don't push stale local data
+        }
 
         let cloudRaw = cloudDataMap.get(scopedKey);
         if (cloudRaw === undefined && activeTenant === "lospits") {
@@ -1403,8 +1418,9 @@ export default function App() {
         if (activeSetter) activeSetter(mergedValue);
         setTenantLocalStorage(baseKey, mergedValue, activeTenant);
 
-        // Subir a Supabase solo si hay datos locales legítimos recién creados sin sincronizar
-        if (mergedValStr !== cloudValStr && mergedValue !== null && mergedValue !== undefined) {
+        // 🛡️ CRITICAL: Solo subir si OBTUVIMOS datos de la nube y hay diferencia legítima
+        // Si cloudValue es null, significa que no pudimos obtener los datos — NO sobreescribir la nube
+        if (cloudValue !== null && mergedValStr !== cloudValStr && mergedValue !== null && mergedValue !== undefined) {
           syncKeyToCloud(scopedKey, mergedValue);
         }
       });
