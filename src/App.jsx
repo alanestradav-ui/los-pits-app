@@ -31,8 +31,12 @@ const globalLastSynced = {};
 const globalSyncFlags = {
   isInitialPullDone: false,
   isInitialPullSucceeded: false,
-  isInitialPullInProgress: false
+  isInitialPullInProgress: false,
+  isPullRunning: false // 🛡️ Guard against overlapping full pulls
 };
+
+// 🚀 Debounce timers for broadcast-triggered fetches
+const pendingBroadcastFetches = {};
 const globalActiveSetters = {
   usuarios: null,
   ordenes: null,
@@ -166,11 +170,31 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null, active
 
   const isItemDeleted = (item) => {
     if (!item) return true;
-    if (item.id !== undefined && item.id !== null) {
-      const strId = String(item.id).trim();
-      if (strId !== "" && strId !== "undefined" && strId !== "null") {
-        if (deletedScopedIds.has(`${activeTenant}_${strId}`) || deletedItemIds.has(strId)) {
-          return true;
+    const candidates = [
+      item.id,
+      item.placa,
+      item.chasis,
+      item.codigo,
+      item.code,
+      item.uuid,
+      item.telefono,
+      item.clienteTelefono,
+      item.targetOriginalId,
+      item.originalId
+    ];
+    for (const cand of candidates) {
+      if (cand !== undefined && cand !== null) {
+        const strId = String(cand).trim();
+        if (strId !== "" && strId !== "undefined" && strId !== "null") {
+          const upper = strId.toUpperCase();
+          if (
+            deletedScopedIds.has(`${activeTenant}_${strId}`) ||
+            deletedScopedIds.has(`${activeTenant}_${upper}`) ||
+            deletedItemIds.has(strId) ||
+            deletedItemIds.has(upper)
+          ) {
+            return true;
+          }
         }
       }
     }
@@ -238,7 +262,9 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null, active
       cleanLocal.forEach((c, idx) => {
         const id = (c.telefono && c.telefono.trim()) || (c.nombre && c.nombre.trim()) || `local_c_${idx}`;
         if (!mergedMap.has(id)) {
-          mergedMap.set(id, c);
+          if (c && (c._isNewOffline || c.isOfflineCreated)) {
+            mergedMap.set(id, c);
+          }
         } else {
           const cloudItem = mergedMap.get(id);
           mergedMap.set(id, { ...cloudItem, ...c });
@@ -256,7 +282,9 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null, active
       cleanLocal.forEach((v, idx) => {
         const id = (v.placa && v.placa.trim().toUpperCase()) || (v.chasis && v.chasis.trim().toUpperCase()) || `local_v_${idx}`;
         if (!mergedMap.has(id)) {
-          mergedMap.set(id, v);
+          if (v && (v._isNewOffline || v.isOfflineCreated)) {
+            mergedMap.set(id, v);
+          }
         } else {
           const cloudItem = mergedMap.get(id);
           mergedMap.set(id, { ...cloudItem, ...v });
@@ -422,7 +450,7 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null, active
       };
     };
 
-    cleanLocal.forEach((item, idx) => {
+    cleanCloud.forEach((item, idx) => {
       if (!isItemDeleted(item)) {
         const norm = normalizeStatus(item);
         const id = getItemId(norm, idx);
@@ -430,15 +458,17 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null, active
       }
     });
 
-    cleanCloud.forEach((item, idx) => {
+    cleanLocal.forEach((item, idx) => {
       if (!isItemDeleted(item)) {
         const norm = normalizeStatus(item);
         const id = getItemId(norm, idx);
         if (!mergedMap.has(id)) {
-          mergedMap.set(id, norm);
+          if (item && (item._isNewOffline || item.isOfflineCreated)) {
+            mergedMap.set(id, norm);
+          }
         } else {
-          const localItem = mergedMap.get(id);
-          mergedMap.set(id, mergeSingleItem(item, localItem));
+          const cloudItem = mergedMap.get(id);
+          mergedMap.set(id, mergeSingleItem(cloudItem, norm));
         }
       }
     });
@@ -1271,6 +1301,14 @@ export default function App() {
       }
 
       const mergedValStr = JSON.stringify(mergedValue);
+      
+      // 🛡️ Skip state update if data hasn't actually changed — prevents UI flickering
+      const currentStateStr = stateRef.current ? JSON.stringify(stateRef.current[baseKey]) : "";
+      if (currentStateStr === mergedValStr) {
+        globalLastSynced[targetKey] = mergedValStr;
+        return; // No change detected, avoid unnecessary re-render
+      }
+
       // Use baseKey for setter lookup (globalActiveSetters uses base keys like "ordenes")
       const activeSetter = globalActiveSetters[baseKey];
 
@@ -1282,6 +1320,17 @@ export default function App() {
     } catch (err) {
       console.warn(`[Sync] Error en fetch rápido de "${targetKey}":`, err.message);
     }
+  };
+
+  // 🚀 Debounced broadcast fetch — coalesces rapid-fire broadcasts for the same key
+  const debouncedFetchFromBroadcast = (targetKey) => {
+    if (pendingBroadcastFetches[targetKey]) {
+      clearTimeout(pendingBroadcastFetches[targetKey]);
+    }
+    pendingBroadcastFetches[targetKey] = setTimeout(() => {
+      delete pendingBroadcastFetches[targetKey];
+      fetchSingleKeyFromCloud(targetKey);
+    }, 150); // 150ms debounce — fast enough to feel instant, prevents duplicate fetches
   };
 
   // Sync a key-value pair to cloud if it has actually changed
@@ -1324,6 +1373,11 @@ export default function App() {
   const failedPullCount = useRef(0);
 
   const forcePullFromCloud = async (isUserInitiated = false) => {
+    // 🛡️ Prevent overlapping full pulls — only one can run at a time
+    if (globalSyncFlags.isPullRunning && !isUserInitiated) {
+      return false;
+    }
+    
     const client = getSupabaseClient();
     if (!client) {
       globalSyncFlags.isInitialPullSucceeded = true;
@@ -1334,6 +1388,8 @@ export default function App() {
       if (activeSetRealtimeStatus) activeSetRealtimeStatus("disconnected");
       return false;
     }
+
+    globalSyncFlags.isPullRunning = true;
 
     try {
       const activeSetRealtimeStatus = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
@@ -1382,6 +1438,10 @@ export default function App() {
         }
       });
 
+      // 🛡️ Batch state updates: collect all changes first, then apply them together
+      // This prevents intermediate renders that cause flickering
+      const pendingUpdates = [];
+
       allKeysList.forEach(baseKey => {
         const activeSetter = globalActiveSetters[baseKey];
         const scopedKey = getScopedKey(baseKey);
@@ -1414,8 +1474,16 @@ export default function App() {
         const mergedValStr = JSON.stringify(mergedValue);
         const cloudValStr = JSON.stringify(cloudValue);
 
+        // 🛡️ Skip state update if data is identical — prevents unnecessary re-renders (flickering)
+        const currentStateStr = stateRef.current ? JSON.stringify(stateRef.current[baseKey]) : "";
+        const dataChanged = currentStateStr !== mergedValStr;
+
         globalLastSynced[scopedKey] = mergedValStr;
-        if (activeSetter) activeSetter(mergedValue);
+        
+        if (dataChanged && activeSetter) {
+          pendingUpdates.push({ setter: activeSetter, value: mergedValue, baseKey });
+        }
+        // Always persist to localStorage even if state hasn't changed
         setTenantLocalStorage(baseKey, mergedValue, activeTenant);
 
         // 🛡️ CRITICAL: Solo subir si OBTUVIMOS datos de la nube y hay diferencia legítima
@@ -1425,12 +1493,18 @@ export default function App() {
         }
       });
 
+      // 🚀 Apply all state updates in a single microtask batch to minimize re-renders
+      if (pendingUpdates.length > 0) {
+        pendingUpdates.forEach(({ setter, value }) => setter(value));
+      }
+
       // Procesar cualquier operación pendiente en la cola offline
       processOfflineQueue();
 
       failedPullCount.current = 0;
       globalSyncFlags.isInitialPullSucceeded = true;
       globalSyncFlags.isInitialPullDone = true;
+      globalSyncFlags.isPullRunning = false;
       if (activeSetRealtimeStatus) activeSetRealtimeStatus("connected");
       const activeSetInitialPullDone = globalActiveSetters.setIsInitialPullDone || setIsInitialPullDone;
       if (activeSetInitialPullDone) activeSetInitialPullDone(true);
@@ -1438,6 +1512,7 @@ export default function App() {
     } catch (err) {
       console.warn("[Sync] Falló o expiró la respuesta del servidor:", err.message);
       failedPullCount.current += 1;
+      globalSyncFlags.isPullRunning = false;
       const activeSetRealtimeStatus = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
       
       if (activeSetRealtimeStatus) activeSetRealtimeStatus("disconnected");
@@ -1469,11 +1544,13 @@ export default function App() {
       }
     }, 60000);
 
+    // ⏰ Background polling interval: 30s is enough since Realtime handles instant sync
+    // The 5s interval was causing flickering by competing with realtime updates
     const interval = setInterval(() => {
       if (navigator.onLine && !document.hidden && failedPullCount.current < 5) {
         forcePullFromCloud(false);
       }
-    }, 5000);
+    }, 30000);
 
     return () => {
       window.removeEventListener("online", handleSyncEvent);
@@ -1576,7 +1653,8 @@ export default function App() {
             }
             const targetKey = payload.payload.key;
             console.log(`[Instant Broadcast] Notificación de cambio recibida para la llave "${targetKey}"`);
-            fetchSingleKeyFromCloud(targetKey);
+            // 🚀 Use debounced fetch to prevent rapid-fire duplicate fetches
+            debouncedFetchFromBroadcast(targetKey);
           }
         }
       )

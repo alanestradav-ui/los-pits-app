@@ -47,6 +47,9 @@ export const setTenantLocalStorage = (key, value, tenantId = null) => {
   const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
   const scopedKey = `${activeTenant}_${key}`;
   setLocalStorage(scopedKey, value);
+  if (activeTenant === "lospits") {
+    setLocalStorage(key, value);
+  }
 };
 
 export const formatMoney = (amount) => {

@@ -511,6 +511,13 @@ export default function Taller({
       String(o.id).includes(query);
       
     return matchesSearch;
+  }).sort((a, b) => {
+    // 📅 Sort by most recent first: use updatedAt if available, then fecha, then id
+    const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : (a.fecha ? new Date(a.fecha).getTime() : 0);
+    const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : (b.fecha ? new Date(b.fecha).getTime() : 0);
+    if (timeB !== timeA) return timeB - timeA;
+    // Fallback: higher id = more recent
+    return String(b.id || "").localeCompare(String(a.id || ""), undefined, { numeric: true });
   });
 
   const handlePhotoChange = (e) => {
