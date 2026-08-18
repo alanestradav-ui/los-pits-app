@@ -409,9 +409,9 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null, active
 
       let winnerBase, loserBase;
 
-      // Primary conflict resolution: record with newer updatedAt timestamp wins (local wins on tie)
+      // Primary conflict resolution: record with newer updatedAt timestamp wins
       if (cNorm.updatedAt || lNorm.updatedAt) {
-        if (timeL >= timeC) {
+        if (timeL > timeC) {
           winnerBase = lNorm;
           loserBase = cNorm;
         } else {
@@ -419,23 +419,9 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null, active
           loserBase = lNorm;
         }
       } else {
-        // Fallback when neither record has updatedAt: prefer local unless cloud has higher status weight
-        const stateWeight = (st) => {
-          if (st === "Entregado" || st === "Cobrado") return 4;
-          if (st === "Listo para entrega" || st === "Listo") return 3;
-          if (st === "En proceso de reparación" || st === "En proceso") return 2;
-          return 1;
-        };
-        const cWeight = stateWeight(cNorm?.estado);
-        const lWeight = stateWeight(lNorm?.estado);
-
-        if (cWeight !== lWeight) {
-          winnerBase = (cWeight > lWeight) ? cNorm : lNorm;
-          loserBase = (cWeight > lWeight) ? lNorm : cNorm;
-        } else {
-          winnerBase = (timeL >= timeC) ? lNorm : cNorm;
-          loserBase = (timeL >= timeC) ? cNorm : lNorm;
-        }
+        // Cloud is authoritative by default when updatedAt timestamps are missing or equal
+        winnerBase = cNorm;
+        loserBase = lNorm;
       }
 
       // Merge photos uniquely
@@ -1486,11 +1472,7 @@ export default function App() {
         // Always persist to localStorage even if state hasn't changed
         setTenantLocalStorage(baseKey, mergedValue, activeTenant);
 
-        // 🛡️ CRITICAL: Solo subir si OBTUVIMOS datos de la nube y hay diferencia legítima
-        // Si cloudValue es null, significa que no pudimos obtener los datos — NO sobreescribir la nube
-        if (cloudValue !== null && mergedValStr !== cloudValStr && mergedValue !== null && mergedValue !== undefined) {
-          syncKeyToCloud(scopedKey, mergedValue);
-        }
+        // Note: forcePullFromCloud pulls data into local storage/state and does NOT push back to Cloud
       });
 
       // 🚀 Apply all state updates in a single microtask batch to minimize re-renders
