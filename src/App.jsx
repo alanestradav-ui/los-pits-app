@@ -1338,9 +1338,6 @@ export default function App() {
     const ok = await syncKeyToCloud(cloudKey, cleanVal);
     if (ok) {
       globalLastSynced[cloudKey] = valueStr;
-      if (activeTenant === "lospits") {
-        syncKeyToCloud(`lospits_${baseKey}`, cleanVal);
-      }
       // 🚀 Emit instant WebSocket Broadcast event to all active clients
       try {
         if (globalBroadcastChannel.current) {
@@ -1390,9 +1387,6 @@ export default function App() {
       const allKeysList = Array.from(new Set([...ARRAY_KEYS, "usuarios", "ordenes", "carwash", "parkingEntries", "parkingHistory", "vehiculosVenta", "workshopInventory", "cafeteriaInventory", "cafeteriaSales", "carwashPresets", "carwashInventory", "carwashConsumption", "tiendaSales", "cuentasPorCobrar", "cuentasPorPagar", "fixedCosts", "clientes", "vehiculos", "compras", "toolsInventory", "accesoriosInventory", "papeleraSistema", "cotizacionesRepuestos", "puntosRecompensas", "catalogoPremios", "historialCanjes", "reglasPrograma"])).filter(k => k !== "systemSnapshots" && k !== "app_data_backup_snapshot");
 
       const scopedQueryKeys = allKeysList.map(k => getScopedKey(k));
-      if (activeTenant === "lospits") {
-        allKeysList.forEach(k => scopedQueryKeys.push(`lospits_${k}`));
-      }
       // Consultar llaves en paralelo en lotes de 15 con timeout generoso
       const chunkSize = 15;
       const batchChunks = [];
@@ -1586,8 +1580,11 @@ export default function App() {
             }
           }
 
-          // 🛑 IF EVENT IS FOR A DIFFERENT TENANT, IGNORE IMMEDIATELY!
+          // 🛑 IF EVENT IS FOR A DIFFERENT TENANT OR DUPLICATE PREFIXED KEY, IGNORE IMMEDIATELY!
           if (eventTenant !== activeTenant) {
+            return;
+          }
+          if (activeTenant === "lospits" && key.startsWith("lospits_")) {
             return;
           }
 
