@@ -30,10 +30,25 @@ export const getActiveTenantId = () => {
 export const getTenantLocalStorage = (key, defaultValue, tenantId = null) => {
   const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
   const scopedKey = `${activeTenant}_${key}`;
-  const stored = localStorage.getItem(scopedKey);
-  if (stored !== null) {
+  const storedScoped = localStorage.getItem(scopedKey);
+  const storedBase = localStorage.getItem(key);
+
+  if (activeTenant === "lospits") {
+    if (storedScoped !== null && storedBase !== null) {
+      try {
+        const parsedScoped = JSON.parse(storedScoped);
+        const parsedBase = JSON.parse(storedBase);
+        if (Array.isArray(parsedScoped) && Array.isArray(parsedBase)) {
+          return parsedScoped.length >= parsedBase.length ? parsedScoped : parsedBase;
+        }
+        return parsedScoped || parsedBase || defaultValue;
+      } catch (e) {}
+    }
+  }
+
+  if (storedScoped !== null) {
     try {
-      return JSON.parse(stored);
+      return JSON.parse(storedScoped);
     } catch (e) {
       return defaultValue;
     }
