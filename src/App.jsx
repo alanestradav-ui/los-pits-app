@@ -1660,76 +1660,91 @@ export default function App() {
   }, [isInitialPullDone, tenantId]);
 
   useEffect(() => {
+    if (!isInitialPullDone) return;
     setTenantLocalStorage("ordenes", ordenes, tenantId);
     syncToCloud("ordenes", ordenes);
-  }, [ordenes]);
+  }, [ordenes, isInitialPullDone]);
 
   useEffect(() => {
+    if (!isInitialPullDone) return;
     setTenantLocalStorage("carwash", carwash, tenantId);
     syncToCloud("carwash", carwash);
-  }, [carwash]);
+  }, [carwash, isInitialPullDone]);
 
   useEffect(() => {
+    if (!isInitialPullDone) return;
     setTenantLocalStorage("parkingEntries", parkingEntries, tenantId);
     syncToCloud("parkingEntries", parkingEntries);
-  }, [parkingEntries]);
+  }, [parkingEntries, isInitialPullDone]);
 
   useEffect(() => {
+    if (!isInitialPullDone) return;
     setTenantLocalStorage("parkingRate", parkingRate, tenantId);
     syncToCloud("parkingRate", parkingRate);
-  }, [parkingRate]);
+  }, [parkingRate, isInitialPullDone]);
 
   useEffect(() => {
+    if (!isInitialPullDone) return;
     setTenantLocalStorage("parkingHistory", parkingHistory, tenantId);
     syncToCloud("parkingHistory", parkingHistory);
-  }, [parkingHistory]);
+  }, [parkingHistory, isInitialPullDone]);
 
   useEffect(() => {
+    if (!isInitialPullDone) return;
     setTenantLocalStorage("vehiculosVenta", vehiculosVenta, tenantId);
     syncToCloud("vehiculosVenta", vehiculosVenta);
-  }, [vehiculosVenta]);
+  }, [vehiculosVenta, isInitialPullDone]);
 
   useEffect(() => {
+    if (!isInitialPullDone) return;
     setTenantLocalStorage("payrollHistory", payrollHistory, tenantId);
     syncToCloud("payrollHistory", payrollHistory);
-  }, [payrollHistory]);
+  }, [payrollHistory, isInitialPullDone]);
 
   useEffect(() => {
+    if (!isInitialPullDone) return;
     setTenantLocalStorage("workshopInventory", workshopInventory, tenantId);
     syncToCloud("workshopInventory", workshopInventory);
-  }, [workshopInventory]);
+  }, [workshopInventory, isInitialPullDone]);
 
   useEffect(() => {
+    if (!isInitialPullDone) return;
     setTenantLocalStorage("cafeteriaInventory", cafeteriaInventory, tenantId);
     syncToCloud("cafeteriaInventory", cafeteriaInventory);
-  }, [cafeteriaInventory]);
+  }, [cafeteriaInventory, isInitialPullDone]);
 
   useEffect(() => {
+    if (!isInitialPullDone) return;
     setTenantLocalStorage("cafeteriaSales", cafeteriaSales, tenantId);
     syncToCloud("cafeteriaSales", cafeteriaSales);
-  }, [cafeteriaSales]);
+  }, [cafeteriaSales, isInitialPullDone]);
 
   useEffect(() => {
+    if (!isInitialPullDone) return;
     setTenantLocalStorage("comisionMecanico", comisionMecanico, tenantId);
     syncToCloud("comisionMecanico", comisionMecanico);
-  }, [comisionMecanico]);
+  }, [comisionMecanico, isInitialPullDone]);
 
   useEffect(() => {
+    if (!isInitialPullDone) return;
     setTenantLocalStorage("dashboardPeriod", dashboardPeriod, tenantId);
     syncToCloud("dashboardPeriod", dashboardPeriod);
-  }, [dashboardPeriod]);
+  }, [dashboardPeriod, isInitialPullDone]);
 
   useEffect(() => {
+    if (!isInitialPullDone) return;
     setTenantLocalStorage("customStartDate", customStartDate, tenantId);
     syncToCloud("customStartDate", customStartDate);
-  }, [customStartDate]);
+  }, [customStartDate, isInitialPullDone]);
 
   useEffect(() => {
+    if (!isInitialPullDone) return;
     setTenantLocalStorage("customEndDate", customEndDate, tenantId);
     syncToCloud("customEndDate", customEndDate);
-  }, [customEndDate]);
+  }, [customEndDate, isInitialPullDone]);
 
   useEffect(() => {
+    if (!isInitialPullDone) return;
     const clean = (carwashPresets || []).filter((p, idx, self) => 
       p && p.tipo && idx === self.findIndex(t => t && t.tipo && t.tipo.toLowerCase().trim() === p.tipo.toLowerCase().trim())
     );
@@ -1739,28 +1754,32 @@ export default function App() {
       setTenantLocalStorage("carwashPresets", clean, tenantId);
       syncToCloud("carwashPresets", clean);
     }
-  }, [carwashPresets]);
+  }, [carwashPresets, isInitialPullDone]);
 
   useEffect(() => {
+    if (!isInitialPullDone) return;
     setTenantLocalStorage("carwashInventory", carwashInventory, tenantId);
     syncToCloud("carwashInventory", carwashInventory);
-  }, [carwashInventory]);
+  }, [carwashInventory, isInitialPullDone]);
 
   useEffect(() => {
+    if (!isInitialPullDone) return;
     setTenantLocalStorage("carwashConsumption", carwashConsumption, tenantId);
     syncToCloud("carwashConsumption", carwashConsumption);
-  }, [carwashConsumption]);
+  }, [carwashConsumption, isInitialPullDone]);
 
   useEffect(() => {
+    if (!isInitialPullDone) return;
     setTenantLocalStorage("fixedCosts", fixedCosts, tenantId);
     syncToCloud("fixedCosts", fixedCosts);
-  }, [fixedCosts]);
+  }, [fixedCosts, isInitialPullDone]);
 
   useEffect(() => {
+    if (!isInitialPullDone) return;
     const cleanUsers = deduplicateUsers(usuarios);
     setTenantLocalStorage("usuarios", cleanUsers, tenantId);
     syncToCloud("usuarios", cleanUsers);
-  }, [usuarios]);
+  }, [usuarios, isInitialPullDone]);
 
   // Auto-recover missing clients and vehicles from orders/carwash/parking history deterministically
   useEffect(() => {
