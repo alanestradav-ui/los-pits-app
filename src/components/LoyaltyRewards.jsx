@@ -24,8 +24,10 @@ import {
   Plus,
   ShieldCheck,
   Building2,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Smartphone
 } from "lucide-react";
+import WalletInviteModal from "./WalletInviteModal";
 
 export default function LoyaltyRewards({
   clientes = [],
@@ -33,6 +35,8 @@ export default function LoyaltyRewards({
   catalogoPremios = [],
   historialCanjes = [],
   reglasPrograma = [],
+  regalosPasesReferidos = [],
+  setRegalosPasesReferidos,
   onUpdatePuntos,
   onCanjearPremio,
   onUpdateCatalogo,
@@ -42,6 +46,7 @@ export default function LoyaltyRewards({
   const [activeTab, setActiveTab] = useState("clientes"); // "clientes", "catalogo", "historial", "config"
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCliente, setSelectedCliente] = useState(null);
+  const [walletModalClient, setWalletModalClient] = useState(null);
   const [redeemingPremio, setRedeemingPremio] = useState(null);
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
   const [lastRedeemedTicket, setLastRedeemedTicket] = useState(null);
@@ -518,12 +523,38 @@ export default function LoyaltyRewards({
                   </span>
                 </div>
 
+                {/* Digital Wallet Pass & Referral Gift Button */}
+                <button
+                  onClick={() => setWalletModalClient({
+                    ...selectedCliente,
+                    puntos: getPuntosCliente(selectedCliente.telefono || selectedCliente.nombre)
+                  })}
+                  style={{
+                    width: "100%",
+                    marginTop: "10px",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #eab308",
+                    backgroundColor: "#eab308",
+                    color: "#0f172a",
+                    fontWeight: "800",
+                    fontSize: "0.85rem",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px"
+                  }}
+                >
+                  <Smartphone size={16} /> 📱 Pase Digital Wallet & Regalo a Referidos
+                </button>
+
                 {/* Manual Adjustment Action Button */}
                 <button
                   onClick={() => setIsAdjustPointsOpen(true)}
                   style={{
                     width: "100%",
-                    marginTop: "10px",
+                    marginTop: "8px",
                     padding: "8px 12px",
                     borderRadius: "8px",
                     border: "1px solid rgba(234, 179, 8, 0.4)",
@@ -1138,6 +1169,16 @@ export default function LoyaltyRewards({
             </button>
           </div>
         </div>
+      )}
+
+      {/* WALLET INVITE & REFERRAL GIFT MODAL */}
+      {walletModalClient && (
+        <WalletInviteModal
+          cliente={walletModalClient}
+          regalosPasesReferidos={regalosPasesReferidos}
+          setRegalosPasesReferidos={setRegalosPasesReferidos}
+          onClose={() => setWalletModalClient(null)}
+        />
       )}
     </div>
   );

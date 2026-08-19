@@ -20,6 +20,7 @@ import Accesorios from "./components/Accesorios";
 import Pantalla from "./components/Pantalla";
 import VendorQuotes from "./components/VendorQuotes";
 import LoyaltyRewards from "./components/LoyaltyRewards";
+import CustomerPortal from "./components/CustomerPortal";
 import SaaSAdmin from "./components/SaaSAdmin";
 import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocalStorage } from "./utils/storage";
 import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout, processOfflineQueue } from "./utils/supabase";
@@ -70,6 +71,7 @@ const globalActiveSetters = {
   catalogoPremios: null,
   historialCanjes: null,
   reglasPrograma: null,
+  regalosPasesReferidos: null,
   setIsInitialPullDone: null,
   setRealtimeStatus: null
 };
@@ -102,6 +104,7 @@ const ARRAY_KEYS = [
   "catalogoPremios",
   "historialCanjes",
   "reglasPrograma",
+  "regalosPasesReferidos",
   "cotizacionesRepuestos",
   "payrollHistory"
 ];
@@ -888,6 +891,11 @@ export default function App() {
     ];
     const val = getTenantLocalStorage("reglasPrograma", defaultReglas, tenantId);
     return Array.isArray(val) && val.length > 0 ? val : defaultReglas;
+  });
+
+  const [regalosPasesReferidos, setRegalosPasesReferidos] = useState(() => {
+    const val = getTenantLocalStorage("regalosPasesReferidos", [], tenantId);
+    return Array.isArray(val) ? val : [];
   });
 
   // 🏆 LOYALTY REWARDS HELPER: Auto-calculates & awards Puntos Pits for completed services
@@ -1765,6 +1773,12 @@ export default function App() {
     syncToCloud("usuarios", cleanUsers);
   }, [usuarios, isInitialPullDone]);
 
+  useEffect(() => {
+    if (!isInitialPullDone) return;
+    setTenantLocalStorage("regalosPasesReferidos", regalosPasesReferidos, tenantId);
+    syncToCloud("regalosPasesReferidos", regalosPasesReferidos);
+  }, [regalosPasesReferidos, isInitialPullDone]);
+
   // Auto-recover missing clients and vehicles from orders/carwash/parking history deterministically
   useEffect(() => {
     if (!isInitialPullDone) return;
@@ -2218,11 +2232,28 @@ export default function App() {
             catalogoPremios={catalogoPremios}
             historialCanjes={historialCanjes}
             reglasPrograma={reglasPrograma}
+            regalosPasesReferidos={regalosPasesReferidos}
+            setRegalosPasesReferidos={setRegalosPasesReferidos}
             onUpdatePuntos={setPuntosRecompensas}
             onCanjearPremio={handleCanjearPremio}
             onUpdateCatalogo={setCatalogoPremios}
             onUpdateReglas={setReglasPrograma}
             usuarioActual={usuarioActivo}
+          />
+        )}
+
+        {currentTab === "portal" && (
+          <CustomerPortal 
+            puntosRecompensas={puntosRecompensas}
+            setPuntosRecompensas={setPuntosRecompensas}
+            ordenes={ordenes}
+            carwash={carwash}
+            clientes={clientes}
+            vehiculos={vehiculos}
+            catalogoPremios={catalogoPremios}
+            regalosPasesReferidos={regalosPasesReferidos}
+            setRegalosPasesReferidos={setRegalosPasesReferidos}
+            onClose={() => setCurrentTab("dashboard")}
           />
         )}
 

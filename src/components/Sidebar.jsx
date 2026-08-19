@@ -24,7 +24,8 @@ import {
   Gift,
   Gem,
   Award,
-  Sparkles
+  Sparkles,
+  Smartphone
 } from "lucide-react";
 import { testSupabaseConnection } from "../utils/supabase";
 
@@ -116,6 +117,12 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
       label: "Recompensas Pits",
       icon: Gift,
       roles: ["admin", "cajero"]
+    },
+    {
+      id: "portal",
+      label: "Portal Cliente & Wallet",
+      icon: Smartphone,
+      roles: ["admin", "cajero", "mecanico", "lavador", "jefe de taller"]
     },
     {
       id: "accesorios",
