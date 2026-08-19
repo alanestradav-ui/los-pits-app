@@ -706,42 +706,46 @@ export default function Taller({
   };
 
   const guardarEdicionIngreso = (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     if (!editingEntryOrder) return;
     
+    const parsedPlate = parsePlate(editingEntryOrder.placa || "");
+    const cleanNum = (editingEntryOrder.plateNumber || parsedPlate.number || editingEntryOrder.placa || "").trim().toUpperCase();
+    const pref = editingEntryOrder.platePrefix || parsedPlate.prefix || "P";
+
     const clienteVal = (editingEntryOrder.cliente || "").trim();
     const telVal = (editingEntryOrder.telefono || "").trim();
-    const cleanNum = (editingEntryOrder.plateNumber || "").trim().toUpperCase();
     const marcaVal = (editingEntryOrder.marca || "").trim();
     const lineaVal = (editingEntryOrder.linea || "").trim();
 
-    if (!clienteVal || !telVal || !cleanNum || !marcaVal || !lineaVal) {
-      alert("Completa todos los campos obligatorios.");
+    if (!clienteVal || !cleanNum) {
+      alert("Por favor completa el nombre del cliente y la placa del vehículo.");
       return;
     }
 
-    const pref = editingEntryOrder.platePrefix || "P";
-    const fullPlaca = pref === "Extranjera" ? cleanNum : `${pref}-${cleanNum}`;
+    const fullPlaca = pref === "Extranjera" ? cleanNum : (cleanNum.includes("-") ? cleanNum : `${pref}-${cleanNum}`);
 
     const updatedOrder = {
       ...editingEntryOrder,
       cliente: clienteVal,
       telefono: telVal,
       placa: fullPlaca,
-      marca: marcaVal,
-      linea: lineaVal,
+      marca: marcaVal || "Marca",
+      linea: lineaVal || "Línea",
       anio: (editingEntryOrder.anio || "").trim(),
       color: (editingEntryOrder.color || "").trim(),
       kilometraje: (editingEntryOrder.kilometraje || "").trim(),
       chasis: (editingEntryOrder.chasis || "").toUpperCase().trim(),
       nit: (editingEntryOrder.nit || "").trim() || "C/F",
       nombreFacturacion: (editingEntryOrder.nombreFacturacion || "").trim() || clienteVal,
-      vehiculo: `${marcaVal} ${lineaVal} (${fullPlaca})`,
+      vehiculo: `${marcaVal || "Marca"} ${lineaVal || "Línea"} (${fullPlaca})`,
       updatedAt: new Date().toISOString()
     };
 
     setOrdenes(prev => (prev || []).map(o => o.id === editingEntryOrder.id ? updatedOrder : o));
-    registrarClienteYVehiculo(updatedOrder);
+    if (typeof registrarClienteYVehiculo === "function") {
+      registrarClienteYVehiculo(updatedOrder);
+    }
     setEditingEntryOrder(null);
     alert("¡Datos del vehículo e ingreso actualizados con éxito!");
   };
@@ -3622,7 +3626,15 @@ export default function Taller({
                           <h4 style={styles.clientName}>{o.cliente}</h4>
                           {isManager && (
                             <button
-                              onClick={() => setEditingEntryOrder({ ...o, motivoIngreso: o.motivoIngreso || o.trabajo || "" })}
+                              onClick={() => {
+                                const parsed = parsePlate(o.placa || "");
+                                setEditingEntryOrder({
+                                  ...o,
+                                  platePrefix: parsed.prefix,
+                                  plateNumber: parsed.number,
+                                  motivoIngreso: o.motivoIngreso || o.trabajo || ""
+                                });
+                              }}
                               style={{
                                 background: "transparent",
                                 border: "none",
