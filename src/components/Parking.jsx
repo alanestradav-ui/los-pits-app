@@ -71,7 +71,8 @@ export default function Parking({
   cuentasPorCobrar,
   setCuentasPorCobrar,
   clientes = [],
-  setClientes
+  setClientes,
+  addPuntosLealtad
 }) {
   const [platePrefix, setPlatePrefix] = useState("P");
   const [plateNumber, setPlateNumber] = useState("");

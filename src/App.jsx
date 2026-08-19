@@ -894,66 +894,50 @@ export default function App() {
   const addPuntosLealtad = (clienteKey, clienteNombre, monto, area, tallerLaborMonto = 0) => {
     if (!clienteKey && !clienteNombre) return;
 
-    // Determine active tenant
-    const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
-    // Only apply for pruebas tenant
-    if (activeTenant !== "pruebas") {
-      // Update local state without cloud sync for other tenants
-      setPuntosRecompensas(prev => {
-        const list = Array.isArray(prev) ? [...prev] : [];
-        const targetKey = String(clienteKey || clienteNombre).toLowerCase().trim();
-        const idx = list.findIndex(p =>
-          String(p.telefono || "").toLowerCase().trim() === targetKey ||
-          String(p.nombre || "").toLowerCase().trim() === targetKey
-        );
-        const nowIso = new Date().toISOString();
-        let puntosGanados = 0;
-        if (area === "carwash" || area === "cafeteria" || area === "detailing") {
-          puntosGanados = Math.floor(parseFloat(monto) || 0);
-        } else if (area === "taller") {
-          const laborMonto = parseFloat(tallerLaborMonto) || parseFloat(monto) || 0;
-          puntosGanados = Math.min(1500, Math.floor(laborMonto / 4));
-        }
-        if (puntosGanados <= 0) return list;
-        if (idx >= 0) {
-          const existing = list[idx];
-          list[idx] = { ...existing, puntos: (parseInt(existing.puntos) || 0) + puntosGanados, ultimaVisita: nowIso };
-        } else {
-          list.push({ telefono: String(clienteKey || "").trim(), nombre: String(clienteNombre || "Cliente").trim(), puntos: puntosGanados, fechaRegistro: nowIso, ultimaVisita: nowIso });
-        }
-        return list;
-      });
-      return;
-    }
-
-    // Calculate points for pruebas tenant
     let puntosGanados = 0;
-    if (area === "carwash" || area === "cafeteria" || area === "detailing") {
+    const cleanArea = String(area || "").toLowerCase().trim();
+
+    if (cleanArea === "carwash" || cleanArea === "cafeteria" || cleanArea === "detailing" || cleanArea === "tienda" || cleanArea === "parqueo" || cleanArea === "accesorios") {
       puntosGanados = Math.floor(parseFloat(monto) || 0);
-    } else if (area === "taller") {
+    } else if (cleanArea === "taller") {
       const laborMonto = parseFloat(tallerLaborMonto) || parseFloat(monto) || 0;
       puntosGanados = Math.min(1500, Math.floor(laborMonto / 4));
     }
     if (puntosGanados <= 0) return;
 
     const targetKey = String(clienteKey || clienteNombre).toLowerCase().trim();
+    const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
 
     setPuntosRecompensas(prev => {
       const list = Array.isArray(prev) ? [...prev] : [];
       const idx = list.findIndex(p =>
-        String(p.telefono || "").toLowerCase().trim() === targetKey ||
-        String(p.nombre || "").toLowerCase().trim() === targetKey
+        (p.telefono && String(p.telefono).toLowerCase().trim() === targetKey) ||
+        (p.nombre && String(p.nombre).toLowerCase().trim() === targetKey)
       );
       const nowIso = new Date().toISOString();
+      let updatedList = [];
       if (idx >= 0) {
         const existing = list[idx];
-        list[idx] = { ...existing, puntos: (parseInt(existing.puntos) || 0) + puntosGanados, ultimaVisita: nowIso };
+        updatedList = [...list];
+        updatedList[idx] = { 
+          ...existing, 
+          puntos: (parseInt(existing.puntos) || 0) + puntosGanados, 
+          ultimaVisita: nowIso 
+        };
       } else {
-        list.push({ telefono: String(clienteKey || "").trim(), nombre: String(clienteNombre || "Cliente").trim(), puntos: puntosGanados, fechaRegistro: nowIso, ultimaVisita: nowIso });
+        const newRecord = { 
+          id: `pts_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+          telefono: String(clienteKey || "").trim(), 
+          nombre: String(clienteNombre || "Cliente").trim(), 
+          puntos: puntosGanados, 
+          fechaRegistro: nowIso, 
+          ultimaVisita: nowIso 
+        };
+        updatedList = [newRecord, ...list];
       }
-      // Sync to cloud
-      syncKeyToCloud("puntosRecompensas", list);
-      return list;
+      setTenantLocalStorage("puntosRecompensas", updatedList, activeTenant);
+      syncToCloud("puntosRecompensas", updatedList);
+      return updatedList;
     });
   };
 
@@ -2110,6 +2094,7 @@ export default function App() {
             setCuentasPorCobrar={setCuentasPorCobrar}
             clientes={clientes}
             setClientes={setClientes}
+            addPuntosLealtad={addPuntosLealtad}
           />
         )}
 
@@ -2137,6 +2122,7 @@ export default function App() {
             setCuentasPorCobrar={setCuentasPorCobrar}
             clientes={clientes}
             setClientes={setClientes}
+            addPuntosLealtad={addPuntosLealtad}
           />
         )}
 
@@ -2159,6 +2145,7 @@ export default function App() {
             usuarioActual={usuarioActivo}
             clientes={clientes}
             setClientes={setClientes}
+            addPuntosLealtad={addPuntosLealtad}
           />
         )}
 

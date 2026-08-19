@@ -25,7 +25,8 @@ export default function Cafeteria({
   cuentasPorCobrar,
   setCuentasPorCobrar,
   clientes = [],
-  setClientes
+  setClientes,
+  addPuntosLealtad
 }) {
   const [activeSubTab, setActiveSubTab] = useState("pos"); // 'pos' or 'inventory'
   
@@ -261,6 +262,9 @@ export default function Cafeteria({
     };
 
     setCafeteriaSales([nuevaVenta, ...cafeteriaSales]);
+    if (typeof addPuntosLealtad === "function") {
+      addPuntosLealtad(checkoutOrder.telefono, checkoutOrder.cliente, checkoutOrder.total, "cafeteria");
+    }
     setCart([]);
     setCliente("Cliente General");
     setTelefono("");

@@ -32,7 +32,8 @@ export default function Tienda({
   setCuentasPorPagar,
   usuarioActual,
   clientes = [],
-  setClientes
+  setClientes,
+  addPuntosLealtad
 }) {
   // Navigation & POS states
   const [activeTab, setActiveTab] = useState("all"); // 'all', 'taller', 'cafeteria', 'carwash'
@@ -377,6 +378,9 @@ export default function Tienda({
     };
 
     setTiendaSales([newTiendaSale, ...tiendaSales]);
+    if (typeof addPuntosLealtad === "function") {
+      addPuntosLealtad(checkoutOrder.telefono, checkoutOrder.cliente, checkoutOrder.total, "tienda");
+    }
     setCart([]);
     setCliente("Cliente General");
     setTelefono("");
