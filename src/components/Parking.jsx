@@ -555,7 +555,23 @@ export default function Parking({
     ctx.fillStyle = "#000000";
     ctx.font = "bold 15px 'Plus Jakarta Sans', sans-serif";
     ctx.textAlign = "center";
-    const dateFormatted = new Date(o.id).toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const getOrderFormattedDate = (order) => {
+      if (!order) return new Date().toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const candidate = order.fecha || order.createdAt || order.fechaIngreso || order.updatedAt;
+      if (candidate) {
+        const d = new Date(candidate);
+        if (!isNaN(d.getTime())) return d.toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      }
+      if (typeof order.id === "string" && order.id.includes("_")) {
+        const ts = parseInt(order.id.split("_")[1]);
+        if (!isNaN(ts) && ts > 100000000000) {
+          const d = new Date(ts);
+          if (!isNaN(d.getTime())) return d.toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        }
+      }
+      return new Date().toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    };
+    const dateFormatted = getOrderFormattedDate(o);
     ctx.fillText(`Fecha:  ${dateFormatted}`, 400, 194);
     ctx.textAlign = "left";
     

@@ -1799,7 +1799,36 @@ export default function Taller({
     ctx.fillStyle = "#000000";
     ctx.font = "bold 15px 'Plus Jakarta Sans', sans-serif";
     ctx.textAlign = "center";
-    const dateFormatted = new Date(o.id).toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    
+    const getOrderFormattedDate = (order) => {
+      if (!order) return new Date().toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const candidate = order.fecha || order.createdAt || order.fechaIngreso || order.updatedAt;
+      if (candidate) {
+        const d = new Date(candidate);
+        if (!isNaN(d.getTime())) {
+          return d.toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        }
+      }
+      if (typeof order.id === "string" && order.id.includes("_")) {
+        const parts = order.id.split("_");
+        const ts = parseInt(parts[1]);
+        if (!isNaN(ts) && ts > 100000000000) {
+          const d = new Date(ts);
+          if (!isNaN(d.getTime())) {
+            return d.toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+          }
+        }
+      }
+      if (typeof order.id === "number" || (!isNaN(order.id) && String(order.id).length >= 10)) {
+        const d = new Date(Number(order.id));
+        if (!isNaN(d.getTime())) {
+          return d.toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        }
+      }
+      return new Date().toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    };
+
+    const dateFormatted = getOrderFormattedDate(o);
     ctx.fillText(`Fecha:  ${dateFormatted}`, 400, 194);
     ctx.textAlign = "left";
     
@@ -2490,10 +2519,29 @@ export default function Taller({
     ctx.fill();
     ctx.stroke();
     
-    ctx.fillStyle = "#000000";
-    ctx.font = "bold 15px 'Plus Jakarta Sans', sans-serif";
-    ctx.textAlign = "center";
-    const dateFormatted = new Date(o.id).toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const getOrderFormattedDate = (order) => {
+      if (!order) return new Date().toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const candidate = order.fecha || order.createdAt || order.fechaIngreso || order.updatedAt;
+      if (candidate) {
+        const d = new Date(candidate);
+        if (!isNaN(d.getTime())) {
+          return d.toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        }
+      }
+      if (typeof order.id === "string" && order.id.includes("_")) {
+        const parts = order.id.split("_");
+        const ts = parseInt(parts[1]);
+        if (!isNaN(ts) && ts > 100000000000) {
+          const d = new Date(ts);
+          if (!isNaN(d.getTime())) {
+            return d.toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+          }
+        }
+      }
+      return new Date().toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    };
+
+    const dateFormatted = getOrderFormattedDate(o);
     ctx.fillText(`Fecha:  ${dateFormatted}`, 400, 194);
     ctx.textAlign = "left";
     
@@ -5344,7 +5392,29 @@ export default function Taller({
               </div>
 
               {/* metadata client */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px", fontSize: "0.85rem", backgroundColor: "rgba(255,255,255,0.02)", padding: "12px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.04)" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "15px", fontSize: "0.85rem", backgroundColor: "rgba(255,255,255,0.02)", padding: "12px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.04)" }}>
+                <div>
+                  <p style={{ color: "var(--text-muted)", fontWeight: "bold" }}>FECHA:</p>
+                  <p style={{ color: "#fff", fontWeight: "bold" }}>
+                    {(() => {
+                      const order = presupuestoFormalOrder;
+                      if (!order) return new Date().toLocaleDateString('es-GT');
+                      const candidate = order.fecha || order.createdAt || order.fechaIngreso || order.updatedAt;
+                      if (candidate) {
+                        const d = new Date(candidate);
+                        if (!isNaN(d.getTime())) return d.toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                      }
+                      if (typeof order.id === "string" && order.id.includes("_")) {
+                        const ts = parseInt(order.id.split("_")[1]);
+                        if (!isNaN(ts) && ts > 100000000000) {
+                          const d = new Date(ts);
+                          if (!isNaN(d.getTime())) return d.toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                        }
+                      }
+                      return new Date().toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                    })()}
+                  </p>
+                </div>
                 <div>
                   <p style={{ color: "var(--text-muted)", fontWeight: "bold" }}>CLIENTE:</p>
                   <p style={{ color: "#fff" }}>{presupuestoFormalOrder.cliente}</p>
