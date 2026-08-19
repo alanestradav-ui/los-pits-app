@@ -1579,68 +1579,75 @@ export default function Taller({
     const loadedCount = loadedImages.filter(img => img !== null).length;
     const hasPhotos = loadedCount > 0;
 
-    // Compile flat list of all items
+    // Compile flat list of all items (Ordered: 1. Mano de Obra & Servicios arriba, 2. Repuestos & Insumos abajo)
     const allItems = [];
     
-    // 1. Labor
+    // 1. Labor (Mano de obra)
     if (o.presupuesto && o.presupuesto.labor) {
       o.presupuesto.labor.forEach(item => {
+        const rawDesc = item.desc || "Mano de obra";
+        const descText = rawDesc.toLowerCase().includes("mano de obra") ? rawDesc : `${rawDesc} (Mano de obra)`;
         allItems.push({
+          type: "labor",
           qty: 1,
-          desc: `${item.desc} (Mano de obra)`,
+          desc: descText,
           unitPrice: parseFloat(item.price) || 0,
           totalPrice: parseFloat(item.price) || 0
         });
       });
     }
     
-    // 2. Parts
-    if (o.presupuesto && o.presupuesto.parts) {
-      o.presupuesto.parts.forEach(item => {
-        let itemDesc = item.desc;
-        if (item.brand) itemDesc += ` (${item.brand})`;
-        if (item.presentation) itemDesc += ` - ${item.presentation}`;
-        allItems.push({
-          qty: item.qty,
-          desc: itemDesc,
-          unitPrice: parseFloat(item.salePrice) || 0,
-          totalPrice: item.qty * (parseFloat(item.salePrice) || 0)
-        });
-      });
-    }
-
-    // 3. Insumos
-    if (o.presupuesto && o.presupuesto.insumos) {
-      o.presupuesto.insumos.forEach(item => {
-        allItems.push({
-          qty: item.qty,
-          desc: `${item.desc} (Insumo)`,
-          unitPrice: parseFloat(item.salePrice) || 0,
-          totalPrice: item.qty * (parseFloat(item.salePrice) || 0)
-        });
-      });
-    }
-
-    // 4. Tools
-    if (o.presupuesto && o.presupuesto.tools) {
-      o.presupuesto.tools.forEach(item => {
-        allItems.push({
-          qty: item.qty,
-          desc: `${item.desc} (Herramienta Especial)`,
-          unitPrice: parseFloat(item.price) || 0,
-          totalPrice: item.qty * (parseFloat(item.price) || 0)
-        });
-      });
-    }
-    
-    // 5. Services
+    // 2. Services (Servicios de Taller / Carwash)
     if (o.presupuesto && o.presupuesto.services) {
       o.presupuesto.services.forEach(item => {
         allItems.push({
+          type: "labor",
           qty: 1,
-          desc: item.desc,
+          desc: item.desc || "Servicio",
           unitPrice: parseFloat(item.price) || 0,
           totalPrice: parseFloat(item.price) || 0
+        });
+      });
+    }
+
+    // 3. Parts (Repuestos)
+    if (o.presupuesto && o.presupuesto.parts) {
+      o.presupuesto.parts.forEach(item => {
+        let itemDesc = item.desc || "Repuesto";
+        if (item.brand) itemDesc += ` (${item.brand})`;
+        if (item.presentation) itemDesc += ` - ${item.presentation}`;
+        allItems.push({
+          type: "part",
+          qty: parseFloat(item.qty) || 1,
+          desc: itemDesc,
+          unitPrice: parseFloat(item.salePrice) || parseFloat(item.price) || 0,
+          totalPrice: (parseFloat(item.qty) || 1) * (parseFloat(item.salePrice) || parseFloat(item.price) || 0)
+        });
+      });
+    }
+
+    // 4. Insumos (Materiales / Insumos)
+    if (o.presupuesto && o.presupuesto.insumos) {
+      o.presupuesto.insumos.forEach(item => {
+        allItems.push({
+          type: "part",
+          qty: parseFloat(item.qty) || 1,
+          desc: `${item.desc || "Insumo"} (Insumo)`,
+          unitPrice: parseFloat(item.salePrice) || parseFloat(item.price) || 0,
+          totalPrice: (parseFloat(item.qty) || 1) * (parseFloat(item.salePrice) || parseFloat(item.price) || 0)
+        });
+      });
+    }
+
+    // 5. Tools (Herramientas Especiales)
+    if (o.presupuesto && o.presupuesto.tools) {
+      o.presupuesto.tools.forEach(item => {
+        allItems.push({
+          type: "part",
+          qty: parseFloat(item.qty) || 1,
+          desc: `${item.desc || "Herramienta"} (Herramienta Especial)`,
+          unitPrice: parseFloat(item.price) || 0,
+          totalPrice: (parseFloat(item.qty) || 1) * (parseFloat(item.price) || 0)
         });
       });
     }
@@ -1652,6 +1659,7 @@ export default function Taller({
     if (discountPct > 0) {
       discountAmount = subTotal * (discountPct / 100);
       allItems.push({
+        type: "discount",
         qty: 1,
         desc: `Descuento ${discountPct}%`,
         unitPrice: 0,
@@ -1660,12 +1668,24 @@ export default function Taller({
       });
     }
 
-    // Set canvas dimensions
+    // Measure multiline descriptions to determine exact dynamic height per row
+    const tempCanvas = document.createElement("canvas");
+    const tempCtx = tempCanvas.getContext("2d");
+    tempCtx.font = "13px 'Plus Jakarta Sans', sans-serif";
+
+    const processedItems = allItems.map(item => {
+      const descLines = wrapText(tempCtx, item.desc, 355);
+      const dynamicRowH = Math.max(35, descLines.length * 18 + 14);
+      return { ...item, descLines, dynamicRowH };
+    });
+
+    const totalTableHeight = processedItems.reduce((sum, item) => sum + item.dynamicRowH, 0);
+
+    // Set canvas dimensions dynamically based on total table height
     const canvas = document.createElement("canvas");
     canvas.width = 800;
-    const rowHeight = 35;
     const tableHeaderY = 515;
-    const tableEnd = tableHeaderY + 30 + (allItems.length * rowHeight);
+    const tableEnd = tableHeaderY + 30 + totalTableHeight;
     
     const page2Height = hasPhotos ? 325 + (Math.ceil(loadedCount / 2) * 310) : 0;
     canvas.height = tableEnd + 390 + page2Height;
@@ -1947,65 +1967,71 @@ export default function Taller({
     
     // 7. Table rows
     let currentY = 545;
-    allItems.forEach((item, index) => {
+    processedItems.forEach((item, index) => {
+      const rowH = item.dynamicRowH;
+
       // Row background striping
       if (index % 2 === 0) {
         ctx.fillStyle = "#ffffff";
       } else {
         ctx.fillStyle = "#f9fafb";
       }
-      ctx.fillRect(40, currentY, 720, rowHeight);
+      ctx.fillRect(40, currentY, 720, rowH);
       
       // Vertical borders
       ctx.strokeStyle = "#e5e7eb";
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(40, currentY); ctx.lineTo(40, currentY + rowHeight);
-      ctx.moveTo(120, currentY); ctx.lineTo(120, currentY + rowHeight);
-      ctx.moveTo(500, currentY); ctx.lineTo(500, currentY + rowHeight);
-      ctx.moveTo(630, currentY); ctx.lineTo(630, currentY + rowHeight);
-      ctx.moveTo(760, currentY); ctx.lineTo(760, currentY + rowHeight);
-      ctx.moveTo(40, currentY + rowHeight); ctx.lineTo(760, currentY + rowHeight);
+      ctx.moveTo(40, currentY); ctx.lineTo(40, currentY + rowH);
+      ctx.moveTo(120, currentY); ctx.lineTo(120, currentY + rowH);
+      ctx.moveTo(500, currentY); ctx.lineTo(500, currentY + rowH);
+      ctx.moveTo(630, currentY); ctx.lineTo(630, currentY + rowH);
+      ctx.moveTo(760, currentY); ctx.lineTo(760, currentY + rowH);
+      ctx.moveTo(40, currentY + rowH); ctx.lineTo(760, currentY + rowH);
       ctx.stroke();
       
       // Values
       ctx.fillStyle = item.isDiscount ? "#ef4444" : "#111827";
       ctx.font = item.isDiscount ? "bold 13px 'Plus Jakarta Sans', sans-serif" : "13px 'Plus Jakarta Sans', sans-serif";
       
+      const middleY = currentY + Math.floor(rowH / 2) + 4;
+
+      // Quantity (centered vertically)
       ctx.textAlign = "center";
-      ctx.fillText(item.qty.toString(), 80, currentY + 22);
+      ctx.fillText(item.qty.toString(), 80, middleY);
       
+      // Multi-line Description
       ctx.textAlign = "left";
-      const maxLen = 50;
-      let dispDesc = item.desc;
-      if (dispDesc.length > maxLen) {
-        dispDesc = dispDesc.slice(0, maxLen - 3) + "...";
-      }
-      ctx.fillText(dispDesc, 135, currentY + 22);
+      const lines = item.descLines && item.descLines.length > 0 ? item.descLines : [item.desc];
+      const startTextY = lines.length === 1 ? middleY : currentY + 18;
+      lines.forEach((lineText, lineIdx) => {
+        ctx.fillText(lineText, 135, startTextY + (lineIdx * 18));
+      });
       
+      // Unit Price & Total Price (centered vertically)
       if (item.isDiscount) {
         ctx.textAlign = "center";
-        ctx.fillText("-", 565, currentY + 22);
+        ctx.fillText("-", 565, middleY);
         
         ctx.fillStyle = "#ef4444";
         ctx.textAlign = "left";
-        ctx.fillText("-Q", 640, currentY + 22);
+        ctx.fillText("-Q", 640, middleY);
         ctx.textAlign = "right";
-        ctx.fillText(Math.abs(item.totalPrice).toFixed(2), 750, currentY + 22);
+        ctx.fillText(Math.abs(item.totalPrice).toFixed(2), 750, middleY);
       } else {
         ctx.textAlign = "left";
-        ctx.fillText("Q", 515, currentY + 22);
+        ctx.fillText("Q", 515, middleY);
         ctx.textAlign = "right";
-        ctx.fillText(item.unitPrice.toFixed(2), 620, currentY + 22);
+        ctx.fillText(item.unitPrice.toFixed(2), 620, middleY);
         
         ctx.textAlign = "left";
-        ctx.fillText("Q", 640, currentY + 22);
+        ctx.fillText("Q", 640, middleY);
         ctx.textAlign = "right";
-        ctx.fillText(item.totalPrice.toFixed(2), 750, currentY + 22);
+        ctx.fillText(item.totalPrice.toFixed(2), 750, middleY);
       }
       
       ctx.textAlign = "left";
-      currentY += rowHeight;
+      currentY += rowH;
     });
     
     // 8. Total Box
