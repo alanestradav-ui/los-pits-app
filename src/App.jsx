@@ -913,15 +913,21 @@ export default function App() {
     }
     if (puntosGanados <= 0) return;
 
-    const targetKey = String(clienteKey || clienteNombre).toLowerCase().trim();
+    const targetPhone = String(clienteKey || "").replace(/\D/g, "");
+    const targetName = String(clienteNombre || clienteKey || "").toLowerCase().trim();
     const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
 
     setPuntosRecompensas(prev => {
       const list = Array.isArray(prev) ? [...prev] : [];
-      const idx = list.findIndex(p =>
-        (p.telefono && String(p.telefono).toLowerCase().trim() === targetKey) ||
-        (p.nombre && String(p.nombre).toLowerCase().trim() === targetKey)
-      );
+      const idx = list.findIndex(p => {
+        if (!p) return false;
+        const pPhone = String(p.telefono || "").replace(/\D/g, "");
+        const pName = String(p.nombre || "").toLowerCase().trim();
+        if (targetPhone && pPhone && targetPhone === pPhone) return true;
+        if (targetName && pName && targetName === pName) return true;
+        return false;
+      });
+      
       const nowIso = new Date().toISOString();
       let updatedList = [];
       if (idx >= 0) {
@@ -929,6 +935,8 @@ export default function App() {
         updatedList = [...list];
         updatedList[idx] = { 
           ...existing, 
+          telefono: existing.telefono || String(clienteKey || "").trim(),
+          nombre: existing.nombre || String(clienteNombre || "Cliente").trim(),
           puntos: (parseInt(existing.puntos) || 0) + puntosGanados, 
           ultimaVisita: nowIso 
         };

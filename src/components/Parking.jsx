@@ -363,6 +363,11 @@ export default function Parking({
 
     setParkingHistory([cobro, ...parkingHistory]);
     setParkingEntries(parkingEntries.filter(p => p.id !== checkoutOrder.id));
+
+    if (typeof addPuntosLealtad === "function" && checkoutOrder) {
+      addPuntosLealtad(checkoutOrder.telefono || checkoutOrder.cliente, checkoutOrder.cliente, checkoutOrder.total, "parqueo");
+    }
+
     setCheckoutOrder(null);
     alert("Cobro de parqueo procesado con éxito.");
   };

@@ -1304,6 +1304,13 @@ export default function Taller({
     });
     
     setOrdenes(updatedOrders);
+    
+    // Award loyalty points upon billing and completion
+    if (typeof addPuntosLealtad === "function" && checkoutOrder) {
+      const laborMonto = checkoutOrder.presupuesto?.labor?.reduce((sum, item) => sum + Number(item.price || 0), 0) || checkoutOrder.total;
+      addPuntosLealtad(checkoutOrder.telefono || checkoutOrder.cliente, checkoutOrder.cliente, checkoutOrder.total, "taller", laborMonto);
+    }
+
     setCheckoutOrder(null);
     alert("Orden finalizada y cobrada con éxito.");
   };

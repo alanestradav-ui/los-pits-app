@@ -861,6 +861,11 @@ export default function Carwash({
     });
     
     setCarwash(updatedCarwash);
+
+    if (typeof addPuntosLealtad === "function" && checkoutOrder) {
+      addPuntosLealtad(checkoutOrder.telefono || checkoutOrder.cliente, checkoutOrder.cliente, checkoutOrder.total || checkoutOrder.precio, "carwash");
+    }
+
     setCheckoutOrder(null);
     alert("Servicio de carwash finalizado y cobrado con éxito.");
   };
