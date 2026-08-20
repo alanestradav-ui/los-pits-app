@@ -276,8 +276,9 @@ export default function LoyaltyRewards({
   };
 
   return (
-    <div style={{ padding: "20px", color: "#fff", maxWidth: "1400px", margin: "0 auto" }}>
-      {/* Header Banner */}
+    <div style={{ flex: 1, height: "100%", overflowY: "auto", padding: "20px", color: "#fff", width: "100%", boxSizing: "border-box" }}>
+      <div style={{ maxWidth: "1400px", margin: "0 auto", paddingBottom: "80px" }}>
+        {/* Header Banner */}
       <div style={{
         background: "linear-gradient(135deg, rgba(234, 179, 8, 0.15) 0%, rgba(249, 115, 22, 0.15) 100%)",
         border: "1px solid rgba(234, 179, 8, 0.3)",
@@ -483,11 +484,15 @@ export default function LoyaltyRewards({
           {/* Selected Client Detail Panel & Adjustment Buttons */}
           {selectedCliente && (
             <div style={{
-              backgroundColor: "rgba(30, 41, 59, 0.85)",
+              backgroundColor: "rgba(30, 41, 59, 0.95)",
               borderRadius: "16px",
               border: "1px solid rgba(255, 255, 255, 0.12)",
               padding: "20px",
-              alignSelf: "start"
+              position: "sticky",
+              top: "10px",
+              maxHeight: "calc(100vh - 80px)",
+              overflowY: "auto",
+              boxShadow: "0 10px 30px rgba(0,0,0,0.5)"
             }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
                 <h3 style={{ margin: 0, fontSize: "1.1rem", color: "#fef08a", display: "flex", alignItems: "center", gap: "8px" }}>
@@ -1180,6 +1185,7 @@ export default function LoyaltyRewards({
           onClose={() => setWalletModalClient(null)}
         />
       )}
+      </div>
     </div>
   );
 }
