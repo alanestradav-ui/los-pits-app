@@ -342,6 +342,7 @@ export default function Taller({
   const [quickShowSuggestions, setQuickShowSuggestions] = useState(false);
   const [currentBudget, setCurrentBudget] = useState({ labor: [], parts: [], services: [], discount: 0 });
   const [inputDiscount, setInputDiscount] = useState("0");
+  const [discountType, setDiscountType] = useState("percent"); // "percent" or "fixed"
   const [inputLaborDesc, setInputLaborDesc] = useState("");
   const [inputLaborPrice, setInputLaborPrice] = useState("");
   
@@ -1329,20 +1330,37 @@ export default function Taller({
 
   const guardarPresupuesto = () => {
     if (!budgetModalOrder) return;
-    const discountPct = parseFloat(inputDiscount) || 0;
+    const rawVal = parseFloat(inputDiscount) || 0;
+    
+    const totalLabor = ((currentBudget.labor || []).reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0));
+    const totalParts = ((currentBudget.parts || []).reduce((sum, item) => sum + (item.qty * (parseFloat(item.salePrice) || 0)), 0));
+    const totalInsumos = ((currentBudget.insumos || []).reduce((sum, item) => sum + (item.qty * (parseFloat(item.salePrice) || 0)), 0));
+    const totalTools = ((currentBudget.tools || []).reduce((sum, item) => sum + (item.qty * (parseFloat(item.price) || 0)), 0));
+    const totalServices = ((currentBudget.services || []).reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0));
+    const subTotal = totalLabor + totalParts + totalInsumos + totalTools + totalServices;
+
+    let discountAmount = 0;
+    let discountPct = 0;
+    let discountFixed = 0;
+
+    if (discountType === "fixed") {
+      discountFixed = rawVal;
+      discountAmount = Math.min(subTotal, rawVal);
+      discountPct = subTotal > 0 ? (discountAmount / subTotal) * 100 : 0;
+    } else {
+      discountPct = rawVal;
+      discountAmount = subTotal * (discountPct / 100);
+      discountFixed = 0;
+    }
+
     const updatedBudget = {
       ...currentBudget,
-      discount: discountPct
+      discount: discountPct,
+      discountType: discountType,
+      discountFixed: discountFixed
     };
 
-    const totalLabor = (updatedBudget.labor || []).reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
-    const totalParts = (updatedBudget.parts || []).reduce((sum, item) => sum + (item.qty * (parseFloat(item.salePrice) || 0)), 0);
-    const totalInsumos = (updatedBudget.insumos || []).reduce((sum, item) => sum + (item.qty * (parseFloat(item.salePrice) || 0)), 0);
-    const totalTools = (updatedBudget.tools || []).reduce((sum, item) => sum + (item.qty * (parseFloat(item.price) || 0)), 0);
-    const totalServices = (updatedBudget.services || []).reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
-    const subTotal = totalLabor + totalParts + totalInsumos + totalTools + totalServices;
-    const discountAmount = subTotal * (discountPct / 100);
-    const granTotal = subTotal - discountAmount;
+    const granTotal = Math.max(0, subTotal - discountAmount);
 
     setOrdenes(
       ordenes.map((o) => {
@@ -1652,16 +1670,27 @@ export default function Taller({
       });
     }
 
-    const discountPct = o.presupuesto?.discount || 0;
+    const discountType = o.presupuesto?.discountType || "percent";
+    const discountPct = parseFloat(o.presupuesto?.discount) || 0;
+    const discountFixed = parseFloat(o.presupuesto?.discountFixed) || 0;
     const subTotal = allItems.reduce((sum, item) => sum + item.totalPrice, 0);
-    let discountAmount = 0;
     
-    if (discountPct > 0) {
+    let discountAmount = 0;
+    let discountDesc = "";
+
+    if (discountType === "fixed" && discountFixed > 0) {
+      discountAmount = Math.min(subTotal, discountFixed);
+      discountDesc = `Descuento Especial (-Q${discountAmount.toFixed(2)})`;
+    } else if (discountPct > 0) {
       discountAmount = subTotal * (discountPct / 100);
+      discountDesc = `Descuento ${discountPct}%`;
+    }
+
+    if (discountAmount > 0) {
       allItems.push({
         type: "discount",
         qty: 1,
-        desc: `Descuento ${discountPct}%`,
+        desc: discountDesc,
         unitPrice: 0,
         totalPrice: -discountAmount,
         isDiscount: true
@@ -5072,28 +5101,63 @@ export default function Taller({
               </div>
             </div>
 
-            {/* Descuento y Comisión del Cajero (Solo para Admin / Cajero) */}
+            {/* Descuento a Discreción y Comisión del Cajero (Solo para Admin / Cajero) */}
             {!isWorker && (
               <>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", padding: "10px 0", borderTop: "1px dashed rgba(255,255,255,0.1)" }}>
-                  <label style={{ ...styles.label, margin: 0 }}>Descuento (%) (Opcional):</label>
-                  <input
-                    type="number"
-                    placeholder="0"
-                    className="input-field"
-                    value={inputDiscount}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      if (val >= 0 && val <= 100) {
-                        setInputDiscount(e.target.value);
-                      } else if (e.target.value === "") {
-                        setInputDiscount("");
-                      }
-                    }}
-                    style={{ width: "80px", textAlign: "right" }}
-                    min="0"
-                    max="100"
-                  />
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "10px 0", borderTop: "1px dashed rgba(255,255,255,0.1)" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <label style={{ ...styles.label, margin: 0, fontWeight: "bold", color: "#fff" }}>
+                      🎟️ Descuento a Discreción (Opcional):
+                    </label>
+                    <div style={{ display: "flex", gap: "4px", backgroundColor: "rgba(255,255,255,0.06)", padding: "3px", borderRadius: "8px" }}>
+                      <button
+                        type="button"
+                        onClick={() => setDiscountType("percent")}
+                        style={{
+                          padding: "4px 12px",
+                          borderRadius: "6px",
+                          border: "none",
+                          backgroundColor: discountType === "percent" ? "var(--color-primary)" : "transparent",
+                          color: discountType === "percent" ? "#fff" : "var(--text-muted)",
+                          fontWeight: "bold",
+                          fontSize: "0.8rem",
+                          cursor: "pointer"
+                        }}
+                      >
+                        % Porcentaje
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDiscountType("fixed")}
+                        style={{
+                          padding: "4px 12px",
+                          borderRadius: "6px",
+                          border: "none",
+                          backgroundColor: discountType === "fixed" ? "var(--color-primary)" : "transparent",
+                          color: discountType === "fixed" ? "#fff" : "var(--text-muted)",
+                          fontWeight: "bold",
+                          fontSize: "0.8rem",
+                          cursor: "pointer"
+                        }}
+                      >
+                        Q Quetzales
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "8px" }}>
+                    <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                      {discountType === "percent" ? "Monto (%) :" : "Monto en Q :"}
+                    </span>
+                    <input
+                      type="number"
+                      placeholder="0"
+                      className="input-field"
+                      value={inputDiscount}
+                      onChange={(e) => setInputDiscount(e.target.value)}
+                      style={{ width: "110px", textAlign: "right", fontWeight: "bold" }}
+                      min="0"
+                    />
+                  </div>
                 </div>
 
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 0", borderTop: "1px dashed rgba(255,255,255,0.1)", cursor: "pointer" }}>
@@ -5119,9 +5183,21 @@ export default function Taller({
                                  ((currentBudget.insumos || []).reduce((sum, item) => sum + (item.qty * (parseFloat(item.salePrice) || 0)), 0)) +
                                  ((currentBudget.tools || []).reduce((sum, item) => sum + (item.qty * (parseFloat(item.price) || 0)), 0)) +
                                  ((currentBudget.services || []).reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0));
-                const discountPct = parseFloat(inputDiscount) || 0;
-                const discountAmount = subTotal * (discountPct / 100);
-                const finalTotal = subTotal - discountAmount;
+                
+                const rawVal = parseFloat(inputDiscount) || 0;
+                let discountAmount = 0;
+                let discountLabelText = "";
+
+                if (discountType === "fixed" && rawVal > 0) {
+                  discountAmount = Math.min(subTotal, rawVal);
+                  discountLabelText = `Descuento Especial (-Q${discountAmount.toFixed(2)})`;
+                } else if (discountType === "percent" && rawVal > 0) {
+                  discountAmount = subTotal * (rawVal / 100);
+                  discountLabelText = `Descuento (${rawVal}%)`;
+                }
+
+                const finalTotal = Math.max(0, subTotal - discountAmount);
+
                 return (
                   <div style={{ display: "flex", flexDirection: "column", gap: "8px", borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "15px", marginBottom: "15px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "var(--text-muted)" }}>
@@ -5129,8 +5205,8 @@ export default function Taller({
                       <span>{formatMoney(subTotal)}</span>
                     </div>
                     {discountAmount > 0 && (
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "var(--color-danger)" }}>
-                        <span>Descuento ({discountPct}%):</span>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "var(--color-danger)", fontWeight: "bold" }}>
+                        <span>{discountLabelText}:</span>
                         <span>-{formatMoney(discountAmount)}</span>
                       </div>
                     )}
@@ -5559,23 +5635,37 @@ export default function Taller({
             {/* Total / Actions */}
             <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: "15px", marginTop: "10px", display: "flex", flexDirection: "column", gap: "10px" }}>
               {(() => {
+                const discountType = presupuestoFormalOrder.presupuesto?.discountType || "percent";
                 const discountPct = Number(presupuestoFormalOrder.presupuesto?.discount || 0);
-                const totalLabor = presupuestoFormalOrder.presupuesto.labor?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
-                const totalParts = presupuestoFormalOrder.presupuesto.parts?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.salePrice || 0)), 0) || 0;
-                const totalInsumos = presupuestoFormalOrder.presupuesto.insumos?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.salePrice || 0)), 0) || 0;
-                const totalTools = presupuestoFormalOrder.presupuesto.tools?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.price || 0)), 0) || 0;
-                const totalServices = presupuestoFormalOrder.presupuesto.services?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
+                const discountFixed = Number(presupuestoFormalOrder.presupuesto?.discountFixed || 0);
+
+                const totalLabor = presupuestoFormalOrder.presupuesto?.labor?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
+                const totalParts = presupuestoFormalOrder.presupuesto?.parts?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.salePrice || 0)), 0) || 0;
+                const totalInsumos = presupuestoFormalOrder.presupuesto?.insumos?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.salePrice || 0)), 0) || 0;
+                const totalTools = presupuestoFormalOrder.presupuesto?.tools?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.price || 0)), 0) || 0;
+                const totalServices = presupuestoFormalOrder.presupuesto?.services?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
                 const subTotal = Number(totalLabor) + Number(totalParts) + Number(totalInsumos) + Number(totalTools) + Number(totalServices);
-                const discountAmount = subTotal * (discountPct / 100);
-                if (discountPct > 0) {
+
+                let discountAmount = 0;
+                let labelText = "";
+
+                if (discountType === "fixed" && discountFixed > 0) {
+                  discountAmount = Math.min(subTotal, discountFixed);
+                  labelText = `Descuento Especial (-Q${discountAmount.toFixed(2)})`;
+                } else if (discountPct > 0) {
+                  discountAmount = subTotal * (discountPct / 100);
+                  labelText = `Descuento (${discountPct}%)`;
+                }
+
+                if (discountAmount > 0) {
                   return (
                     <>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "var(--text-muted)" }}>
                         <span>Subtotal:</span>
                         <span>{formatMoney(subTotal)}</span>
                       </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "var(--color-danger)" }}>
-                        <span>Descuento ({discountPct}%):</span>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "var(--color-danger)", fontWeight: "bold" }}>
+                        <span>{labelText}:</span>
                         <span>-{formatMoney(discountAmount)}</span>
                       </div>
                     </>
@@ -5587,14 +5677,24 @@ export default function Taller({
                 <span>Total Estimado:</span>
                 <span style={{ color: "var(--color-primary)", fontSize: "1.2rem", fontWeight: "900" }}>
                   {(() => {
+                    const discountType = presupuestoFormalOrder.presupuesto?.discountType || "percent";
                     const discountPct = Number(presupuestoFormalOrder.presupuesto?.discount || 0);
-                    const totalLabor = presupuestoFormalOrder.presupuesto.labor?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
-                    const totalParts = presupuestoFormalOrder.presupuesto.parts?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.salePrice || 0)), 0) || 0;
-                    const totalInsumos = presupuestoFormalOrder.presupuesto.insumos?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.salePrice || 0)), 0) || 0;
-                    const totalTools = presupuestoFormalOrder.presupuesto.tools?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.price || 0)), 0) || 0;
-                    const totalServices = presupuestoFormalOrder.presupuesto.services?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
+                    const discountFixed = Number(presupuestoFormalOrder.presupuesto?.discountFixed || 0);
+
+                    const totalLabor = presupuestoFormalOrder.presupuesto?.labor?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
+                    const totalParts = presupuestoFormalOrder.presupuesto?.parts?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.salePrice || 0)), 0) || 0;
+                    const totalInsumos = presupuestoFormalOrder.presupuesto?.insumos?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.salePrice || 0)), 0) || 0;
+                    const totalTools = presupuestoFormalOrder.presupuesto?.tools?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.price || 0)), 0) || 0;
+                    const totalServices = presupuestoFormalOrder.presupuesto?.services?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
                     const subTotal = Number(totalLabor) + Number(totalParts) + Number(totalInsumos) + Number(totalTools) + Number(totalServices);
-                    return formatMoney(subTotal - (subTotal * (discountPct / 100)));
+                    
+                    let discountAmount = 0;
+                    if (discountType === "fixed" && discountFixed > 0) {
+                      discountAmount = Math.min(subTotal, discountFixed);
+                    } else if (discountPct > 0) {
+                      discountAmount = subTotal * (discountPct / 100);
+                    }
+                    return formatMoney(Math.max(0, subTotal - discountAmount));
                   })()}
                 </span>
               </div>
