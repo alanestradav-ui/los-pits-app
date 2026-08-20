@@ -307,14 +307,41 @@ export default function Inventory({
     o.estado !== "Entregado"
   );
 
+  // Helper to validate real unique codes (excluding generic placeholders)
+  const isValidCode = (codeStr) => {
+    if (!codeStr || typeof codeStr !== "string") return false;
+    const clean = codeStr.toUpperCase().trim();
+    return clean !== "" && clean !== "S/C" && clean !== "N/A" && clean !== "SIN CODIGO" && clean !== "NONE" && clean !== "0";
+  };
+
+  // Helper to normalize descriptions for flexible matching
+  const normalizeName = (str) => {
+    if (!str || typeof str !== "string") return "";
+    return str.toLowerCase().replace(/[^a-z0-9áéíóúñ]/gi, " ").replace(/\s+/g, " ").trim();
+  };
+
+  // Helper to get consistent inventory key
+  const getInvKey = (inv) => {
+    if (!inv) return "";
+    if (isValidCode(inv.code)) return `CODE:${String(inv.code).toUpperCase().trim()}`;
+    return `NAME:${normalizeName(inv.name)}`;
+  };
+
+  // Helper to get consistent part key
+  const getPartKey = (part, matchedInv) => {
+    if (matchedInv) return getInvKey(matchedInv);
+    if (isValidCode(part.code)) return `CODE:${String(part.code).toUpperCase().trim()}`;
+    return `NAME:${normalizeName(part.desc)}`;
+  };
+
   // 2. Crear una copia del stock en bodega para descontar conforme se asigna (running stock)
   const stockReservado = {};
   (workshopInventory || []).forEach(invItem => {
     if (!invItem) return;
-    const codeStr = String(invItem.code || "");
-    const nameStr = String(invItem.name || "");
-    const key = codeStr.toUpperCase().trim() || nameStr.toLowerCase().trim();
-    stockReservado[key] = Number(invItem.quantity || 0);
+    const key = getInvKey(invItem);
+    if (key) {
+      stockReservado[key] = (stockReservado[key] || 0) + Number(invItem.quantity || 0);
+    }
   });
 
   // 3. Compilar lista de repuestos faltantes
@@ -330,16 +357,21 @@ export default function Inventory({
         const partCodeStr = String(part.code || "");
         const partDescStr = String(part.desc || "");
 
-        const invItem = (workshopInventory || []).find(inv => 
-          inv && (
-            (part.code && inv.code && String(inv.code).toUpperCase().trim() === partCodeStr.toUpperCase().trim()) || 
-            (inv.name && part.desc && String(inv.name).toLowerCase().trim() === partDescStr.toLowerCase().trim())
-          )
-        );
+        const invItem = (workshopInventory || []).find(inv => {
+          if (!inv) return false;
+          const invCodeStr = String(inv.code || "").trim();
+          const invNameStr = String(inv.name || "").trim();
+          
+          if (isValidCode(partCodeStr) && isValidCode(invCodeStr) && invCodeStr.toUpperCase() === partCodeStr.toUpperCase()) {
+            return true;
+          }
+          if (normalizeName(invNameStr) && normalizeName(partDescStr) && normalizeName(invNameStr) === normalizeName(partDescStr)) {
+            return true;
+          }
+          return false;
+        });
 
-        const key = invItem 
-          ? (String(invItem.code || "").toUpperCase().trim() || String(invItem.name || "").toLowerCase().trim()) 
-          : partDescStr.toLowerCase().trim();
+        const key = getPartKey(part, invItem);
         const stockDisponible = key in stockReservado ? stockReservado[key] : (invItem ? Number(invItem.quantity || 0) : 0);
         const requerido = Number(part.qty || 0);
         
@@ -354,7 +386,7 @@ export default function Inventory({
             telefono: o.telefono || "",
             placa: o.placa || (o.vehiculo && typeof o.vehiculo === "string" && o.vehiculo.match(/\(([^)]+)\)/)?.[1]) || "N/A",
             vehiculoDesc: o.marca ? `${o.marca} ${o.linea || ""}` : (o.vehiculo && typeof o.vehiculo === "string" && o.vehiculo.split("(")[0]) || "N/A",
-            partCode: partCodeStr || "S/C",
+            partCode: (invItem && isValidCode(invItem.code)) ? invItem.code : (isValidCode(partCodeStr) ? partCodeStr : "S/C"),
             partName: partDescStr,
             partBrand: part.brand || (invItem ? invItem.brand : ""),
             partPresentation: part.presentation || (invItem ? invItem.presentation : ""),
@@ -369,7 +401,7 @@ export default function Inventory({
           inversionCompraEstimada += faltanteQty * purchasePriceEst;
           stockReservado[key] = 0;
         } else {
-          stockReservado[key] = stockDisponible - requerido;
+          stockReservado[key] = Math.max(0, stockDisponible - requerido);
         }
       });
     }

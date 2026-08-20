@@ -42,16 +42,43 @@ export default function RepuestosFaltantes({
     o.estado !== "Entregado"
   );
 
+  // Helper to validate real unique codes (excluding generic placeholders)
+  const isValidCode = (codeStr) => {
+    if (!codeStr || typeof codeStr !== "string") return false;
+    const clean = codeStr.toUpperCase().trim();
+    return clean !== "" && clean !== "S/C" && clean !== "N/A" && clean !== "SIN CODIGO" && clean !== "NONE" && clean !== "0";
+  };
+
+  // Helper to normalize descriptions for flexible matching
+  const normalizeName = (str) => {
+    if (!str || typeof str !== "string") return "";
+    return str.toLowerCase().replace(/[^a-z0-9áéíóúñ]/gi, " ").replace(/\s+/g, " ").trim();
+  };
+
+  // Helper to get consistent inventory key
+  const getInvKey = (inv) => {
+    if (!inv) return "";
+    if (isValidCode(inv.code)) return `CODE:${String(inv.code).toUpperCase().trim()}`;
+    return `NAME:${normalizeName(inv.name)}`;
+  };
+
+  // Helper to get consistent part key
+  const getPartKey = (part, matchedInv) => {
+    if (matchedInv) return getInvKey(matchedInv);
+    if (isValidCode(part.code)) return `CODE:${String(part.code).toUpperCase().trim()}`;
+    return `NAME:${normalizeName(part.desc)}`;
+  };
+
   // Declare stock reservation tracking object
   const stockReservado = {};
 
   // 2. Map current physical stock
   (workshopInventory || []).forEach(invItem => {
     if (!invItem) return;
-    const codeStr = String(invItem.code || "");
-    const nameStr = String(invItem.name || "");
-    const key = codeStr.toUpperCase().trim() || nameStr.toLowerCase().trim();
-    stockReservado[key] = Number(invItem.quantity || 0);
+    const key = getInvKey(invItem);
+    if (key) {
+      stockReservado[key] = (stockReservado[key] || 0) + Number(invItem.quantity || 0);
+    }
   });
 
   // 3. Compile missing parts list grouped by vehicle (order)
@@ -70,16 +97,21 @@ export default function RepuestosFaltantes({
         const partCodeStr = String(part.code || "");
         const partDescStr = String(part.desc || "");
 
-        const invItem = (workshopInventory || []).find(inv => 
-          inv && (
-            (part.code && inv.code && String(inv.code).toUpperCase().trim() === partCodeStr.toUpperCase().trim()) || 
-            (inv.name && part.desc && String(inv.name).toLowerCase().trim() === partDescStr.toLowerCase().trim())
-          )
-        );
+        const invItem = (workshopInventory || []).find(inv => {
+          if (!inv) return false;
+          const invCodeStr = String(inv.code || "").trim();
+          const invNameStr = String(inv.name || "").trim();
+          
+          if (isValidCode(partCodeStr) && isValidCode(invCodeStr) && invCodeStr.toUpperCase() === partCodeStr.toUpperCase()) {
+            return true;
+          }
+          if (normalizeName(invNameStr) && normalizeName(partDescStr) && normalizeName(invNameStr) === normalizeName(partDescStr)) {
+            return true;
+          }
+          return false;
+        });
 
-        const key = invItem 
-          ? (String(invItem.code || "").toUpperCase().trim() || String(invItem.name || "").toLowerCase().trim()) 
-          : partDescStr.toLowerCase().trim();
+        const key = getPartKey(part, invItem);
         const stockDisponible = key in stockReservado ? stockReservado[key] : (invItem ? Number(invItem.quantity || 0) : 0);
         const requerido = Number(part.qty || 0);
         
@@ -93,7 +125,7 @@ export default function RepuestosFaltantes({
             : (invItem ? Number(invItem.salePrice || 0) : 0);
           
           missingPartsForThisVehicle.push({
-            partCode: partCodeStr || "S/C",
+            partCode: (invItem && isValidCode(invItem.code)) ? invItem.code : (isValidCode(partCodeStr) ? partCodeStr : "S/C"),
             partName: partDescStr,
             partBrand: part.brand || (invItem ? invItem.brand : ""),
             partPresentation: part.presentation || (invItem ? invItem.presentation : ""),
@@ -109,7 +141,7 @@ export default function RepuestosFaltantes({
           inversionCompraEstimadaGlobal += faltanteQty * purchasePriceEst;
           stockReservado[key] = 0;
         } else {
-          stockReservado[key] = stockDisponible - requerido;
+          stockReservado[key] = Math.max(0, stockDisponible - requerido);
         }
       });
     }
@@ -214,27 +246,32 @@ export default function RepuestosFaltantes({
       return;
     }
 
-    // 1. Update Inventory
+    const partCodeUpper = isValidCode(selectedPartToBuy.partCode) 
+      ? String(selectedPartToBuy.partCode).toUpperCase().trim() 
+      : "";
+    const partNameClean = String(selectedPartToBuy.partName || "").trim();
+
+    let codeToAssign = partCodeUpper;
+
+    // 1. Update or Create in Inventory
     if (setWorkshopInventory) {
       setWorkshopInventory(prevInv => {
-        const itemCodeUpper = selectedPartToBuy.partCode && selectedPartToBuy.partCode !== "S/C" 
-          ? String(selectedPartToBuy.partCode || "").toUpperCase().trim() 
-          : "";
-        const itemNameLower = String(selectedPartToBuy.partName || "").toLowerCase().trim();
-
-        const exists = (prevInv || []).some(invItem => 
+        const existingItem = (prevInv || []).find(invItem => 
           invItem && (
-            (itemCodeUpper && invItem.code && String(invItem.code || "").toUpperCase().trim() === itemCodeUpper) ||
-            (invItem.name && String(invItem.name || "").toLowerCase().trim() === itemNameLower)
+            (partCodeUpper && isValidCode(invItem.code) && String(invItem.code).toUpperCase().trim() === partCodeUpper) ||
+            (normalizeName(invItem.name) === normalizeName(partNameClean))
           )
         );
 
-        if (exists) {
-          return prevInv.map(invItem => {
+        if (existingItem) {
+          if (isValidCode(existingItem.code)) {
+            codeToAssign = existingItem.code;
+          }
+          return (prevInv || []).map(invItem => {
             if (!invItem) return invItem;
-            const matches = (itemCodeUpper && invItem.code && String(invItem.code || "").toUpperCase().trim() === itemCodeUpper) ||
-                            (invItem.name && String(invItem.name || "").toLowerCase().trim() === itemNameLower);
-            if (matches) {
+            const isMatch = (partCodeUpper && isValidCode(invItem.code) && String(invItem.code).toUpperCase().trim() === partCodeUpper) ||
+                            (normalizeName(invItem.name) === normalizeName(partNameClean));
+            if (isMatch) {
               return {
                 ...invItem,
                 quantity: Number(invItem.quantity || 0) + qty,
@@ -245,14 +282,15 @@ export default function RepuestosFaltantes({
             return invItem;
           });
         } else {
-          const codeToUse = itemCodeUpper || `REP-${Date.now().toString().slice(-4)}`;
+          const generatedCode = partCodeUpper || `REP-${Date.now().toString().slice(-4)}`;
+          codeToAssign = generatedCode;
           const brandToUse = selectedPartToBuy.partBrand || buyProvider || "S/M";
           const presentationToUse = selectedPartToBuy.partPresentation || "Unidad";
           
           const newItem = {
             id: Date.now(),
-            code: codeToUse,
-            name: String(selectedPartToBuy.partName || "").trim(),
+            code: generatedCode,
+            name: partNameClean,
             brand: brandToUse,
             presentation: presentationToUse,
             quantity: qty,
@@ -260,7 +298,7 @@ export default function RepuestosFaltantes({
             salePrice: salePrice,
             minStock: 5
           };
-          return [newItem, ...prevInv];
+          return [newItem, ...(prevInv || [])];
         }
       });
     }
@@ -274,11 +312,12 @@ export default function RepuestosFaltantes({
             if (o.presupuesto && o.presupuesto.parts) {
               const updatedParts = o.presupuesto.parts.map(p => {
                 if (!p) return p;
-                const isMatch = (selectedPartToBuy.partCode && selectedPartToBuy.partCode !== "S/C" && p.code && String(p.code || "").toUpperCase().trim() === String(selectedPartToBuy.partCode || "").toUpperCase().trim()) ||
-                                (p.desc && selectedPartToBuy.partName && String(p.desc || "").toLowerCase().trim() === String(selectedPartToBuy.partName || "").toLowerCase().trim());
+                const isMatch = (partCodeUpper && isValidCode(p.code) && String(p.code).toUpperCase().trim() === partCodeUpper) ||
+                                (normalizeName(p.desc) === normalizeName(partNameClean));
                 if (isMatch) {
                   return {
                     ...p,
+                    code: codeToAssign || p.code || "S/C",
                     purchasePrice: purchasePrice,
                     salePrice: salePrice,
                     price: salePrice // retrocompatibility
@@ -289,11 +328,23 @@ export default function RepuestosFaltantes({
 
               const totalLabor = o.presupuesto.labor?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
               const totalParts = updatedParts.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.salePrice || 0)), 0);
+              const totalInsumos = o.presupuesto.insumos?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.salePrice || 0)), 0) || 0;
+              const totalTools = o.presupuesto.tools?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.price || 0)), 0) || 0;
               const totalServices = o.presupuesto.services?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
-              const subTotal = Number(totalLabor) + Number(totalParts) + Number(totalServices);
+              const subTotal = Number(totalLabor) + Number(totalParts) + Number(totalInsumos) + Number(totalTools) + Number(totalServices);
+              
+              const discountType = o.presupuesto.discountType || "percent";
               const discountPct = Number(o.presupuesto.discount || 0);
-              const discountAmount = subTotal * (discountPct / 100);
-              const newTotal = subTotal - discountAmount;
+              const discountFixed = Number(o.presupuesto.discountFixed || 0);
+              let discountAmount = 0;
+
+              if (discountType === "fixed" && discountFixed > 0) {
+                discountAmount = Math.min(subTotal, discountFixed);
+              } else if (discountPct > 0) {
+                discountAmount = subTotal * (discountPct / 100);
+              }
+
+              const newTotal = Math.max(0, subTotal - discountAmount);
 
               const updatedBudget = {
                 ...o.presupuesto,
