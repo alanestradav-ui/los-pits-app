@@ -41,8 +41,25 @@ const TALLER_STATUSES = [
   "En proceso de reparación",
   "En período de prueba y control de calidad",
   "En proceso de lavado",
+  "Revisión antes de entrega",
   "Listo para entrega",
   "Entregado"
+];
+
+const REVISION_ITEMS_DEF = [
+  { key: "nivelesFluidos", label: "Niveles y fluidos generales", icon: "💧" },
+  { key: "aceiteMotor", label: "Aceite de motor", icon: "🛢️" },
+  { key: "refrigerante", label: "Refrigerante (Coolant)", icon: "🌡️" },
+  { key: "liquidoFrenos", label: "Líquido de frenos", icon: "🛑" },
+  { key: "liquidoLimpiabrisas", label: "Líquido de limpiabrisas", icon: "🌧️" },
+  { key: "torqueLlantas", label: "Torque y apriete de llantas y piezas trabajadas", icon: "🔧" },
+  { key: "presionNeumaticos", label: "Presión de neumáticos", icon: "🛞" },
+  { key: "pruebaRuta", label: "Prueba en ruta", icon: "🚗" },
+  { key: "estampitaServicio", label: "Estampita de servicio", icon: "🏷️" },
+  { key: "reseteoTablero", label: "Reseteo de servicio en tablero", icon: "📊" },
+  { key: "sistemaIluminacion", label: "Sistema de iluminación sin luces quemadas", icon: "💡" },
+  { key: "copaSeguridadHerramientas", label: "Copa de seguridad y herramientas del vehículo en su lugar", icon: "🔑" },
+  { key: "vehiculoLimpio", label: "Vehículo limpio y libre de herramientas", icon: "✨" }
 ];
 
 const warningLightsDef = [
@@ -104,6 +121,12 @@ const getStatusStyle = (estado) => {
         color: "var(--color-info)",
         borderColor: "rgba(6, 182, 212, 0.3)"
       };
+    case "Revisión antes de entrega":
+      return {
+        backgroundColor: "rgba(236, 72, 153, 0.15)",
+        color: "#f472b6",
+        borderColor: "rgba(236, 72, 153, 0.4)"
+      };
     case "Listo para entrega":
       return {
         backgroundColor: "var(--color-success-glow)",
@@ -128,7 +151,9 @@ const getButtonLabel = (estado) => {
     case "En período de prueba y control de calidad":
       return "Pasar a Lavado";
     case "En proceso de lavado":
-      return "Listo para Entrega";
+      return "Revisión Antes de Entrega";
+    case "Revisión antes de entrega":
+      return "Marcar Listo para Entrega";
     case "Listo para entrega":
       return "Facturar y Entregar";
     default:
@@ -329,6 +354,122 @@ export default function Taller({
     credito: ""
   });
   const [selectedPaymentMethods, setSelectedPaymentMethods] = useState([]);
+
+  // Revisión Antes de Entrega (Pre-Delivery Inspection Checklist) states
+  const [revisionModalOrder, setRevisionModalOrder] = useState(null);
+  const [revisionData, setRevisionData] = useState({
+    realizadoPor: "",
+    observaciones: "",
+    items: {
+      nivelesFluidos: false,
+      aceiteMotor: false,
+      refrigerante: false,
+      liquidoFrenos: false,
+      liquidoLimpiabrisas: false,
+      torqueLlantas: false,
+      presionNeumaticos: false,
+      pruebaRuta: false,
+      estampitaServicio: false,
+      reseteoTablero: false,
+      sistemaIluminacion: false,
+      copaSeguridadHerramientas: false,
+      vehiculoLimpio: false
+    }
+  });
+
+  const abrirRevisionModal = (orden) => {
+    setRevisionModalOrder(orden);
+    const existing = orden.revisionPreEntrega;
+    const defaultUser = usuarioActual?.nombre || usuarioActual?.user || usuarioActual?.name || "";
+    
+    if (existing && existing.items) {
+      setRevisionData({
+        realizadoPor: existing.realizadoPor || defaultUser,
+        observaciones: existing.observaciones || "",
+        items: {
+          nivelesFluidos: !!existing.items.nivelesFluidos,
+          aceiteMotor: !!existing.items.aceiteMotor,
+          refrigerante: !!existing.items.refrigerante,
+          liquidoFrenos: !!existing.items.liquidoFrenos,
+          liquidoLimpiabrisas: !!existing.items.liquidoLimpiabrisas,
+          torqueLlantas: !!existing.items.torqueLlantas,
+          presionNeumaticos: !!existing.items.presionNeumaticos,
+          pruebaRuta: !!existing.items.pruebaRuta,
+          estampitaServicio: !!existing.items.estampitaServicio,
+          reseteoTablero: !!existing.items.reseteoTablero,
+          sistemaIluminacion: !!existing.items.sistemaIluminacion,
+          copaSeguridadHerramientas: !!existing.items.copaSeguridadHerramientas,
+          vehiculoLimpio: !!existing.items.vehiculoLimpio
+        }
+      });
+    } else {
+      setRevisionData({
+        realizadoPor: defaultUser,
+        observaciones: "",
+        items: {
+          nivelesFluidos: false,
+          aceiteMotor: false,
+          refrigerante: false,
+          liquidoFrenos: false,
+          liquidoLimpiabrisas: false,
+          torqueLlantas: false,
+          presionNeumaticos: false,
+          pruebaRuta: false,
+          estampitaServicio: false,
+          reseteoTablero: false,
+          sistemaIluminacion: false,
+          copaSeguridadHerramientas: false,
+          vehiculoLimpio: false
+        }
+      });
+    }
+  };
+
+  const toggleSelectAllRevision = () => {
+    const allChecked = Object.values(revisionData.items).every(v => v === true);
+    const newItems = {};
+    REVISION_ITEMS_DEF.forEach(def => {
+      newItems[def.key] = !allChecked;
+    });
+    setRevisionData(prev => ({ ...prev, items: newItems }));
+  };
+
+  const guardarRevisionPreEntrega = (advanceStatus = false) => {
+    if (!revisionModalOrder) return;
+    const realizadoPorName = (revisionData.realizadoPor || "").trim();
+    if (!realizadoPorName) {
+      alert("Por favor ingresa el nombre de la persona que realizó la revisión.");
+      return;
+    }
+
+    const allChecked = Object.values(revisionData.items).every(v => v === true);
+
+    const revisionObj = {
+      completado: true,
+      todoAprobado: allChecked,
+      realizadoPor: realizadoPorName,
+      usuarioId: usuarioActual?.id || usuarioActual?.user || "",
+      fechaHora: new Date().toISOString(),
+      items: { ...revisionData.items },
+      observaciones: (revisionData.observaciones || "").trim()
+    };
+
+    setOrdenes(prev => (prev || []).map(o => {
+      if (o.id === revisionModalOrder.id) {
+        const nuevoEstado = advanceStatus ? "Listo para entrega" : (o.estado === "En proceso de lavado" ? "Revisión antes de entrega" : o.estado);
+        return {
+          ...o,
+          estado: nuevoEstado,
+          revisionPreEntrega: revisionObj,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return o;
+    }));
+
+    setRevisionModalOrder(null);
+    alert(`¡Revisión Antes de Entrega registrada con éxito por ${realizadoPorName}!`);
+  };
 
   // Detailed Budget Modal states
   const [budgetModalOrder, setBudgetModalOrder] = useState(null);
@@ -897,6 +1038,18 @@ export default function Taller({
           setBudgetModalOrder(o);
           setCurrentBudget(o.presupuesto || { labor: [], parts: [], services: [], discount: 0 });
           setInputDiscount(o.presupuesto?.discount?.toString() || "0");
+          cancelado = true;
+          return o;
+        }
+
+        // Validation: Must complete Revisión antes de entrega before moving to Listo para entrega
+        if (nuevoEstado === "Revisión antes de entrega") {
+          abrirRevisionModal(o);
+        }
+
+        if (nuevoEstado === "Listo para entrega" && (!o.revisionPreEntrega || !o.revisionPreEntrega.completado)) {
+          alert("Debes realizar la 'Revisión Antes de Entrega' y completar la lista de chequeo antes de marcar el vehículo como Listo para Entrega.");
+          abrirRevisionModal(o);
           cancelado = true;
           return o;
         }
@@ -4010,6 +4163,23 @@ export default function Taller({
                           >
                             📋 Ver Hoja de Recepción
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => abrirRevisionModal(o)}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              color: o.revisionPreEntrega?.completado ? "#f472b6" : "var(--color-warning)",
+                              fontSize: "0.75rem",
+                              cursor: "pointer",
+                              padding: "2px 0 0 0",
+                              textDecoration: "underline",
+                              fontWeight: "bold",
+                              marginTop: "3px"
+                            }}
+                          >
+                            {o.revisionPreEntrega?.completado ? `✅ Check-list Pre-Entrega (${o.revisionPreEntrega.realizadoPor})` : "📋 Revisión Antes de Entrega"}
+                          </button>
                         </div>
                       </div>
                       <div style={styles.infoRow}>
@@ -6588,6 +6758,167 @@ export default function Taller({
                 </button>
               </div>
             </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* 📋 MODAL REVISIÓN ANTES DE ENTREGA (PRE-DELIVERY INSPECTION CHECKLIST) */}
+      {revisionModalOrder && createPortal(
+        <div style={styles.modalOverlay}>
+          <div className="glass-panel" style={{ ...styles.modalContent, maxWidth: "680px", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+            <div style={{ ...styles.modalHeader, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <h3 style={{ ...styles.modalTitle, display: "flex", alignItems: "center", gap: "8px", color: "#f472b6" }}>
+                  📋 Revisión Antes de Entrega (Check-list)
+                </h3>
+                <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "2px" }}>
+                  {revisionModalOrder.marca} {revisionModalOrder.linea} ({revisionModalOrder.placa}) - Cliente: {revisionModalOrder.cliente}
+                </p>
+              </div>
+              <button onClick={() => setRevisionModalOrder(null)} style={styles.closeBtn}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ ...styles.modalBody, flex: 1, overflowY: "auto", padding: "15px" }}>
+              {/* Encabezado Responsable */}
+              <div style={{
+                backgroundColor: "rgba(236, 72, 153, 0.08)",
+                border: "1px solid rgba(236, 72, 153, 0.25)",
+                padding: "14px",
+                borderRadius: "10px",
+                marginBottom: "16px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px"
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
+                  <label style={{ fontSize: "0.85rem", fontWeight: "bold", color: "#fff" }}>
+                    👤 Inspeccionado y Realizado Por * :
+                  </label>
+                  <button
+                    type="button"
+                    onClick={toggleSelectAllRevision}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      border: "1px solid var(--color-success)",
+                      backgroundColor: "rgba(16, 185, 129, 0.15)",
+                      color: "var(--color-success)",
+                      fontWeight: "bold",
+                      fontSize: "0.78rem",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px"
+                    }}
+                  >
+                    <CheckCircle2 size={14} />
+                    {Object.values(revisionData.items).every(v => v === true) ? "Desmarcar Todos" : "✅ Marcar Todos (100% Aprobado)"}
+                  </button>
+                </div>
+
+                <input
+                  type="text"
+                  required
+                  className="input-field"
+                  placeholder="Escribe el nombre del técnico/inspector..."
+                  value={revisionData.realizadoPor}
+                  onChange={(e) => setRevisionData(prev => ({ ...prev, realizadoPor: e.target.value }))}
+                  style={{ width: "100%", fontWeight: "bold" }}
+                />
+              </div>
+
+              {/* Lista de Chequeo de 13 Puntos */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "10px", marginBottom: "16px" }}>
+                {REVISION_ITEMS_DEF.map(def => {
+                  const isChecked = !!revisionData.items[def.key];
+                  return (
+                    <div
+                      key={def.key}
+                      onClick={() => setRevisionData(prev => ({
+                        ...prev,
+                        items: {
+                          ...prev.items,
+                          [def.key]: !prev.items[def.key]
+                        }
+                      }))}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        backgroundColor: isChecked ? "rgba(16, 185, 129, 0.12)" : "rgba(255,255,255,0.03)",
+                        border: isChecked ? "1px solid rgba(16, 185, 129, 0.4)" : "1px solid rgba(255,255,255,0.08)",
+                        cursor: "pointer",
+                        transition: "all 0.15s ease"
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => {}}
+                        style={{ width: "18px", height: "18px", accentColor: "var(--color-success)", cursor: "pointer" }}
+                      />
+                      <span style={{ fontSize: "1.1rem" }}>{def.icon}</span>
+                      <span style={{ fontSize: "0.82rem", color: isChecked ? "#fff" : "var(--text-muted)", fontWeight: isChecked ? "bold" : "normal", flex: 1 }}>
+                        {def.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Observaciones */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "0.85rem", fontWeight: "bold", color: "var(--text-muted)" }}>
+                  📝 Observaciones de la Inspección (Opcional):
+                </label>
+                <textarea
+                  className="input-field"
+                  placeholder="Detalles adicionales o notas sobre la prueba en ruta..."
+                  rows={2}
+                  value={revisionData.observaciones}
+                  onChange={(e) => setRevisionData(prev => ({ ...prev, observaciones: e.target.value }))}
+                  style={{ width: "100%", resize: "vertical" }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: "10px", padding: "15px", borderTop: "1px solid rgba(255,255,255,0.1)", justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setRevisionModalOrder(null)}
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                className="btn"
+                onClick={() => guardarRevisionPreEntrega(false)}
+                style={{
+                  backgroundColor: "rgba(236, 72, 153, 0.2)",
+                  border: "1px solid #f472b6",
+                  color: "#f472b6",
+                  fontWeight: "bold"
+                }}
+              >
+                💾 Guardar Check-list
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => guardarRevisionPreEntrega(true)}
+                style={{ fontWeight: "bold" }}
+              >
+                🚀 Guardar y Avanzar a "Listo para Entrega"
+              </button>
+            </div>
           </div>
         </div>,
         document.body
