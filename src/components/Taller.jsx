@@ -434,7 +434,7 @@ export default function Taller({
     setRevisionData(prev => ({ ...prev, items: newItems }));
   };
 
-  const guardarRevisionPreEntrega = (advanceStatus = false) => {
+  const guardarRevisionPreEntrega = (advanceStatus = true) => {
     if (!revisionModalOrder) return;
     const realizadoPorName = (revisionData.realizadoPor || "").trim();
     if (!realizadoPorName) {
@@ -442,7 +442,8 @@ export default function Taller({
       return;
     }
 
-    const allChecked = Object.values(revisionData.items).every(v => v === true);
+    const itemsSafe = revisionData.items || {};
+    const allChecked = Object.values(itemsSafe).every(v => v === true);
 
     const revisionObj = {
       completado: true,
@@ -450,25 +451,48 @@ export default function Taller({
       realizadoPor: realizadoPorName,
       usuarioId: usuarioActual?.id || usuarioActual?.user || "",
       fechaHora: new Date().toISOString(),
-      items: { ...revisionData.items },
+      items: { ...itemsSafe },
       observaciones: (revisionData.observaciones || "").trim()
     };
 
-    setOrdenes(prev => (prev || []).map(o => {
-      if (o.id === revisionModalOrder.id) {
-        const nuevoEstado = advanceStatus ? "Listo para entrega" : (o.estado === "En proceso de lavado" ? "Revisión antes de entrega" : o.estado);
-        return {
-          ...o,
-          estado: nuevoEstado,
-          revisionPreEntrega: revisionObj,
-          updatedAt: new Date().toISOString()
-        };
-      }
-      return o;
-    }));
+    setOrdenes(prev => {
+      const safePrev = Array.isArray(prev) ? prev : [];
+      const updated = safePrev.map(o => {
+        if (o.id === revisionModalOrder.id) {
+          let nuevoEstado = advanceStatus !== false ? "Listo para entrega" : o.estado;
+          let nuevoTotal = o.total;
+          let nuevaComision = o.comision;
 
+          // If advancing to "Listo para entrega" and total is 0, attempt auto-calculation from budget
+          if (nuevoEstado === "Listo para entrega" && o.total === 0) {
+            const laborSum = o.presupuesto?.labor?.reduce((s, i) => s + Number(i.price || 0), 0) || 0;
+            const partsSum = o.presupuesto?.parts?.reduce((s, i) => s + (Number(i.qty || 0) * Number(i.salePrice || 0)), 0) || 0;
+            const servicesSum = o.presupuesto?.services?.reduce((s, i) => s + Number(i.price || 0), 0) || 0;
+            const calcSubtotal = laborSum + partsSum + servicesSum;
+            if (calcSubtotal > 0) {
+              nuevoTotal = calcSubtotal;
+              nuevaComision = calculateOrderCommission({ ...o, total: calcSubtotal });
+            }
+          }
+
+          return {
+            ...o,
+            estado: nuevoEstado,
+            total: nuevoTotal,
+            comision: nuevaComision,
+            revisionPreEntrega: revisionObj,
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return o;
+      });
+      setTenantLocalStorage("ordenes", updated, tenantId);
+      return updated;
+    });
+
+    const vDesc = revisionModalOrder.vehiculo || `${revisionModalOrder.marca || ""} ${revisionModalOrder.linea || ""}`;
     setRevisionModalOrder(null);
-    alert(`¡Revisión Antes de Entrega registrada con éxito por ${realizadoPorName}!`);
+    alert(`✅ ¡Revisión Antes de Entrega registrada con éxito por ${realizadoPorName}!\n\nLa orden del vehículo (${vDesc}) ha avanzado a "Listo para Entrega".`);
   };
 
   // Detailed Budget Modal states
@@ -6923,20 +6947,6 @@ export default function Taller({
                 onClick={() => setRevisionModalOrder(null)}
               >
                 Cancelar
-              </button>
-
-              <button
-                type="button"
-                className="btn"
-                onClick={() => guardarRevisionPreEntrega(false)}
-                style={{
-                  backgroundColor: "rgba(236, 72, 153, 0.2)",
-                  border: "1px solid #f472b6",
-                  color: "#f472b6",
-                  fontWeight: "bold"
-                }}
-              >
-                💾 Guardar Check-list
               </button>
 
               <button
