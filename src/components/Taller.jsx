@@ -217,6 +217,7 @@ export default function Taller({
   const [mecanico, setMecanico] = useState("");
   const [precio, setPrecio] = useState("");
   const [fotos, setFotos] = useState([]);
+  const [ingresoExitosoMsg, setIngresoExitosoMsg] = useState(null);
 
   // Client and vehicle suggestions states
   const [activeFieldSuggestions, setActiveFieldSuggestions] = useState(null);
@@ -980,6 +981,11 @@ export default function Taller({
     });
     registrarClienteYVehiculo(nueva);
 
+    // Reset Native Form Element if target exists
+    if (e && e.target && typeof e.target.reset === "function") {
+      try { e.target.reset(); } catch (err) {}
+    }
+
     // Reset Form Fields
     setCliente("");
     setTelefono("");
@@ -1020,15 +1026,26 @@ export default function Taller({
       console.warn("Could not reset DOM input values:", err);
     }
 
+    // Trigger Instant Inline Success Notification Banner
+    const vehDesc = nueva.vehiculo;
+    const cliNombre = nueva.cliente;
+    setIngresoExitosoMsg({
+      vehiculo: vehDesc,
+      cliente: cliNombre
+    });
+    setTimeout(() => setIngresoExitosoMsg(null), 7000);
+
     // Switch view filter to "Trabajos en Proceso" to highlight the new order
     setOrderFilterTab("activos");
 
-    // Success Notification Alert
-    alert(`🚗 ¡Vehículo Ingresado con Éxito!\n\n` +
-          `• Vehículo: ${nueva.vehiculo}\n` +
-          `• Cliente: ${nueva.cliente}\n` +
-          `• Estado: En recepción\n\n` +
-          `La orden se ha creado en 'Trabajos en Proceso' y el formulario se ha limpiado correctamente.`);
+    // Defer Success Notification Alert until after React updates DOM
+    setTimeout(() => {
+      alert(`🚗 ¡Vehículo Ingresado con Éxito!\n\n` +
+            `• Vehículo: ${vehDesc}\n` +
+            `• Cliente: ${cliNombre}\n` +
+            `• Estado: En recepción\n\n` +
+            `La orden se ha creado en 'Trabajos en Proceso' y el formulario se ha limpiado correctamente.`);
+    }, 100);
   };
 
   const cambiarEstado = (id, nuevoEstado) => {
@@ -3256,6 +3273,37 @@ export default function Taller({
               <Plus size={20} color="var(--color-primary)" />
               <h3 style={styles.formTitle}>Nueva Orden de Reparación</h3>
             </div>
+
+            {ingresoExitosoMsg && (
+              <div style={{
+                backgroundColor: "rgba(16, 185, 129, 0.2)",
+                border: "2px solid #10b981",
+                color: "#34d399",
+                padding: "12px 16px",
+                borderRadius: "12px",
+                marginBottom: "16px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between"
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <span style={{ fontSize: "1.4rem" }}>✅</span>
+                  <div>
+                    <div style={{ fontWeight: "800", fontSize: "0.95rem" }}>¡Vehículo Ingresado con Éxito!</div>
+                    <div style={{ fontSize: "0.8rem", color: "#a7f3d0" }}>
+                      {ingresoExitosoMsg.vehiculo} ({ingresoExitosoMsg.cliente}) ya está en Trabajos en Proceso.
+                    </div>
+                  </div>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => setIngresoExitosoMsg(null)}
+                  style={{ background: "none", border: "none", color: "#34d399", cursor: "pointer", fontSize: "1.2rem", fontWeight: "bold" }}
+                >
+                  &times;
+                </button>
+              </div>
+            )}
             
             <form onSubmit={crearOrden} style={styles.form}>
               {/* Placa - Dedicated Full Width Row like Carwash (First field) */}
