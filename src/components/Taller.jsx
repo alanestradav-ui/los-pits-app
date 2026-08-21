@@ -955,9 +955,8 @@ export default function Taller({
       return updated;
     });
     registrarClienteYVehiculo(nueva);
-    if (typeof addPuntosLealtad === "function") {
-      addPuntosLealtad(nueva.telefono, nueva.cliente, nueva.total, "taller", nueva.total);
-    }
+
+    // Reset Form Fields
     setCliente("");
     setTelefono("");
     setPlatePrefix("P");
@@ -978,11 +977,34 @@ export default function Taller({
     setMotivosIngreso([]);
     setInputMotivo("");
     setCajeroComisionApplies(false);
+    setActiveFieldSuggestions(null);
+    setSuggestions([]);
+
     const initCheck = {};
     defaultChecklistItems.forEach(item => {
       initCheck[item.id] = { status: "Bueno", note: "" };
     });
     setChecklist(initCheck);
+
+    // Reset DOM file and text inputs
+    try {
+      const photosInput = document.getElementById("taller-photos-input");
+      if (photosInput) photosInput.value = "";
+      const customWarningInput = document.getElementById("custom-warning-label");
+      if (customWarningInput) customWarningInput.value = "";
+    } catch (err) {
+      console.warn("Could not reset DOM input values:", err);
+    }
+
+    // Switch view filter to "Trabajos en Proceso" to highlight the new order
+    setOrderFilterTab("activos");
+
+    // Success Notification Alert
+    alert(`🚗 ¡Vehículo Ingresado con Éxito!\n\n` +
+          `• Vehículo: ${nueva.vehiculo}\n` +
+          `• Cliente: ${nueva.cliente}\n` +
+          `• Estado: En recepción\n\n` +
+          `La orden se ha creado en 'Trabajos en Proceso' y el formulario se ha limpiado correctamente.`);
   };
 
   const cambiarEstado = (id, nuevoEstado) => {
