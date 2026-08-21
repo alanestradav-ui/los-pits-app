@@ -925,18 +925,15 @@ export default function Taller({
 
   const crearOrden = (e) => {
     e.preventDefault();
-    isSubmittingFormRef.current = true;
 
     const cleanNum = plateNumber.trim().toUpperCase();
     if (!cliente.trim() || !telefono.trim() || !cleanNum || !marca.trim() || !linea.trim()) {
       alert("Completa todos los campos obligatorios (Placa, Cliente, Teléfono, Marca y Línea).");
-      isSubmittingFormRef.current = false;
       return;
     }
 
     if (!motivosIngreso || motivosIngreso.length === 0) {
       alert("Debes seleccionar al menos un motivo de ingreso.");
-      isSubmittingFormRef.current = false;
       return;
     }
 
@@ -978,6 +975,7 @@ export default function Taller({
       cajeroComisionApplies
     };
 
+    // Save the order immediately (synchronous)
     setOrdenes(prev => {
       const safePrev = Array.isArray(prev) ? prev : [];
       const exists = safePrev.some(o => String(o.id) === String(nueva.id));
@@ -987,75 +985,72 @@ export default function Taller({
     });
     registrarClienteYVehiculo(nueva);
 
-    // Reset Native Form Element if target exists
-    if (e && e.target && typeof e.target.reset === "function") {
-      try { e.target.reset(); } catch (err) {}
-    }
-
-    // Reset Form Fields
-    setCliente("");
-    setTelefono("");
-    setPlatePrefix("P");
-    setPlateNumber("");
-    setMarca("");
-    setLinea("");
-    setAnio("");
-    setColor("");
-    setKilometraje("");
-    setChasis("");
-    setCombustible(50);
-    setLuces([]);
-    setMecanico("");
-    setPrecio("");
-    setFotos([]);
-    setNit("");
-    setNombreFacturacion("");
-    setMotivosIngreso([]);
-    setInputMotivo("");
-    setCajeroComisionApplies(false);
-    setActiveFieldSuggestions(null);
-    setSuggestions([]);
-
-    const initCheck = {};
-    defaultChecklistItems.forEach(item => {
-      initCheck[item.id] = { status: "Bueno", note: "" };
-    });
-    setChecklist(initCheck);
-
-    // Reset DOM file and text inputs
-    try {
-      const photosInput = document.getElementById("taller-photos-input");
-      if (photosInput) photosInput.value = "";
-      const customWarningInput = document.getElementById("custom-warning-label");
-      if (customWarningInput) customWarningInput.value = "";
-    } catch (err) {
-      console.warn("Could not reset DOM input values:", err);
-    }
-
-    // Trigger Instant Inline Success Notification Banner
+    // Capture description for notifications before state is cleared
     const vehDesc = nueva.vehiculo;
     const cliNombre = nueva.cliente;
-    setIngresoExitosoMsg({
-      vehiculo: vehDesc,
-      cliente: cliNombre
-    });
-    setTimeout(() => setIngresoExitosoMsg(null), 7000);
 
-    // Force React to destroy and recreate the form DOM (bulletproof reset)
-    setFormResetKey(prev => prev + 1);
-
-    // Switch view filter to "Trabajos en Proceso" to highlight the new order
-    setOrderFilterTab("activos");
-
-    // Defer Success Notification Alert and unlock isSubmittingFormRef
+    // === DEFERRED RESET ===
+    // Use setTimeout(0) to guarantee this runs AFTER any onBlur handlers
+    // that may have fired during the button click and re-filled fields.
+    // onBlur fires synchronously before onSubmit; setTimeout(0) runs after both.
     setTimeout(() => {
-      isSubmittingFormRef.current = false;
-      alert(`🚗 ¡Vehículo Ingresado con Éxito!\n\n` +
-            `• Vehículo: ${vehDesc}\n` +
-            `• Cliente: ${cliNombre}\n` +
-            `• Estado: En recepción\n\n` +
-            `La orden se ha creado en 'Trabajos en Proceso' y el formulario se ha limpiado correctamente.`);
-    }, 150);
+      // Reset all form state
+      setCliente("");
+      setTelefono("");
+      setPlatePrefix("P");
+      setPlateNumber("");
+      setMarca("");
+      setLinea("");
+      setAnio("");
+      setColor("");
+      setKilometraje("");
+      setChasis("");
+      setCombustible(50);
+      setLuces([]);
+      setMecanico("");
+      setPrecio("");
+      setFotos([]);
+      setNit("");
+      setNombreFacturacion("");
+      setMotivosIngreso([]);
+      setInputMotivo("");
+      setCajeroComisionApplies(false);
+      setActiveFieldSuggestions(null);
+      setSuggestions([]);
+
+      const initCheck = {};
+      defaultChecklistItems.forEach(item => {
+        initCheck[item.id] = { status: "Bueno", note: "" };
+      });
+      setChecklist(initCheck);
+
+      // Reset uncontrolled DOM elements
+      try {
+        const photosInput = document.getElementById("taller-photos-input");
+        if (photosInput) photosInput.value = "";
+        const customWarningInput = document.getElementById("custom-warning-label");
+        if (customWarningInput) customWarningInput.value = "";
+      } catch (err) {}
+
+      // Show inline success banner
+      setIngresoExitosoMsg({ vehiculo: vehDesc, cliente: cliNombre });
+      setTimeout(() => setIngresoExitosoMsg(null), 7000);
+
+      // Force React to destroy and recreate the entire form DOM
+      setFormResetKey(prev => prev + 1);
+
+      // Switch view to show the new order
+      setOrderFilterTab("activos");
+
+      // Show confirmation alert after React has painted
+      setTimeout(() => {
+        alert(`🚗 ¡Vehículo Ingresado con Éxito!\n\n` +
+              `• Vehículo: ${vehDesc}\n` +
+              `• Cliente: ${cliNombre}\n` +
+              `• Estado: En recepción\n\n` +
+              `La orden se ha creado en 'Trabajos en Proceso'.`);
+      }, 200);
+    }, 0);
   };
 
   const cambiarEstado = (id, nuevoEstado) => {
@@ -3915,9 +3910,7 @@ export default function Taller({
                 </div>
               </div>
 
-              <button type="submit" className="btn btn-primary" style={styles.submitBtn}
-                onMouseDown={(e) => e.preventDefault()}
-              >
+              <button type="submit" className="btn btn-primary" style={styles.submitBtn}>
                 <Wrench size={18} />
                 Ingresar Vehículo
               </button>
