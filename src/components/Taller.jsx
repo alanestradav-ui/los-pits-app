@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { 
   Wrench, 
@@ -218,6 +218,7 @@ export default function Taller({
   const [precio, setPrecio] = useState("");
   const [fotos, setFotos] = useState([]);
   const [ingresoExitosoMsg, setIngresoExitosoMsg] = useState(null);
+  const isSubmittingFormRef = useRef(false);
 
   // Client and vehicle suggestions states
   const [activeFieldSuggestions, setActiveFieldSuggestions] = useState(null);
@@ -923,14 +924,18 @@ export default function Taller({
 
   const crearOrden = (e) => {
     e.preventDefault();
+    isSubmittingFormRef.current = true;
+
     const cleanNum = plateNumber.trim().toUpperCase();
     if (!cliente.trim() || !telefono.trim() || !cleanNum || !marca.trim() || !linea.trim()) {
       alert("Completa todos los campos obligatorios (Placa, Cliente, Teléfono, Marca y Línea).");
+      isSubmittingFormRef.current = false;
       return;
     }
 
     if (!motivosIngreso || motivosIngreso.length === 0) {
       alert("Debes seleccionar al menos un motivo de ingreso.");
+      isSubmittingFormRef.current = false;
       return;
     }
 
@@ -1038,14 +1043,15 @@ export default function Taller({
     // Switch view filter to "Trabajos en Proceso" to highlight the new order
     setOrderFilterTab("activos");
 
-    // Defer Success Notification Alert until after React updates DOM
+    // Defer Success Notification Alert and unlock isSubmittingFormRef
     setTimeout(() => {
+      isSubmittingFormRef.current = false;
       alert(`🚗 ¡Vehículo Ingresado con Éxito!\n\n` +
             `• Vehículo: ${vehDesc}\n` +
             `• Cliente: ${cliNombre}\n` +
             `• Estado: En recepción\n\n` +
             `La orden se ha creado en 'Trabajos en Proceso' y el formulario se ha limpiado correctamente.`);
-    }, 100);
+    }, 150);
   };
 
   const cambiarEstado = (id, nuevoEstado) => {
@@ -3331,6 +3337,7 @@ export default function Taller({
                     value={plateNumber}
                     onChange={(e) => handlePlacaInput(e.target.value.toUpperCase())}
                     onBlur={(e) => {
+                      if (isSubmittingFormRef.current) return;
                       const val = e.target.value.trim().toUpperCase();
                       const fullPlc = platePrefix === "Extranjera" ? val : `${platePrefix}-${val}`;
                       if (val) {
@@ -3380,6 +3387,7 @@ export default function Taller({
                       value={cliente}
                       onChange={(e) => setCliente(e.target.value)}
                       onBlur={(e) => {
+                        if (isSubmittingFormRef.current) return;
                         const nameVal = e.target.value.trim();
                         if (nameVal && !telefono) {
                           const match = (clientes || []).find(c => c.nombre?.toLowerCase().trim() === nameVal.toLowerCase());
@@ -3406,6 +3414,7 @@ export default function Taller({
                     value={telefono}
                     onChange={(e) => handleTelefonoInput(e.target.value)}
                     onBlur={(e) => {
+                      if (isSubmittingFormRef.current) return;
                       const val = e.target.value.trim();
                       if (val) {
                         const match = (clientes || []).find(c => c.telefono === val);
