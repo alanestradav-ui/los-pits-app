@@ -219,6 +219,7 @@ export default function Taller({
   const [fotos, setFotos] = useState([]);
   const [ingresoExitosoMsg, setIngresoExitosoMsg] = useState(null);
   const isSubmittingFormRef = useRef(false);
+  const [formResetKey, setFormResetKey] = useState(0);
 
   // Client and vehicle suggestions states
   const [activeFieldSuggestions, setActiveFieldSuggestions] = useState(null);
@@ -1039,6 +1040,9 @@ export default function Taller({
       cliente: cliNombre
     });
     setTimeout(() => setIngresoExitosoMsg(null), 7000);
+
+    // Force React to destroy and recreate the form DOM (bulletproof reset)
+    setFormResetKey(prev => prev + 1);
 
     // Switch view filter to "Trabajos en Proceso" to highlight the new order
     setOrderFilterTab("activos");
@@ -3311,7 +3315,7 @@ export default function Taller({
               </div>
             )}
             
-            <form onSubmit={crearOrden} style={styles.form}>
+            <form key={formResetKey} onSubmit={crearOrden} style={styles.form}>
               {/* Placa - Dedicated Full Width Row like Carwash (First field) */}
               <div style={{ ...styles.inputGroup, position: "relative" }}>
                 <label style={styles.label}>Placa *</label>
@@ -3911,7 +3915,9 @@ export default function Taller({
                 </div>
               </div>
 
-              <button type="submit" className="btn btn-primary" style={styles.submitBtn}>
+              <button type="submit" className="btn btn-primary" style={styles.submitBtn}
+                onMouseDown={(e) => e.preventDefault()}
+              >
                 <Wrench size={18} />
                 Ingresar Vehículo
               </button>
