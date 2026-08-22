@@ -12,7 +12,9 @@ import {
   UserCheck,
   Warehouse,
   AlertTriangle,
-  Edit
+  Edit,
+  Pencil,
+  X
 } from "lucide-react";
 import { formatMoney, setLocalStorage, setTenantLocalStorage } from "../utils/storage";
 import { syncKeyToCloud } from "../utils/supabase";
@@ -126,6 +128,7 @@ export default function Carwash({
   const [searchQuery, setSearchQuery] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedFullPhoto, setSelectedFullPhoto] = useState(null);
+  const [editingWashOrder, setEditingWashOrder] = useState(null);
 
   const [nit, setNit] = useState("");
   const [nombreFacturacion, setNombreFacturacion] = useState("");
@@ -369,6 +372,112 @@ export default function Carwash({
     setShowSuggestions(true);
   };
 
+  const registrarClienteYVehiculo = (order) => {
+    const tel = order.telefono?.trim();
+    if (tel && typeof setClientes === "function") {
+      setClientes(prev => {
+        const safePrev = Array.isArray(prev) ? prev : [];
+        const exists = safePrev.find(c => c.telefono === tel);
+        const updated = exists ? safePrev.map(c => c.telefono === tel ? {
+          ...c,
+          nombre: order.cliente.trim(),
+          nit: order.nit || c.nit,
+          nombreFacturacion: order.nombreFacturacion || c.nombreFacturacion
+        } : c) : [...safePrev, {
+          telefono: tel,
+          nombre: order.cliente.trim(),
+          nit: order.nit || "C/F",
+          nombreFacturacion: order.nombreFacturacion || order.cliente.trim(),
+          fechaRegistro: new Date().toISOString()
+        }];
+        setTenantLocalStorage("clientes", updated, tenantId);
+        return updated;
+      });
+    }
+
+    const plc = (order.vehiculo?.placa || order.placa)?.toUpperCase()?.trim();
+    const chs = order.chasis?.toUpperCase()?.trim();
+    const vehMarca = (order.vehiculo?.marca || order.marca || "").trim();
+    const vehLinea = (order.vehiculo?.linea || order.linea || "").trim();
+    const vehColor = (order.vehiculo?.color || order.color || "").trim();
+    const vehAnio = order.anio || "";
+
+    if ((plc || chs) && typeof setVehiculos === "function") {
+      setVehiculos(prev => {
+        const safePrev = Array.isArray(prev) ? prev : [];
+        const matchIndex = safePrev.findIndex(v => 
+          (plc && v.placa === plc) || (chs && v.chasis === chs)
+        );
+        const updated = matchIndex > -1 ? safePrev.map((v, idx) => idx === matchIndex ? {
+          ...v,
+          placa: plc || v.placa,
+          chasis: chs || v.chasis,
+          marca: vehMarca || v.marca,
+          linea: vehLinea || v.linea,
+          anio: vehAnio || v.anio,
+          color: vehColor || v.color,
+          clienteTelefono: tel || v.clienteTelefono
+        } : v) : [...safePrev, {
+          placa: plc || "",
+          chasis: chs || "",
+          marca: vehMarca,
+          linea: vehLinea,
+          anio: vehAnio,
+          color: vehColor,
+          clienteTelefono: tel || "",
+          fechaRegistro: new Date().toISOString()
+        }];
+        setTenantLocalStorage("vehiculos", updated, tenantId);
+        return updated;
+      });
+    }
+  };
+
+  const guardarEdicionLavado = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!editingWashOrder) return;
+
+    const parsedPlate = parsePlate(editingWashOrder.vehiculo?.placa || "");
+    const cleanNum = (editingWashOrder.plateNumber || parsedPlate.number || "").trim().toUpperCase();
+    const pref = editingWashOrder.platePrefix || parsedPlate.prefix || "P";
+    const fullPlaca = pref === "Extranjera" ? cleanNum : (cleanNum.includes("-") ? cleanNum : `${pref}-${cleanNum}`);
+
+    const clienteVal = (editingWashOrder.cliente || "").trim() || "Cliente General";
+    const telVal = (editingWashOrder.telefono || "").trim();
+    const marcaVal = (editingWashOrder.vehiculo?.marca || editingWashOrder.marca || "").trim();
+    const lineaVal = (editingWashOrder.vehiculo?.linea || editingWashOrder.linea || "").trim();
+    const colorVal = (editingWashOrder.vehiculo?.color || editingWashOrder.color || "").trim();
+    const tipoVal = (editingWashOrder.tipo || "").trim() || "Estándar";
+
+    const updatedOrder = {
+      ...editingWashOrder,
+      cliente: clienteVal,
+      telefono: telVal,
+      tipo: tipoVal,
+      nit: (editingWashOrder.nit || "").trim() || "C/F",
+      nombreFacturacion: (editingWashOrder.nombreFacturacion || "").trim() || clienteVal,
+      vehiculo: {
+        ...(editingWashOrder.vehiculo || {}),
+        placa: fullPlaca,
+        marca: marcaVal,
+        linea: lineaVal,
+        color: colorVal
+      },
+      updatedAt: new Date().toISOString()
+    };
+
+    const updatedList = (carwash || []).map(c => c.id === editingWashOrder.id ? updatedOrder : c);
+    setCarwash(updatedList);
+    setTenantLocalStorage("carwash", updatedList, tenantId);
+
+    if (typeof registrarClienteYVehiculo === "function") {
+      registrarClienteYVehiculo(updatedOrder);
+    }
+
+    setEditingWashOrder(null);
+    alert("¡Datos del lavado actualizados correctamente!");
+  };
+
   const selectVehicle = (v) => {
     if (v.placa) {
       const parsed = parsePlate(v.placa);
@@ -378,19 +487,24 @@ export default function Carwash({
       setPlatePrefix("P");
       setPlateNumber("");
     }
-    setCliente(v.cliente);
-    setTelefono(v.telefono);
-    setMarca(v.marca);
-    setLinea(v.linea);
+    // Only autofill client if currently empty or generic
+    if (!cliente.trim() || cliente.trim() === "Cliente General") {
+      setCliente(v.cliente || "");
+    }
+    if (!telefono.trim()) {
+      setTelefono(v.telefono || "");
+    }
+    setMarca(v.marca || "");
+    setLinea(v.linea || "");
     if (v.color) setColor(v.color);
     if (v.anio) setAnio(v.anio);
     if (v.chasis) setChasis(v.chasis);
     
-    // Look up NIT and Billing name from owner!
+    // Look up NIT and Billing name from owner if not set
     const owner = (clientes || []).find(c => c.telefono === v.telefono);
     if (owner) {
-      if (owner.nit) setNit(owner.nit);
-      if (owner.nombreFacturacion) setNombreFacturacion(owner.nombreFacturacion);
+      if (owner.nit && !nit.trim()) setNit(owner.nit);
+      if (owner.nombreFacturacion && !nombreFacturacion.trim()) setNombreFacturacion(owner.nombreFacturacion);
     }
     
     setShowSuggestions(false);
@@ -582,62 +696,6 @@ export default function Carwash({
       combustible,
       luces,
       checklist
-    };
-
-    const registrarClienteYVehiculo = (order) => {
-      const tel = order.telefono?.trim();
-      if (tel && setClientes) {
-        setClientes(prev => {
-          const safePrev = Array.isArray(prev) ? prev : [];
-          const exists = safePrev.find(c => c.telefono === tel);
-          const updated = exists ? safePrev.map(c => c.telefono === tel ? {
-            ...c,
-            nombre: order.cliente.trim(),
-            nit: order.nit || c.nit,
-            nombreFacturacion: order.nombreFacturacion || c.nombreFacturacion
-          } : c) : [...safePrev, {
-            telefono: tel,
-            nombre: order.cliente.trim(),
-            nit: order.nit || "C/F",
-            nombreFacturacion: order.nombreFacturacion || order.cliente.trim(),
-            fechaRegistro: new Date().toISOString()
-          }];
-          setTenantLocalStorage("clientes", updated, tenantId);
-          return updated;
-        });
-      }
-
-      const plc = order.vehiculo?.placa?.toUpperCase()?.trim();
-      const chs = order.chasis?.toUpperCase()?.trim();
-      if ((plc || chs) && setVehiculos) {
-        setVehiculos(prev => {
-          const safePrev = Array.isArray(prev) ? prev : [];
-          const matchIndex = safePrev.findIndex(v => 
-            (plc && v.placa === plc) || (chs && v.chasis === chs)
-          );
-          const updated = matchIndex > -1 ? safePrev.map((v, idx) => idx === matchIndex ? {
-            ...v,
-            placa: plc || v.placa,
-            chasis: chs || v.chasis,
-            marca: order.vehiculo.marca.trim(),
-            linea: order.vehiculo.linea.trim(),
-            anio: order.anio || v.anio,
-            color: order.vehiculo.color || v.color,
-            clienteTelefono: tel || v.clienteTelefono
-          } : v) : [...safePrev, {
-            placa: plc || "",
-            chasis: chs || "",
-            marca: order.vehiculo.marca.trim(),
-            linea: order.vehiculo.linea.trim(),
-            anio: order.anio || "",
-            color: order.vehiculo.color || "",
-            clienteTelefono: tel || "",
-            fechaRegistro: new Date().toISOString()
-          }];
-          setTenantLocalStorage("vehiculos", updated, tenantId);
-          return updated;
-        });
-      }
     };
 
     setCarwash(prev => {
@@ -1620,34 +1678,6 @@ export default function Carwash({
                       className="input-field"
                       value={cliente}
                       onChange={(e) => setCliente(e.target.value)}
-                      onBlur={(e) => {
-                        const nameVal = e.target.value.trim();
-                        if (nameVal && !telefono) {
-                          const match = (clientes || []).find(c => c.nombre?.toLowerCase().trim() === nameVal.toLowerCase());
-                          if (match) {
-                            const isSame = window.confirm(`Ya existe un cliente registrado con el nombre "${match.nombre}" (Tel: ${match.telefono}).\n\n¿Es la misma persona? (Si confirmas, se llenarán todos sus datos automáticamente)`);
-                            if (isSame) {
-                              setCliente(match.nombre || "");
-                              setTelefono(match.telefono || "");
-                              if (match.nit) setNit(match.nit);
-                              if (match.nombreFacturacion) setNombreFacturacion(match.nombreFacturacion);
-                              
-                              // Find their vehicle if any
-                              const clientVehicle = (vehiculos || []).find(v => v.clienteTelefono === match.telefono);
-                              if (clientVehicle && clientVehicle.placa) {
-                                const p = parsePlate(clientVehicle.placa);
-                                setPlatePrefix(p.prefix);
-                                setPlateNumber(p.number);
-                                setMarca(clientVehicle.marca || "");
-                                setLinea(clientVehicle.linea || "");
-                                if (clientVehicle.color) setColor(clientVehicle.color);
-                                if (clientVehicle.anio) setAnio(clientVehicle.anio);
-                                if (clientVehicle.chasis) setChasis(clientVehicle.chasis);
-                              }
-                            }
-                          }
-                        }
-                      }}
                       style={styles.input}
                     />
                   </div>
@@ -1662,44 +1692,24 @@ export default function Carwash({
                       const val = e.target.value;
                       setTelefono(val);
                       
-                      const exactMatch = (clientes || []).find(c => c.telefono === val.trim());
-                      if (exactMatch) {
-                        setCliente(exactMatch.nombre || "");
-                        if (exactMatch.nit) setNit(exactMatch.nit);
-                        if (exactMatch.nombreFacturacion) setNombreFacturacion(exactMatch.nombreFacturacion);
-                        
-                        // Find their vehicle
-                        const clientVehicle = (vehiculos || []).find(v => v.clienteTelefono === exactMatch.telefono);
-                        if (clientVehicle && clientVehicle.placa) {
-                          const p = parsePlate(clientVehicle.placa);
-                          setPlatePrefix(p.prefix);
-                          setPlateNumber(p.number);
-                          setMarca(clientVehicle.marca || "");
-                          setLinea(clientVehicle.linea || "");
-                          if (clientVehicle.color) setColor(clientVehicle.color);
-                          if (clientVehicle.anio) setAnio(clientVehicle.anio);
-                          if (clientVehicle.chasis) setChasis(clientVehicle.chasis);
+                      // Only autofill client if client name is currently empty or generic
+                      if (!cliente.trim() || cliente.trim() === "Cliente General") {
+                        const exactMatch = (clientes || []).find(c => c.telefono === val.trim());
+                        if (exactMatch && exactMatch.nombre) {
+                          setCliente(exactMatch.nombre);
+                          if (exactMatch.nit && !nit.trim()) setNit(exactMatch.nit);
+                          if (exactMatch.nombreFacturacion && !nombreFacturacion.trim()) setNombreFacturacion(exactMatch.nombreFacturacion);
                         }
                       }
                     }}
                     onBlur={(e) => {
                       const val = e.target.value.trim();
-                      const exactMatch = (clientes || []).find(c => c.telefono === val);
-                      if (exactMatch) {
-                        setCliente(exactMatch.nombre || "");
-                        if (exactMatch.nit) setNit(exactMatch.nit);
-                        if (exactMatch.nombreFacturacion) setNombreFacturacion(exactMatch.nombreFacturacion);
-                        
-                        const clientVehicle = (vehiculos || []).find(v => v.clienteTelefono === exactMatch.telefono);
-                        if (clientVehicle && clientVehicle.placa) {
-                          const p = parsePlate(clientVehicle.placa);
-                          setPlatePrefix(p.prefix);
-                          setPlateNumber(p.number);
-                          setMarca(clientVehicle.marca || "");
-                          setLinea(clientVehicle.linea || "");
-                          if (clientVehicle.color) setColor(clientVehicle.color);
-                          if (clientVehicle.anio) setAnio(clientVehicle.anio);
-                          if (clientVehicle.chasis) setChasis(clientVehicle.chasis);
+                      if (!cliente.trim() || cliente.trim() === "Cliente General") {
+                        const exactMatch = (clientes || []).find(c => c.telefono === val);
+                        if (exactMatch && exactMatch.nombre) {
+                          setCliente(exactMatch.nombre);
+                          if (exactMatch.nit && !nit.trim()) setNit(exactMatch.nit);
+                          if (exactMatch.nombreFacturacion && !nombreFacturacion.trim()) setNombreFacturacion(exactMatch.nombreFacturacion);
                         }
                       }
                     }}
@@ -2372,7 +2382,43 @@ export default function Carwash({
                     {/* Top Row: Service Description & Badges */}
                     <div style={styles.cardHeader}>
                       <div>
-                        <h4 style={styles.clientName}>{c.cliente || "Cliente General"}</h4>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <h4 style={styles.clientName}>{c.cliente || "Cliente General"}</h4>
+                          {isManager && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const p = parsePlate(c.vehiculo?.placa || "");
+                                setEditingWashOrder({
+                                  ...c,
+                                  platePrefix: p.prefix,
+                                  plateNumber: p.number,
+                                  marca: c.vehiculo?.marca || "",
+                                  linea: c.vehiculo?.linea || "",
+                                  color: c.vehiculo?.color || "",
+                                  cliente: c.cliente || "",
+                                  telefono: c.telefono || "",
+                                  nit: c.nit || "C/F",
+                                  nombreFacturacion: c.nombreFacturacion || c.cliente || "",
+                                  tipo: c.tipo || "Estándar"
+                                });
+                              }}
+                              style={{
+                                background: "none",
+                                border: "none",
+                                color: "var(--color-secondary)",
+                                cursor: "pointer",
+                                padding: "2px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                opacity: 0.8
+                              }}
+                              title="Editar Datos del Cliente y Vehículo"
+                            >
+                              <Pencil size={13} />
+                            </button>
+                          )}
+                        </div>
                         <p style={styles.vehicleText}>
                           {c.vehiculo ? `${c.vehiculo.marca} ${c.vehiculo.linea} (${c.vehiculo.placa})` : `Lavado ${c.tipo}`}
                         </p>
@@ -3287,6 +3333,202 @@ export default function Carwash({
                   style={{ backgroundColor: "var(--color-success)", borderColor: "var(--color-success)", fontWeight: "800" }}
                 >
                   💾 Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* MODAL: EDIT ACTIVE WASH CLIENT / VEHICLE DETAILS */}
+      {editingWashOrder && createPortal(
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0, 0, 0, 0.75)",
+          backdropFilter: "blur(6px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 99999,
+          padding: "20px"
+        }}>
+          <div className="glass-panel" style={{
+            width: "100%",
+            maxWidth: "600px",
+            maxHeight: "90vh",
+            overflowY: "auto",
+            padding: "24px",
+            borderRadius: "16px",
+            backgroundColor: "#111827",
+            border: "1px solid rgba(255, 255, 255, 0.1)",
+            boxShadow: "0 25px 50px rgba(0, 0, 0, 0.7)"
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "12px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <Pencil size={20} color="var(--color-secondary)" />
+                <h3 style={{ fontSize: "1.2rem", fontWeight: "800", margin: 0, color: "#fff" }}>
+                  Editar Datos del Lavado
+                </h3>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setEditingWashOrder(null)} 
+                style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "1.4rem" }}
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={guardarEdicionLavado} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              {/* Placa */}
+              <div>
+                <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Placa</label>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <select
+                    className="input-field"
+                    value={editingWashOrder.platePrefix || "P"}
+                    onChange={(e) => setEditingWashOrder({ ...editingWashOrder, platePrefix: e.target.value })}
+                    style={{ width: "110px", padding: "8px" }}
+                  >
+                    <option value="P">P</option>
+                    <option value="A">A</option>
+                    <option value="MI">MI</option>
+                    <option value="CD">CD</option>
+                    <option value="C">C</option>
+                    <option value="M">M</option>
+                    <option value="DIS">DIS</option>
+                    <option value="Extranjera">Extranjera</option>
+                  </select>
+                  <input
+                    type="text"
+                    className="input-field"
+                    placeholder="123XYZ"
+                    value={editingWashOrder.plateNumber || ""}
+                    onChange={(e) => setEditingWashOrder({ ...editingWashOrder, plateNumber: e.target.value.toUpperCase() })}
+                    style={{ flex: 1, textTransform: "uppercase" }}
+                  />
+                </div>
+              </div>
+
+              {/* Cliente y Telefono */}
+              <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: "12px" }}>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Cliente *</label>
+                  <input
+                    type="text"
+                    required
+                    className="input-field"
+                    value={editingWashOrder.cliente || ""}
+                    onChange={(e) => setEditingWashOrder({ ...editingWashOrder, cliente: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Teléfono</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingWashOrder.telefono || ""}
+                    onChange={(e) => setEditingWashOrder({ ...editingWashOrder, telefono: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              {/* NIT y Facturacion */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: "12px" }}>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>NIT</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingWashOrder.nit || ""}
+                    onChange={(e) => setEditingWashOrder({ ...editingWashOrder, nit: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Nombre de Facturación</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingWashOrder.nombreFacturacion || ""}
+                    onChange={(e) => setEditingWashOrder({ ...editingWashOrder, nombreFacturacion: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              {/* Marca, Linea, Color */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Marca</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingWashOrder.marca || editingWashOrder.vehiculo?.marca || ""}
+                    onChange={(e) => setEditingWashOrder({
+                      ...editingWashOrder,
+                      marca: e.target.value,
+                      vehiculo: { ...(editingWashOrder.vehiculo || {}), marca: e.target.value }
+                    })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Línea / Modelo</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingWashOrder.linea || editingWashOrder.vehiculo?.linea || ""}
+                    onChange={(e) => setEditingWashOrder({
+                      ...editingWashOrder,
+                      linea: e.target.value,
+                      vehiculo: { ...(editingWashOrder.vehiculo || {}), linea: e.target.value }
+                    })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Color</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editingWashOrder.color || editingWashOrder.vehiculo?.color || ""}
+                    onChange={(e) => setEditingWashOrder({
+                      ...editingWashOrder,
+                      color: e.target.value,
+                      vehiculo: { ...(editingWashOrder.vehiculo || {}), color: e.target.value }
+                    })}
+                  />
+                </div>
+              </div>
+
+              {/* Tipo de Lavado */}
+              <div>
+                <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>Tipo de Lavado</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  value={editingWashOrder.tipo || ""}
+                  onChange={(e) => setEditingWashOrder({ ...editingWashOrder, tipo: e.target.value })}
+                />
+              </div>
+
+              {/* Botones */}
+              <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "10px" }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setEditingWashOrder(null)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ backgroundColor: "var(--color-secondary)", borderColor: "var(--color-secondary)" }}
+                >
+                  Guardar Cambios
                 </button>
               </div>
             </form>

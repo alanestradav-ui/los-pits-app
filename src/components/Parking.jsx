@@ -1135,21 +1135,6 @@ export default function Parking({
                     className="input-field"
                     value={cliente}
                     onChange={(e) => setCliente(e.target.value)}
-                    onBlur={(e) => {
-                      const nameVal = e.target.value.trim();
-                      if (nameVal && !telefono) {
-                        const match = (clientes || []).find(c => c.nombre?.toLowerCase().trim() === nameVal.toLowerCase());
-                        if (match) {
-                          const isSame = window.confirm(`Ya existe un cliente registrado con el nombre "${match.nombre}" (Tel: ${match.telefono}).\n\n¿Es la misma persona? (Si confirmas, se llenarán todos sus datos automáticamente)`);
-                          if (isSame) {
-                            setCliente(match.nombre || "");
-                            setTelefono(match.telefono || "");
-                            if (match.nit) setNit(match.nit);
-                            if (match.nombreFacturacion) setNombreFacturacion(match.nombreFacturacion);
-                          }
-                        }
-                      }
-                    }}
                     style={{ ...styles.input, paddingLeft: "42px" }}
                   />
                 </div>
@@ -1163,20 +1148,24 @@ export default function Parking({
                   onChange={(e) => {
                     const val = e.target.value;
                     setTelefono(val);
-                    const exactMatch = (clientes || []).find(c => c.telefono === val.trim());
-                    if (exactMatch) {
-                      setCliente(exactMatch.nombre || "");
-                      if (exactMatch.nit) setNit(exactMatch.nit);
-                      if (exactMatch.nombreFacturacion) setNombreFacturacion(exactMatch.nombreFacturacion);
+                    if (!cliente.trim()) {
+                      const exactMatch = (clientes || []).find(c => c.telefono === val.trim());
+                      if (exactMatch && exactMatch.nombre) {
+                        setCliente(exactMatch.nombre);
+                        if (exactMatch.nit && !nit.trim()) setNit(exactMatch.nit);
+                        if (exactMatch.nombreFacturacion && !nombreFacturacion.trim()) setNombreFacturacion(exactMatch.nombreFacturacion);
+                      }
                     }
                   }}
                   onBlur={(e) => {
                     const val = e.target.value.trim();
-                    const exactMatch = (clientes || []).find(c => c.telefono === val);
-                    if (exactMatch) {
-                      setCliente(exactMatch.nombre || "");
-                      if (exactMatch.nit) setNit(exactMatch.nit);
-                      if (exactMatch.nombreFacturacion) setNombreFacturacion(exactMatch.nombreFacturacion);
+                    if (!cliente.trim()) {
+                      const exactMatch = (clientes || []).find(c => c.telefono === val);
+                      if (exactMatch && exactMatch.nombre) {
+                        setCliente(exactMatch.nombre);
+                        if (exactMatch.nit && !nit.trim()) setNit(exactMatch.nit);
+                        if (exactMatch.nombreFacturacion && !nombreFacturacion.trim()) setNombreFacturacion(exactMatch.nombreFacturacion);
+                      }
                     }
                   }}
                 />

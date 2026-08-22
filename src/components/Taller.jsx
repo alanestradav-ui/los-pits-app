@@ -738,12 +738,14 @@ export default function Taller({
       c.nombre?.toLowerCase().includes(val.toLowerCase())
     );
 
-    // If exact match on phone number, autofill client details
+    // If exact match on phone number and client is empty, autofill client details
     const exactMatch = (clientes || []).find(c => c.telefono === val.trim());
     if (exactMatch) {
-      setCliente(exactMatch.nombre || "");
-      if (exactMatch.nit) setNit(exactMatch.nit);
-      if (exactMatch.nombreFacturacion) setNombreFacturacion(exactMatch.nombreFacturacion);
+      if (!cliente.trim()) {
+        setCliente(exactMatch.nombre || "");
+      }
+      if (exactMatch.nit && !nit.trim()) setNit(exactMatch.nit);
+      if (exactMatch.nombreFacturacion && !nombreFacturacion.trim()) setNombreFacturacion(exactMatch.nombreFacturacion);
     }
     
     setSuggestions(matches.slice(0, 5));
@@ -807,12 +809,12 @@ export default function Taller({
     if (v.color) setColor(v.color);
     
     if (v.clienteTelefono) {
-      setTelefono(v.clienteTelefono);
+      if (!telefono.trim()) setTelefono(v.clienteTelefono);
       const owner = (clientes || []).find(c => c.telefono === v.clienteTelefono);
       if (owner) {
-        setCliente(owner.nombre || "");
-        if (owner.nit) setNit(owner.nit);
-        if (owner.nombreFacturacion) setNombreFacturacion(owner.nombreFacturacion);
+        if (!cliente.trim()) setCliente(owner.nombre || "");
+        if (owner.nit && !nit.trim()) setNit(owner.nit);
+        if (owner.nombreFacturacion && !nombreFacturacion.trim()) setNombreFacturacion(owner.nombreFacturacion);
       }
     }
     
@@ -3342,18 +3344,8 @@ export default function Taller({
                       const fullPlc = platePrefix === "Extranjera" ? val : `${platePrefix}-${val}`;
                       if (val) {
                         const match = (vehiculos || []).find(v => v.placa?.toUpperCase().trim() === fullPlc || v.placa?.toUpperCase().trim() === val);
-                        if (match) {
-                          const owner = (clientes || []).find(c => c.telefono === match.clienteTelefono);
-                          const ownerName = owner ? (owner.nombre || "") : "";
-                          
-                          if (!cliente.trim() || cliente.trim() === ownerName) {
-                            selectVehiculoSuggestion(match);
-                          } else {
-                            const isSame = window.confirm(`El vehículo con placa ${fullPlc} está registrado a nombre de "${ownerName}". ¿Deseas cargar los datos de este cliente?`);
-                            if (isSame) {
-                              selectVehiculoSuggestion(match);
-                            }
-                          }
+                        if (match && !cliente.trim()) {
+                          selectVehiculoSuggestion(match);
                         }
                       }
                       setTimeout(() => setActiveFieldSuggestions(null), 200);
@@ -3386,22 +3378,6 @@ export default function Taller({
                       className="input-field"
                       value={cliente}
                       onChange={(e) => setCliente(e.target.value)}
-                      onBlur={(e) => {
-                        if (isSubmittingFormRef.current) return;
-                        const nameVal = e.target.value.trim();
-                        if (nameVal && !telefono) {
-                          const match = (clientes || []).find(c => c.nombre?.toLowerCase().trim() === nameVal.toLowerCase());
-                          if (match) {
-                            const isSame = window.confirm(`Ya existe un cliente registrado con el nombre "${match.nombre}" (Tel: ${match.telefono}).\n\n¿Es la misma persona? (Si confirmas, se llenarán todos sus datos automáticamente)`);
-                            if (isSame) {
-                              setCliente(match.nombre || "");
-                              setTelefono(match.telefono || "");
-                              if (match.nit) setNit(match.nit);
-                              if (match.nombreFacturacion) setNombreFacturacion(match.nombreFacturacion);
-                            }
-                          }
-                        }
-                      }}
                       style={styles.input}
                     />
                   </div>
@@ -3416,21 +3392,12 @@ export default function Taller({
                     onBlur={(e) => {
                       if (isSubmittingFormRef.current) return;
                       const val = e.target.value.trim();
-                      if (val) {
+                      if (val && !cliente.trim()) {
                         const match = (clientes || []).find(c => c.telefono === val);
-                        if (match) {
-                          if (!cliente.trim() || cliente.trim() === match.nombre) {
-                            setCliente(match.nombre || "");
-                            if (match.nit) setNit(match.nit);
-                            if (match.nombreFacturacion) setNombreFacturacion(match.nombreFacturacion);
-                          } else {
-                            const isSame = window.confirm(`El teléfono ingresado ya pertenece a "${match.nombre}". ¿Deseas cargar los datos de este cliente?`);
-                            if (isSame) {
-                              setCliente(match.nombre || "");
-                              if (match.nit) setNit(match.nit);
-                              if (match.nombreFacturacion) setNombreFacturacion(match.nombreFacturacion);
-                            }
-                          }
+                        if (match && match.nombre) {
+                          setCliente(match.nombre);
+                          if (match.nit && !nit.trim()) setNit(match.nit);
+                          if (match.nombreFacturacion && !nombreFacturacion.trim()) setNombreFacturacion(match.nombreFacturacion);
                         }
                       }
                       setTimeout(() => setActiveFieldSuggestions(null), 200);
