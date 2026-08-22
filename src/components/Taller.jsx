@@ -180,6 +180,7 @@ export default function Taller({
   cuentasPorPagar = [],
   setCuentasPorPagar,
   clientes = [],
+  setClientes,
   vehiculos = [],
   setVehiculos,
   carwashPresets = [],
@@ -820,7 +821,7 @@ export default function Taller({
 
   const registrarClienteYVehiculo = (order) => {
     const tel = order.telefono?.trim();
-    if (tel && setClientes) {
+    if (tel && typeof setClientes === "function") {
       setClientes(prev => {
         const safePrev = Array.isArray(prev) ? prev : [];
         const exists = safePrev.find(c => c.telefono === tel);
@@ -843,7 +844,7 @@ export default function Taller({
 
     const plc = order.placa?.toUpperCase()?.trim();
     const chs = order.chasis?.toUpperCase()?.trim();
-    if ((plc || chs) && setVehiculos) {
+    if ((plc || chs) && typeof setVehiculos === "function") {
       setVehiculos(prev => {
         const safePrev = Array.isArray(prev) ? prev : [];
         const matchIndex = safePrev.findIndex(v => 
