@@ -20,7 +20,7 @@ import {
   Phone
 } from "lucide-react";
 import { formatMoney } from "../utils/storage";
-import { generateAppleWalletPassData, generateGoogleWalletPassUrl, generateGiftPassQR, getPortalUrl } from "../utils/wallet";
+import { generateAppleWalletPassData, generateGoogleWalletPassUrl, generateGiftPassQR, getPortalUrl, DEFAULT_CATALOGO_PREMIOS } from "../utils/wallet";
 
 export default function CustomerPortal({
   puntosRecompensas = [],
@@ -115,20 +115,25 @@ export default function CustomerPortal({
     return (t && targetT && t === targetT) || (c && targetC && c.includes(targetC));
   }) : [];
 
-  // Default rewards catalog if empty
-  const defaultPremios = [
-    { id: "p1", titulo: "Carwash Gratis Completo", puntosRequeridos: 150, area: "carwash", icono: "🧼" },
-    { id: "p2", titulo: "50% Desc. en Mano de Obra Alineación", puntosRequeridos: 200, area: "taller", icono: "🛞" },
-    { id: "p3", titulo: "Café Americano o Bebida Gratis", puntosRequeridos: 50, area: "cafeteria", icono: "☕" },
-    { id: "p4", titulo: "Servicio de Cambio de Aceite Gratis (Mano de Obra)", puntosRequeridos: 350, area: "taller", icono: "🛢️" }
-  ];
-
-  const premiosList = Array.isArray(catalogoPremios) && catalogoPremios.length > 0 ? catalogoPremios : defaultPremios;
+  // Synchronized catalog matching LoyaltyRewards
+  const rawList = Array.isArray(catalogoPremios) && catalogoPremios.length > 0 ? catalogoPremios : DEFAULT_CATALOGO_PREMIOS;
+  const premiosList = rawList.map(p => ({
+    id: p.id,
+    nombre: p.nombre || p.titulo || "Servicio Los Pits",
+    titulo: p.nombre || p.titulo || "Servicio Los Pits",
+    puntos: parseInt(p.puntos !== undefined ? p.puntos : p.puntosRequeridos) || 1000,
+    puntosRequeridos: parseInt(p.puntos !== undefined ? p.puntos : p.puntosRequeridos) || 1000,
+    valorEstimado: parseFloat(p.valorEstimado) || 0,
+    descripcion: p.descripcion || "",
+    categoria: p.categoria || p.area || "Carwash",
+    icono: p.icono || (p.categoria === "Detailing" ? "✨" : p.categoria === "Servicios Específicos" ? "🛢️" : p.categoria === "Detailing Avanzado" ? "🏆" : p.categoria === "Premium Detailing" ? "⭐" : "🧼")
+  }));
 
   const handleGenerarRegalo = (premio) => {
     if (!activeCliente) return;
-    if (activeCliente.puntos < premio.puntosRequeridos) {
-      alert(`Necesitas ${premio.puntosRequeridos} Puntos Pits para donar este servicio. Saldo actual: ${activeCliente.puntos} pts.`);
+    const ptsReq = premio.puntos;
+    if (activeCliente.puntos < ptsReq) {
+      alert(`Necesitas ${ptsReq} Puntos Pits para donar este servicio. Saldo actual: ${activeCliente.puntos} pts.`);
       return;
     }
     setSelectedPremio(premio);
@@ -138,13 +143,14 @@ export default function CustomerPortal({
   const handleConfirmarDonacion = (e) => {
     e.preventDefault();
     if (!selectedPremio || !activeCliente) return;
+    const ptsReq = selectedPremio.puntos;
 
     const newGift = generateGiftPassQR({
       clienteDonanteTelefono: activeCliente.telefono,
       clienteDonanteNombre: activeCliente.nombre,
-      servicioNombre: selectedPremio.titulo,
+      servicioNombre: selectedPremio.nombre,
       tipoRegalo: "puntos_donados",
-      puntosConsumidos: selectedPremio.puntosRequeridos,
+      puntosConsumidos: ptsReq,
       invitadoNombre: invitadoNombre.trim() || "Amigo / Familiar",
       invitadoTelefono: invitadoTelefono.trim()
     });
@@ -158,7 +164,7 @@ export default function CustomerPortal({
         (p.nombre && String(p.nombre).toLowerCase().trim() === targetKey)
       );
       if (idx >= 0) {
-        list[idx] = { ...list[idx], puntos: Math.max(0, (parseInt(list[idx].puntos) || 0) - selectedPremio.puntosRequeridos) };
+        list[idx] = { ...list[idx], puntos: Math.max(0, (parseInt(list[idx].puntos) || 0) - ptsReq) };
       }
       return list;
     });
@@ -170,7 +176,7 @@ export default function CustomerPortal({
     // Update local activeCliente state
     setActiveCliente(prev => ({
       ...prev,
-      puntos: Math.max(0, prev.puntos - selectedPremio.puntosRequeridos)
+      puntos: Math.max(0, prev.puntos - ptsReq)
     }));
   };
 
@@ -471,21 +477,32 @@ export default function CustomerPortal({
               <h4 style={styles.sectionTitle}>Servicios Disponibles para Donar</h4>
               <div style={styles.premiosGrid}>
                 {premiosList.map(premio => {
-                  const canAfford = activeCliente.puntos >= premio.puntosRequeridos;
+                  const canAfford = activeCliente.puntos >= premio.puntos;
                   return (
                     <div key={premio.id} style={{ ...styles.premioCard, opacity: canAfford ? 1 : 0.65 }}>
                       <div style={styles.premioIconRow}>
                         <span style={{ fontSize: "28px" }}>{premio.icono || "🎁"}</span>
-                        <span style={styles.premioPtsTag}>{premio.puntosRequeridos} Puntos</span>
+                        <span style={styles.premioPtsTag}>{premio.puntos} Pts</span>
                       </div>
-                      <h5 style={styles.premioTitle}>{premio.titulo}</h5>
+                      <h5 style={styles.premioTitle}>{premio.nombre}</h5>
+                      {premio.descripcion && (
+                        <p style={{ fontSize: "0.78rem", color: "#9ca3af", margin: "4px 0 8px 0", lineHeight: "1.3" }}>
+                          {premio.descripcion}
+                        </p>
+                      )}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", fontSize: "0.75rem" }}>
+                        <span style={{ color: "var(--color-primary)", fontWeight: "600" }}>{premio.categoria}</span>
+                        {premio.valorEstimado > 0 && (
+                          <span style={{ color: "#eab308", fontWeight: "700" }}>Q{premio.valorEstimado.toFixed(2)}</span>
+                        )}
+                      </div>
                       <button
                         onClick={() => handleGenerarRegalo(premio)}
                         className={`btn ${canAfford ? 'btn-primary' : 'btn-ghost'}`}
                         style={styles.premioActionBtn}
                         disabled={!canAfford}
                       >
-                        {canAfford ? "🎁 Generar QR de Regalo" : `Te faltan ${premio.puntosRequeridos - activeCliente.puntos} pts`}
+                        {canAfford ? "🎁 Donar / Regalar Servicio" : `Te faltan ${premio.puntos - activeCliente.puntos} pts`}
                       </button>
                     </div>
                   );
@@ -522,7 +539,7 @@ export default function CustomerPortal({
       {showGiftModal && selectedPremio && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalContent}>
-            <h3 style={styles.modalTitle}>🎁 Regalar {selectedPremio.titulo}</h3>
+            <h3 style={styles.modalTitle}>🎁 Regalar {selectedPremio.nombre}</h3>
             <p style={styles.modalSub}>Ingresa los datos de la persona a quien deseas obsequiarle este servicio.</p>
 
             {!generatedGift ? (
@@ -552,7 +569,7 @@ export default function CustomerPortal({
 
                 <div style={styles.modalSummaryBox}>
                   <span>Puntos a descontar de tu saldo:</span>
-                  <strong>- {selectedPremio.puntosRequeridos} Puntos Pits</strong>
+                  <strong>- {selectedPremio.puntos} Puntos Pits</strong>
                 </div>
 
                 <div style={styles.modalActionsRow}>

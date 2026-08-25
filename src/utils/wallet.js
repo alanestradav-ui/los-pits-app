@@ -5,6 +5,14 @@
 
 import { formatMoney } from "./storage";
 
+export const DEFAULT_CATALOGO_PREMIOS = [
+  { id: "p1", nombre: "Lavado Bronce", puntos: 1000, valorEstimado: 80, descripcion: "Lavado completo de carrocería y aspirado interno", categoria: "Carwash", icono: "🧼" },
+  { id: "p2", nombre: "Encerado a Mano", puntos: 1800, valorEstimado: 150, descripcion: "Aplicación de cera protectora de alta calidad a mano", categoria: "Detailing", icono: "✨" },
+  { id: "p3", nombre: "Lavado de Motor o Chasis", puntos: 2400, valorEstimado: 200, descripcion: "Desengrasado y lavado profundo de motor o chasis", categoria: "Servicios Específicos", icono: "🛢️" },
+  { id: "p4", nombre: "Lavado Oro o Eliminación de Sarro", puntos: 4500, valorEstimado: 450, descripcion: "Lavado detallado profundo con eliminación de sarro o paquete Oro", categoria: "Detailing Avanzado", icono: "🏆" },
+  { id: "p5", nombre: "Pulido y Lustrado Completo", puntos: 10000, valorEstimado: 950, descripcion: "Tratamiento completo de pintura, corrección de barniz y sellado", categoria: "Premium Detailing", icono: "⭐" }
+];
+
 export const getBaseAppUrl = () => {
   if (typeof window !== "undefined" && window.location && window.location.origin) {
     return window.location.origin;

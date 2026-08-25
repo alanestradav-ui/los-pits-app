@@ -22,6 +22,7 @@ import VendorQuotes from "./components/VendorQuotes";
 import LoyaltyRewards from "./components/LoyaltyRewards";
 import CustomerPortal from "./components/CustomerPortal";
 import SaaSAdmin from "./components/SaaSAdmin";
+import { DEFAULT_CATALOGO_PREMIOS } from "./utils/wallet";
 import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocalStorage } from "./utils/storage";
 import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout, processOfflineQueue } from "./utils/supabase";
 import { initHourlyBackupScheduler, checkAndCreateHourlyBackup } from "./services/backupService";
@@ -874,8 +875,8 @@ export default function App() {
   }, [tenantId]);
 
   const [catalogoPremios, setCatalogoPremios] = useState(() => {
-    const val = getTenantLocalStorage("catalogoPremios", [], tenantId);
-    return Array.isArray(val) ? val : [];
+    const val = getTenantLocalStorage("catalogoPremios", DEFAULT_CATALOGO_PREMIOS, tenantId);
+    return Array.isArray(val) && val.length > 0 ? val : DEFAULT_CATALOGO_PREMIOS;
   });
 
   const [historialCanjes, setHistorialCanjes] = useState(() => {
