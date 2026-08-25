@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Smartphone, Share2, QrCode, X, Copy, Check, Gift, Sparkles } from "lucide-react";
-import { generateGiftPassQR } from "../utils/wallet";
+import { generateGiftPassQR, getPortalUrl } from "../utils/wallet";
 
 export default function WalletInviteModal({
   cliente = {},
@@ -19,7 +19,7 @@ export default function WalletInviteModal({
   const nombre = cliente.nombre || "Cliente Los Pits";
   const telefono = cliente.telefono || "";
 
-  const portalUrl = `https://lospits.app/portal?cliente=${encodeURIComponent(telefono || nombre)}`;
+  const portalUrl = getPortalUrl({ cliente: telefono || nombre });
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(portalUrl);
@@ -52,7 +52,8 @@ export default function WalletInviteModal({
 
   const handleShareCortesiaWsp = (gift) => {
     if (!gift) return;
-    const msg = `🎁 *¡Hola ${nombre}!* Gracias por ser cliente de Los Pits. Te regalamos este *Pase de Cortesía para un Amigo*: *${gift.servicioNombre}*.\nReenvíaselo a quien quieras y al presentar este código QR *${gift.codigoQR}* en recepción su servicio será GRATIS. 👉 https://lospits.app/portal?qr=${gift.codigoQR}`;
+    const giftUrl = getPortalUrl({ qr: gift.codigoQR });
+    const msg = `🎁 *¡Hola ${nombre}!* Gracias por ser cliente de Los Pits. Te regalamos este *Pase de Cortesía para un Amigo*: *${gift.servicioNombre}*.\nReenvíaselo a quien quieras y al presentar este código QR *${gift.codigoQR}* en recepción su servicio será GRATIS. 👉 ${giftUrl}`;
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, "_blank");
   };
 

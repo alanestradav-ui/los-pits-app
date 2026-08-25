@@ -1974,6 +1974,36 @@ export default function App() {
     localStorage.removeItem("usuarioActual");
   };
 
+  // 🌐 PUBLIC CLIENT PORTAL VIEW (Direct access for clients via WhatsApp / QR / Portal links)
+  const isPublicPortalView = (() => {
+    if (typeof window === "undefined") return false;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.has("portal") || params.has("cliente") || params.has("telefono") || params.has("placa") || params.has("qr") || window.location.pathname.includes("/portal");
+    } catch (e) {
+      return false;
+    }
+  })();
+
+  if (isPublicPortalView && !usuarioActual) {
+    return (
+      <CustomerPortal 
+        puntosRecompensas={puntosRecompensas}
+        setPuntosRecompensas={setPuntosRecompensas}
+        ordenes={ordenes}
+        carwash={carwash}
+        clientes={clientes}
+        vehiculos={vehiculos}
+        catalogoPremios={catalogoPremios}
+        regalosPasesReferidos={regalosPasesReferidos}
+        setRegalosPasesReferidos={setRegalosPasesReferidos}
+        onClose={() => {
+          window.location.href = window.location.origin;
+        }}
+      />
+    );
+  }
+
   // Render Login page if not authenticated
   if (!usuarioActual) {
     return (

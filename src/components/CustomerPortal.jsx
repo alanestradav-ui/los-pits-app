@@ -20,7 +20,7 @@ import {
   Phone
 } from "lucide-react";
 import { formatMoney } from "../utils/storage";
-import { generateAppleWalletPassData, generateGoogleWalletPassUrl, generateGiftPassQR } from "../utils/wallet";
+import { generateAppleWalletPassData, generateGoogleWalletPassUrl, generateGiftPassQR, getPortalUrl } from "../utils/wallet";
 
 export default function CustomerPortal({
   puntosRecompensas = [],
@@ -176,7 +176,8 @@ export default function CustomerPortal({
 
   const handleShareWhatsApp = (gift) => {
     if (!gift) return;
-    const msg = `🎁 ¡Hola ${gift.invitadoNombre || ''}! Te he regale un servicio de *${gift.servicioNombre}* en *Los Pits Taller & Carwash*. Presenta este código QR en recepción para disfrutarlo gratis: *${gift.codigoQR}*. Ver pase digital: https://lospits.app/portal?qr=${gift.codigoQR}`;
+    const giftUrl = getPortalUrl({ qr: gift.codigoQR });
+    const msg = `🎁 ¡Hola ${gift.invitadoNombre || ''}! Te he regalado un servicio de *${gift.servicioNombre}* en *Los Pits Taller & Carwash*. Presenta este código QR en recepción para disfrutarlo gratis: *${gift.codigoQR}*. Ver pase digital: ${giftUrl}`;
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, "_blank");
   };
 

@@ -5,6 +5,24 @@
 
 import { formatMoney } from "./storage";
 
+export const getBaseAppUrl = () => {
+  if (typeof window !== "undefined" && window.location && window.location.origin) {
+    return window.location.origin;
+  }
+  return "https://los-pits-app.vercel.app";
+};
+
+export const getPortalUrl = (query = {}) => {
+  const baseUrl = getBaseAppUrl();
+  const searchParams = new URLSearchParams();
+  searchParams.set("portal", "true");
+  if (query.cliente) searchParams.set("cliente", query.cliente);
+  if (query.telefono) searchParams.set("telefono", query.telefono);
+  if (query.placa) searchParams.set("placa", query.placa);
+  if (query.qr) searchParams.set("qr", query.qr);
+  return `${baseUrl}?${searchParams.toString()}`;
+};
+
 /**
  * 🍏 Generates Apple Wallet Pass Payload structure (.pkpass schema)
  */
@@ -15,6 +33,7 @@ export const generateAppleWalletPassData = (cliente = {}, vehiculo = {}, puntos 
   const modelo = vehiculo.marca ? `${vehiculo.marca} ${vehiculo.linea || ""}` : "Vehículo";
 
   const ultimasOrdenes = Array.isArray(ordenes) ? ordenes.slice(0, 5) : [];
+  const targetPortalUrl = getPortalUrl({ cliente: telefono || nombre });
 
   return {
     formatVersion: 1,
@@ -29,7 +48,7 @@ export const generateAppleWalletPassData = (cliente = {}, vehiculo = {}, puntos 
     labelColor: "rgb(234, 179, 8)", // Gold accent
     barcode: {
       format: "PKBarcodeFormatQR",
-      message: `https://lospits.app/portal?cliente=${encodeURIComponent(telefono || nombre)}`,
+      message: targetPortalUrl,
       messageEncoding: "iso-8859-1"
     },
     loyaltyCard: {
@@ -70,7 +89,7 @@ export const generateAppleWalletPassData = (cliente = {}, vehiculo = {}, puntos 
         {
           key: "portal_link",
           label: "HISTORIAL COMPLETO CON FOTOS Y FACTURAS",
-          value: `https://lospits.app/portal?cliente=${encodeURIComponent(telefono || nombre)}`
+          value: targetPortalUrl
         },
         {
           key: "contacto",
