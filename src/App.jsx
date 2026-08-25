@@ -1985,7 +1985,7 @@ export default function App() {
     }
   })();
 
-  if (isPublicPortalView && !usuarioActual) {
+  if (isPublicPortalView) {
     return (
       <CustomerPortal 
         puntosRecompensas={puntosRecompensas}
@@ -1997,9 +1997,7 @@ export default function App() {
         catalogoPremios={catalogoPremios}
         regalosPasesReferidos={regalosPasesReferidos}
         setRegalosPasesReferidos={setRegalosPasesReferidos}
-        onClose={() => {
-          window.location.href = window.location.origin;
-        }}
+        onClose={null}
       />
     );
   }
