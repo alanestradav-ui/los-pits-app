@@ -29,6 +29,8 @@ import {
   ChevronUp
 } from "lucide-react";
 import { formatMoney } from "../utils/storage";
+import { findVehiclesForClient } from "../utils/vehicleHelpers";
+import ClientVehiclesModal from "./ClientVehiclesModal";
 
 export default function Citas({
   citas = [],
@@ -57,6 +59,11 @@ export default function Citas({
   const [isNewCitaOpen, setIsNewCitaOpen] = useState(false);
   const [editingCita, setEditingCita] = useState(null);
   const [reminderModalCita, setReminderModalCita] = useState(null);
+  const [clientVehiclesModalData, setClientVehiclesModalData] = useState({
+    isOpen: false,
+    clienteNombre: "",
+    vehicles: []
+  });
 
   // Form State for New / Edit Cita
   const [formData, setFormData] = useState({
@@ -304,13 +311,61 @@ export default function Citas({
   };
 
   const handleSelectClienteSuggestion = (c) => {
+    const cVehicles = findVehiclesForClient({
+      clienteNombre: c.nombre,
+      clienteTelefono: c.telefono,
+      clienteId: c.id,
+      vehiculos,
+      ordenes,
+      carwash
+    });
+
+    if (cVehicles.length === 1) {
+      const v = cVehicles[0];
+      setFormData(prev => ({
+        ...prev,
+        clienteNombre: c.nombre || prev.clienteNombre,
+        clienteTelefono: c.telefono || prev.clienteTelefono,
+        clienteNit: c.nit || prev.clienteNit || "CF",
+        vehiculoPlaca: v.placa || prev.vehiculoPlaca,
+        vehiculoMarca: v.marca || prev.vehiculoMarca,
+        vehiculoLinea: v.linea || prev.vehiculoLinea,
+        vehiculoColor: v.color || prev.vehiculoColor,
+        vehiculoModelo: v.modelo || prev.vehiculoModelo
+      }));
+    } else if (cVehicles.length > 1) {
+      setFormData(prev => ({
+        ...prev,
+        clienteNombre: c.nombre || prev.clienteNombre,
+        clienteTelefono: c.telefono || prev.clienteTelefono,
+        clienteNit: c.nit || prev.clienteNit || "CF"
+      }));
+      setClientVehiclesModalData({
+        isOpen: true,
+        clienteNombre: c.nombre,
+        vehicles: cVehicles
+      });
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        clienteNombre: c.nombre || prev.clienteNombre,
+        clienteTelefono: c.telefono || prev.clienteTelefono,
+        clienteNit: c.nit || prev.clienteNit || "CF"
+      }));
+    }
+    setClienteSuggestions([]);
+  };
+
+  const handleVehicleModalSelect = (v) => {
     setFormData(prev => ({
       ...prev,
-      clienteNombre: c.nombre || prev.clienteNombre,
-      clienteTelefono: c.telefono || prev.clienteTelefono,
-      clienteNit: c.nit || prev.clienteNit || "CF"
+      vehiculoPlaca: v.placa || prev.vehiculoPlaca,
+      vehiculoMarca: v.marca || prev.vehiculoMarca,
+      vehiculoLinea: v.linea || prev.vehiculoLinea,
+      vehiculoColor: v.color || prev.vehiculoColor,
+      vehiculoModelo: v.modelo || prev.vehiculoModelo
     }));
-    setClienteSuggestions([]);
+    setClientVehiclesModalData({ isOpen: false, clienteNombre: "", vehicles: [] });
   };
 
   const handlePlacaChange = (val) => {
@@ -1283,6 +1338,15 @@ export default function Citas({
           </div>
         </div>
       )}
+
+      {/* 8. CLIENT MULTI-VEHICLE SELECTION MODAL */}
+      <ClientVehiclesModal 
+        isOpen={clientVehiclesModalData.isOpen}
+        clienteNombre={clientVehiclesModalData.clienteNombre}
+        vehicles={clientVehiclesModalData.vehicles}
+        onSelectVehicle={handleVehicleModalSelect}
+        onClose={() => setClientVehiclesModalData({ isOpen: false, clienteNombre: "", vehicles: [] })}
+      />
     </div>
   );
 }

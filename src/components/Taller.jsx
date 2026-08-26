@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { formatMoney, getLocalStorage, setLocalStorage, setTenantLocalStorage } from "../utils/storage";
 import { syncKeyToCloud } from "../utils/supabase";
+import { findVehiclesForClient } from "../utils/vehicleHelpers";
+import ClientVehiclesModal from "./ClientVehiclesModal";
 import { jsPDF } from "jspdf";
 
 const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
@@ -230,6 +232,11 @@ export default function Taller({
   // Nit and billing name
   const [nit, setNit] = useState("");
   const [nombreFacturacion, setNombreFacturacion] = useState("");
+  const [clientVehiclesModalData, setClientVehiclesModalData] = useState({
+    isOpen: false,
+    clienteNombre: "",
+    vehicles: []
+  });
 
   const calculateOrderCommission = (orderObj) => {
     if (!orderObj) return 0;
@@ -752,12 +759,46 @@ export default function Taller({
     setActiveFieldSuggestions("telefono");
   };
 
+  const applySelectedVehicle = (v) => {
+    if (v.placa) {
+      const parsed = parsePlate(v.placa);
+      setPlatePrefix(parsed.prefix);
+      setPlateNumber(parsed.number);
+    }
+    if (v.marca) setMarca(v.marca);
+    if (v.linea) setLinea(v.linea);
+    if (v.color) setColor(v.color);
+    if (v.anio || v.modelo) setAnio(v.anio || v.modelo);
+    if (v.chasis) setChasis(v.chasis);
+    setClientVehiclesModalData({ isOpen: false, clienteNombre: "", vehicles: [] });
+  };
+
   const selectClienteSuggestion = (c) => {
     setTelefono(c.telefono || "");
     setCliente(c.nombre || "");
     if (c.nit) setNit(c.nit);
     if (c.nombreFacturacion) setNombreFacturacion(c.nombreFacturacion);
     setActiveFieldSuggestions(null);
+
+    // Look up vehicles for this client
+    const cVehicles = findVehiclesForClient({
+      clienteNombre: c.nombre,
+      clienteTelefono: c.telefono,
+      clienteId: c.id,
+      vehiculos,
+      ordenes,
+      carwash
+    });
+
+    if (cVehicles.length === 1) {
+      applySelectedVehicle(cVehicles[0]);
+    } else if (cVehicles.length > 1) {
+      setClientVehiclesModalData({
+        isOpen: true,
+        clienteNombre: c.nombre,
+        vehicles: cVehicles
+      });
+    }
   };
 
   const handlePlacaInput = (val) => {
@@ -7067,6 +7108,15 @@ export default function Taller({
           box-shadow: var(--shadow-neon-danger);
         }
       `}</style>
+
+      {/* CLIENT MULTI-VEHICLE SELECTION MODAL */}
+      <ClientVehiclesModal 
+        isOpen={clientVehiclesModalData.isOpen}
+        clienteNombre={clientVehiclesModalData.clienteNombre}
+        vehicles={clientVehiclesModalData.vehicles}
+        onSelectVehicle={applySelectedVehicle}
+        onClose={() => setClientVehiclesModalData({ isOpen: false, clienteNombre: "", vehicles: [] })}
+      />
     </div>
   );
 }

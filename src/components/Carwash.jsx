@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { formatMoney, setLocalStorage, setTenantLocalStorage } from "../utils/storage";
 import { syncKeyToCloud } from "../utils/supabase";
+import { findVehiclesForClient } from "../utils/vehicleHelpers";
+import ClientVehiclesModal from "./ClientVehiclesModal";
 import { jsPDF } from "jspdf";
 
 const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
@@ -128,10 +130,14 @@ export default function Carwash({
   const [searchQuery, setSearchQuery] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedFullPhoto, setSelectedFullPhoto] = useState(null);
-  const [editingWashOrder, setEditingWashOrder] = useState(null);
-
   const [nit, setNit] = useState("");
   const [nombreFacturacion, setNombreFacturacion] = useState("");
+  const [clienteSuggestions, setClienteSuggestions] = useState([]);
+  const [clientVehiclesModalData, setClientVehiclesModalData] = useState({
+    isOpen: false,
+    clienteNombre: "",
+    vehicles: []
+  });
 
   const accessorySuggestions = inputAccessoryDesc.trim()
     ? (accesoriosInventory || []).filter(item => 
@@ -476,6 +482,47 @@ export default function Carwash({
 
     setEditingWashOrder(null);
     alert("¡Datos del lavado actualizados correctamente!");
+  };
+
+  const applySelectedVehicleCarwash = (v) => {
+    if (v.placa) {
+      const parsed = parsePlate(v.placa);
+      setPlatePrefix(parsed.prefix);
+      setPlateNumber(parsed.number);
+    }
+    if (v.marca) setMarca(v.marca);
+    if (v.linea) setLinea(v.linea);
+    if (v.color) setColor(v.color);
+    if (v.anio || v.modelo) setAnio(v.anio || v.modelo);
+    if (v.chasis) setChasis(v.chasis);
+    setClientVehiclesModalData({ isOpen: false, clienteNombre: "", vehicles: [] });
+  };
+
+  const selectClienteSuggestionCarwash = (c) => {
+    setCliente(c.nombre || "");
+    if (c.telefono && (!telefono.trim() || telefono === "00000000")) setTelefono(c.telefono);
+    if (c.nit && !nit.trim()) setNit(c.nit);
+    if (c.nombreFacturacion && !nombreFacturacion.trim()) setNombreFacturacion(c.nombreFacturacion);
+    setClienteSuggestions([]);
+
+    const cVehicles = findVehiclesForClient({
+      clienteNombre: c.nombre,
+      clienteTelefono: c.telefono,
+      clienteId: c.id,
+      vehiculos,
+      ordenes,
+      carwash
+    });
+
+    if (cVehicles.length === 1) {
+      applySelectedVehicleCarwash(cVehicles[0]);
+    } else if (cVehicles.length > 1) {
+      setClientVehiclesModalData({
+        isOpen: true,
+        clienteNombre: c.nombre,
+        vehicles: cVehicles
+      });
+    }
   };
 
   const selectVehicle = (v) => {
@@ -1669,7 +1716,7 @@ export default function Carwash({
               </div>
 
               <div style={{ display: "flex", gap: "10px" }}>
-                <div style={{ ...styles.inputGroup, flex: 1.5 }}>
+                <div style={{ ...styles.inputGroup, flex: 1.5, position: "relative" }}>
                   <label style={styles.label}>Cliente</label>
                   <div style={styles.inputWrapper}>
                     <User size={18} style={styles.inputIcon} />
@@ -1677,10 +1724,53 @@ export default function Carwash({
                       placeholder="Nombre del cliente"
                       className="input-field"
                       value={cliente}
-                      onChange={(e) => setCliente(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setCliente(val);
+                        if (!val || val.length < 2) {
+                          setClienteSuggestions([]);
+                          return;
+                        }
+                        const matches = (clientes || []).filter(c => 
+                          (c.nombre && c.nombre.toLowerCase().includes(val.toLowerCase())) ||
+                          (c.telefono && c.telefono.includes(val))
+                        ).slice(0, 5);
+                        setClienteSuggestions(matches);
+                      }}
                       style={styles.input}
                     />
                   </div>
+                  {clienteSuggestions.length > 0 && (
+                    <div style={{
+                      position: "absolute",
+                      top: "100%",
+                      left: 0,
+                      right: 0,
+                      backgroundColor: "#181b22",
+                      border: "1px solid rgba(255, 255, 255, 0.15)",
+                      borderRadius: "8px",
+                      zIndex: 100,
+                      marginTop: "2px",
+                      boxShadow: "0 8px 16px rgba(0, 0, 0, 0.5)",
+                      overflow: "hidden"
+                    }}>
+                      {clienteSuggestions.map((c, i) => (
+                        <div 
+                          key={i} 
+                          onClick={() => selectClienteSuggestionCarwash(c)}
+                          style={{
+                            padding: "8px 12px",
+                            cursor: "pointer",
+                            fontSize: "0.82rem",
+                            color: "#fff",
+                            borderBottom: "1px solid rgba(255, 255, 255, 0.04)"
+                          }}
+                        >
+                          <strong>{c.nombre}</strong> <span style={{ color: "#9ca3af", fontSize: "0.75rem" }}>({c.telefono})</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div style={{ ...styles.inputGroup, flex: 1 }}>
                   <label style={styles.label}>Teléfono</label>
@@ -3536,6 +3626,15 @@ export default function Carwash({
         </div>,
         document.body
       )}
+
+      {/* CLIENT MULTI-VEHICLE SELECTION MODAL */}
+      <ClientVehiclesModal 
+        isOpen={clientVehiclesModalData.isOpen}
+        clienteNombre={clientVehiclesModalData.clienteNombre}
+        vehicles={clientVehiclesModalData.vehicles}
+        onSelectVehicle={applySelectedVehicleCarwash}
+        onClose={() => setClientVehiclesModalData({ isOpen: false, clienteNombre: "", vehicles: [] })}
+      />
     </div>
   );
 }
