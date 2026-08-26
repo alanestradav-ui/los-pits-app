@@ -21,6 +21,7 @@ import {
 import { formatMoney, getLocalStorage, setLocalStorage, setTenantLocalStorage } from "../utils/storage";
 import { syncKeyToCloud } from "../utils/supabase";
 import { findVehiclesForClient } from "../utils/vehicleHelpers";
+import { DEFAULT_BRANDING, getCleanBranding, drawCanvasHeader } from "../utils/branding";
 import ClientVehiclesModal from "./ClientVehiclesModal";
 import { jsPDF } from "jspdf";
 
@@ -192,7 +193,8 @@ export default function Taller({
   compras = [],
   setCompras,
   tenantId = "lospits",
-  addPuntosLealtad
+  addPuntosLealtad,
+  workshopBranding = DEFAULT_BRANDING
 }) {
   const [viewingVendorQuotesOrder, setViewingVendorQuotesOrder] = useState(null);
   const [cliente, setCliente] = useState("");
@@ -1991,92 +1993,18 @@ export default function Taller({
     const page2Height = hasPhotos ? 325 + (Math.ceil(loadedCount / 2) * 310) : 0;
     canvas.height = tableEnd + 390 + page2Height;
     const ctx = canvas.getContext("2d");
+    const brand = getCleanBranding(workshopBranding);
     
     // 1. Draw Background
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = brand.colorFondoDocumento || "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     // 2. Draw Header Box
-    ctx.fillStyle = "#0a0c10";
-    ctx.fillRect(0, 0, canvas.width, 150);
-    
-    // Checkered flag slanted
-    ctx.save();
-    ctx.transform(1, 0, -0.25, 1, 0, 0);
-    const flagX = 55;
-    const flagY = 25;
-    const sqSize = 14;
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(flagX, flagY, sqSize * 4, sqSize * 2);
-    ctx.fillStyle = "#000000";
-    for (let r = 0; r < 2; r++) {
-      for (let c = 0; c < 4; c++) {
-        if ((r + c) % 2 === 0) {
-          ctx.fillRect(flagX + c * sqSize, flagY + r * sqSize, sqSize, sqSize);
-        }
-      }
-    }
-    ctx.restore();
-
-    // Brand texts
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 42px 'Orbitron', sans-serif";
-    ctx.fillText("LOS PITS", 40, 95);
-    
-    ctx.fillStyle = "#f59e0b";
-    ctx.font = "bold 11px 'Plus Jakarta Sans', sans-serif";
-    ctx.fillText("SERVICIO QUE SE SIENTE, CALIDAD QUE SE VE", 40, 120);
-    
-    // Diagonal divider line
-    ctx.strokeStyle = "#f59e0b";
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(520, 0);
-    ctx.lineTo(460, 150);
-    ctx.stroke();
-    
-    // Location Icon
-    ctx.beginPath();
-    ctx.arc(520, 48, 12, 0, Math.PI * 2);
-    ctx.fillStyle = "#f59e0b";
-    ctx.fill();
-    ctx.fillStyle = "#000000";
-    ctx.beginPath();
-    ctx.arc(520, 45, 3, 0, Math.PI, true);
-    ctx.lineTo(520, 52);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#f59e0b";
-    ctx.beginPath();
-    ctx.arc(520, 45, 1.2, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Address text
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "12px 'Plus Jakarta Sans', sans-serif";
-    ctx.fillText("3 calle 6-47 zona 10,", 540, 44);
-    ctx.fillText("Ciudad de Guatemala", 540, 59);
-    
-    // Phone Icon
-    ctx.beginPath();
-    ctx.arc(520, 100, 12, 0, Math.PI * 2);
-    ctx.fillStyle = "#f59e0b";
-    ctx.fill();
-    ctx.strokeStyle = "#000000";
-    ctx.lineWidth = 2.5;
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.arc(518, 102, 5, Math.PI * 1.0, Math.PI * 1.6);
-    ctx.stroke();
-    
-    // Phone text
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 24px 'Plus Jakarta Sans', sans-serif";
-    ctx.fillText("3271-1268", 540, 108);
+    drawCanvasHeader(ctx, canvas.width, brand);
     
     // 3. Date box centered
     ctx.fillStyle = "#ffffff";
-    ctx.strokeStyle = "#f59e0b";
+    ctx.strokeStyle = brand.colorSecundario || "#f59e0b";
     ctx.lineWidth = 1;
     
     const drawRoundedRect = (c2d, rx, ry, rw, rh, rad) => {
@@ -2714,92 +2642,18 @@ export default function Taller({
     canvas.height = page1End + page2Height;
     
     const ctx = canvas.getContext("2d");
+    const brand = getCleanBranding(workshopBranding);
     
     // 1. Draw Background
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = brand.colorFondoDocumento || "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     // 2. Draw Header Box
-    ctx.fillStyle = "#0a0c10";
-    ctx.fillRect(0, 0, canvas.width, 150);
-    
-    // Checkered flag slanted
-    ctx.save();
-    ctx.transform(1, 0, -0.25, 1, 0, 0);
-    const flagX = 55;
-    const flagY = 25;
-    const sqSize = 14;
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(flagX, flagY, sqSize * 4, sqSize * 2);
-    ctx.fillStyle = "#000000";
-    for (let r = 0; r < 2; r++) {
-      for (let c = 0; c < 4; c++) {
-        if ((r + c) % 2 === 0) {
-          ctx.fillRect(flagX + c * sqSize, flagY + r * sqSize, sqSize, sqSize);
-        }
-      }
-    }
-    ctx.restore();
-
-    // Brand texts
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 42px 'Orbitron', sans-serif";
-    ctx.fillText("LOS PITS", 40, 95);
-    
-    ctx.fillStyle = "#f59e0b";
-    ctx.font = "bold 11px 'Plus Jakarta Sans', sans-serif";
-    ctx.fillText("SERVICIO QUE SE SIENTE, CALIDAD QUE SE VE", 40, 120);
-    
-    // Diagonal divider line
-    ctx.strokeStyle = "#f59e0b";
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(520, 0);
-    ctx.lineTo(460, 150);
-    ctx.stroke();
-    
-    // Location Icon
-    ctx.beginPath();
-    ctx.arc(520, 48, 12, 0, Math.PI * 2);
-    ctx.fillStyle = "#f59e0b";
-    ctx.fill();
-    ctx.fillStyle = "#000000";
-    ctx.beginPath();
-    ctx.arc(520, 45, 3, 0, Math.PI, true);
-    ctx.lineTo(520, 52);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#f59e0b";
-    ctx.beginPath();
-    ctx.arc(520, 45, 1.2, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Address text
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "12px 'Plus Jakarta Sans', sans-serif";
-    ctx.fillText("3 calle 6-47 zona 10,", 540, 44);
-    ctx.fillText("Ciudad de Guatemala", 540, 59);
-    
-    // Phone Icon
-    ctx.beginPath();
-    ctx.arc(520, 100, 12, 0, Math.PI * 2);
-    ctx.fillStyle = "#f59e0b";
-    ctx.fill();
-    ctx.strokeStyle = "#000000";
-    ctx.lineWidth = 2.5;
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.arc(518, 102, 5, Math.PI * 1.0, Math.PI * 1.6);
-    ctx.stroke();
-    
-    // Phone text
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 24px 'Plus Jakarta Sans', sans-serif";
-    ctx.fillText("3271-1268", 540, 108);
+    drawCanvasHeader(ctx, canvas.width, brand);
     
     // 3. Date box centered
     ctx.fillStyle = "#ffffff";
-    ctx.strokeStyle = "#f59e0b";
+    ctx.strokeStyle = brand.colorSecundario || "#f59e0b";
     ctx.lineWidth = 1;
     
     const drawRoundedRect = (c2d, rx, ry, rw, rh, rad) => {

@@ -24,6 +24,7 @@ import CustomerPortal from "./components/CustomerPortal";
 import SaaSAdmin from "./components/SaaSAdmin";
 import Citas from "./components/Citas";
 import { DEFAULT_CATALOGO_PREMIOS } from "./utils/wallet";
+import { DEFAULT_BRANDING, getCleanBranding } from "./utils/branding";
 import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocalStorage } from "./utils/storage";
 import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout, processOfflineQueue } from "./utils/supabase";
 import { initHourlyBackupScheduler, checkAndCreateHourlyBackup } from "./services/backupService";
@@ -906,6 +907,11 @@ export default function App() {
     return Array.isArray(val) ? val : [];
   });
 
+  const [workshopBranding, setWorkshopBranding] = useState(() => {
+    const val = getTenantLocalStorage("workshopBranding", DEFAULT_BRANDING, tenantId);
+    return val && typeof val === "object" ? getCleanBranding(val) : DEFAULT_BRANDING;
+  });
+
   // 🏆 LOYALTY REWARDS HELPER: Auto-calculates & awards Puntos Pits for completed services
   const addPuntosLealtad = (clienteKey, clienteNombre, monto, area, tallerLaborMonto = 0) => {
     if (!clienteKey && !clienteNombre) return;
@@ -1153,6 +1159,7 @@ export default function App() {
     globalActiveSetters.historialCanjes = setHistorialCanjes;
     globalActiveSetters.reglasPrograma = setReglasPrograma;
     globalActiveSetters.citas = setCitas;
+    globalActiveSetters.workshopBranding = setWorkshopBranding;
     globalActiveSetters.setIsInitialPullDone = setIsInitialPullDone;
     globalActiveSetters.setRealtimeStatus = setRealtimeStatus;
   });
@@ -1190,7 +1197,8 @@ export default function App() {
       catalogoPremios,
       historialCanjes,
       reglasPrograma,
-      citas
+      citas,
+      workshopBranding
     };
   }, [
     usuarios,
@@ -1223,7 +1231,8 @@ export default function App() {
     catalogoPremios,
     historialCanjes,
     reglasPrograma,
-    citas
+    citas,
+    workshopBranding
   ]);
 
   const globalBroadcastChannel = useRef(null);
@@ -1395,7 +1404,7 @@ export default function App() {
       const getScopedKey = (k) => activeTenant === "lospits" ? k : `${activeTenant}_${k}`;
 
       const cloudDataMap = new Map();
-      const allKeysList = Array.from(new Set([...ARRAY_KEYS, "usuarios", "ordenes", "carwash", "parkingEntries", "parkingHistory", "vehiculosVenta", "workshopInventory", "cafeteriaInventory", "cafeteriaSales", "carwashPresets", "carwashInventory", "carwashConsumption", "tiendaSales", "cuentasPorCobrar", "cuentasPorPagar", "fixedCosts", "clientes", "vehiculos", "compras", "toolsInventory", "accesoriosInventory", "papeleraSistema", "cotizacionesRepuestos", "puntosRecompensas", "catalogoPremios", "historialCanjes", "reglasPrograma"])).filter(k => k !== "systemSnapshots" && k !== "app_data_backup_snapshot");
+      const allKeysList = Array.from(new Set([...ARRAY_KEYS, "usuarios", "ordenes", "carwash", "parkingEntries", "parkingHistory", "vehiculosVenta", "workshopInventory", "cafeteriaInventory", "cafeteriaSales", "carwashPresets", "carwashInventory", "carwashConsumption", "tiendaSales", "cuentasPorCobrar", "cuentasPorPagar", "fixedCosts", "clientes", "vehiculos", "compras", "toolsInventory", "accesoriosInventory", "papeleraSistema", "cotizacionesRepuestos", "puntosRecompensas", "catalogoPremios", "historialCanjes", "reglasPrograma", "workshopBranding"])).filter(k => k !== "systemSnapshots" && k !== "app_data_backup_snapshot");
 
       const scopedQueryKeys = allKeysList.map(k => getScopedKey(k));
       // Consultar llaves en paralelo en lotes de 15 con timeout generoso
@@ -1953,6 +1962,11 @@ export default function App() {
     syncToCloud("citas", citas);
   }, [citas, tenantId]);
 
+  useEffect(() => {
+    setTenantLocalStorage("workshopBranding", workshopBranding, tenantId);
+    syncToCloud("workshopBranding", workshopBranding);
+  }, [workshopBranding, tenantId]);
+
   const usuarioActivo = usuarios.find(u => (u.user || "").toLowerCase().trim() === (usuarioActual?.user || "").toLowerCase().trim()) || usuarioActual;
 
   const userHasPermission = (user, tabId) => {
@@ -2100,6 +2114,7 @@ export default function App() {
             setCarwash={setCarwash}
             usuarioActual={usuarioActivo}
             onNavigateTab={(tab) => setCurrentTab(tab)}
+            workshopBranding={workshopBranding}
           />
         )}
 
@@ -2134,6 +2149,7 @@ export default function App() {
             setCompras={setCompras}
             tenantId={tenantId}
             addPuntosLealtad={addPuntosLealtad}
+            workshopBranding={workshopBranding}
           />
         )}
 
@@ -2163,6 +2179,7 @@ export default function App() {
             setVehiculos={setVehiculos}
             tenantId={tenantId}
             addPuntosLealtad={addPuntosLealtad}
+            workshopBranding={workshopBranding}
           />
         )}
 
@@ -2180,6 +2197,7 @@ export default function App() {
             clientes={clientes}
             setClientes={setClientes}
             addPuntosLealtad={addPuntosLealtad}
+            workshopBranding={workshopBranding}
           />
         )}
 
@@ -2407,6 +2425,8 @@ export default function App() {
             softDelete={softDelete}
             restoreTrashItem={restoreTrashItem}
             restoreSystemSnapshot={restoreSystemSnapshot}
+            workshopBranding={workshopBranding}
+            setWorkshopBranding={setWorkshopBranding}
           />
         )}
 

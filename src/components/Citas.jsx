@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { formatMoney } from "../utils/storage";
 import { findVehiclesForClient } from "../utils/vehicleHelpers";
+import { DEFAULT_BRANDING, getCleanBranding } from "../utils/branding";
 import ClientVehiclesModal from "./ClientVehiclesModal";
 
 const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
@@ -58,7 +59,8 @@ export default function Citas({
   carwash = [],
   setCarwash,
   usuarioActual,
-  onNavigateTab
+  onNavigateTab,
+  workshopBranding = DEFAULT_BRANDING
 }) {
   // Tabs & Filters
   const [activeTab, setActiveTab] = useState("lista"); // 'lista', 'recordatorios'
@@ -116,12 +118,15 @@ export default function Citas({
     const sameDateStr = citaData.fechaCita;
 
     const fechaFormateada = citaData.fechaCita ? new Date(citaData.fechaCita + "T00:00:00").toLocaleDateString('es-GT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : "la fecha acordada";
+    const brand = getCleanBranding(workshopBranding);
+    const nombreTaller = brand.nombreEmpresa || "Los Pits Taller & Carwash";
+    const ubicacionTaller = brand.direccion || brand.nombreEmpresa || "Nuestras instalaciones";
 
-    const msgConfirmacion = `🚗 *¡Hola ${citaData.clienteNombre || 'Estimado Cliente'}!* Te confirmamos tu cita en *Los Pits Taller & Carwash*:\n\n📅 *Fecha:* ${fechaFormateada}\n⏰ *Hora:* ${citaData.horaCita || '09:00 hrs'}\n🔧 *Servicio:* ${citaData.servicio || 'Servicio Automotriz'}\n🚘 *Vehículo:* ${citaData.vehiculoMarca || ''} ${citaData.vehiculoLinea || ''} (${citaData.vehiculoPlaca || 'Placa registrada'})\n📍 *Ubicación:* Los Pits Taller & Carwash\n\n¡Te esperamos con gusto para consentir tu vehículo!`;
+    const msgConfirmacion = `🚗 *¡Hola ${citaData.clienteNombre || 'Estimado Cliente'}!* Te confirmamos tu cita en *${nombreTaller}*:\n\n📅 *Fecha:* ${fechaFormateada}\n⏰ *Hora:* ${citaData.horaCita || '09:00 hrs'}\n🔧 *Servicio:* ${citaData.servicio || 'Servicio Automotriz'}\n🚘 *Vehículo:* ${citaData.vehiculoMarca || ''} ${citaData.vehiculoLinea || ''} (${citaData.vehiculoPlaca || 'Placa registrada'})\n📍 *Ubicación:* ${ubicacionTaller}\n\n¡Te esperamos con gusto para consentir tu vehículo!`;
 
-    const msgDiaPrevio = `⏰ *Recordatorio de Cita - Los Pits*\n\nHola *${citaData.clienteNombre || 'Estimado Cliente'}*, te recordamos que *mañana* tienes cita programada con nosotros:\n\n📅 *Mañana a las:* ${citaData.horaCita || '09:00 hrs'}\n🔧 *Servicio:* ${citaData.servicio || 'Servicio Agendado'}\n🚘 *Vehículo:* ${citaData.vehiculoPlaca || ''}\n\nPor favor confírmanos si todo sigue en pie respondiendo a este mensaje. ¡Feliz día!`;
+    const msgDiaPrevio = `⏰ *Recordatorio de Cita - ${nombreTaller}*\n\nHola *${citaData.clienteNombre || 'Estimado Cliente'}*, te recordamos que *mañana* tienes cita programada con nosotros:\n\n📅 *Mañana a las:* ${citaData.horaCita || '09:00 hrs'}\n🔧 *Servicio:* ${citaData.servicio || 'Servicio Agendado'}\n🚘 *Vehículo:* ${citaData.vehiculoPlaca || ''}\n📍 *Lugar:* ${ubicacionTaller}\n\nPor favor confírmanos si todo sigue en pie respondiendo a este mensaje. ¡Feliz día!`;
 
-    const msgMismoDia = `🏁 *¡Tu espacio está listo en Los Pits!*\n\nHola *${citaData.clienteNombre || 'Estimado Cliente'}*, te esperamos hoy a las *${citaData.horaCita || '09:00 hrs'}* para tu servicio de *${citaData.servicio || 'mantenimiento'}*.\n\n📍 Ya tenemos lista tu bahía de atención. ¡Te esperamos pronto!`;
+    const msgMismoDia = `🏁 *¡Tu espacio está listo en ${nombreTaller}!*\n\nHola *${citaData.clienteNombre || 'Estimado Cliente'}*, te esperamos hoy a las *${citaData.horaCita || '09:00 hrs'}* para tu servicio de *${citaData.servicio || 'mantenimiento'}*.\n\n📍 Ya tenemos lista tu bahía de atención en ${ubicacionTaller}. ¡Te esperamos pronto!`;
 
     return {
       confirmacion: {

@@ -21,9 +21,17 @@ import {
   Edit2,
   X,
   Eye,
-  EyeOff
+  EyeOff,
+  Palette,
+  Upload,
+  Image as ImageIcon,
+  Sparkles,
+  RotateCcw,
+  Check,
+  FileText
 } from "lucide-react";
 import { formatMoney } from "../utils/storage";
+import { DEFAULT_BRANDING, COLOR_PRESETS, getCleanBranding } from "../utils/branding";
 import { getSupabaseClient, resetSupabaseClient, syncKeyToCloud, testSupabaseConnection } from "../utils/supabase";
 import PapeleraModal from "./PapeleraModal";
 import { createBackup, exportBackupToFile, restoreFromBackup, getBackupsList } from "../services/backupService";
@@ -73,12 +81,74 @@ export default function SettingsComponent({
   setSystemSnapshots,
   softDelete,
   restoreTrashItem,
-  restoreSystemSnapshot
+  restoreSystemSnapshot,
+  workshopBranding = DEFAULT_BRANDING,
+  setWorkshopBranding
 }) {
   const [activeTab, setActiveTab] = useState("general");
   const [trashFilter, setTrashFilter] = useState("todos");
   const [showPapeleraModal, setShowPapeleraModal] = useState(false);
   const [isBackupCreating, setIsBackupCreating] = useState(false);
+
+  // 🎨 Branding & Document Customization State
+  const [brandingForm, setBrandingForm] = useState(() => getCleanBranding(workshopBranding));
+  const [brandingSavedToast, setBrandingSavedToast] = useState(false);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+
+  const handleSaveBranding = (e) => {
+    if (e) e.preventDefault();
+    if (typeof setWorkshopBranding === "function") {
+      setWorkshopBranding(brandingForm);
+    }
+    setBrandingSavedToast(true);
+    setTimeout(() => setBrandingSavedToast(false), 3000);
+  };
+
+  const handleLogoUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      alert("La imagen es muy pesada. Por favor selecciona una imagen menor a 2MB.");
+      return;
+    }
+
+    setIsUploadingLogo(true);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64Data = event.target.result;
+      setBrandingForm(prev => ({
+        ...prev,
+        logoUrl: base64Data
+      }));
+      setIsUploadingLogo(false);
+    };
+    reader.onerror = () => {
+      alert("Error al cargar la imagen del logo.");
+      setIsUploadingLogo(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleApplyPreset = (preset) => {
+    setBrandingForm(prev => ({
+      ...prev,
+      colorPrimario: preset.colorPrimario,
+      colorSecundario: preset.colorSecundario,
+      colorTextoEncabezado: preset.colorTextoEncabezado,
+      colorTotalFondo: preset.colorTotalFondo,
+      colorTotalTexto: preset.colorTotalTexto
+    }));
+  };
+
+  const handleResetDefaultBranding = () => {
+    if (window.confirm("¿Deseas restaurar la configuración visual y textos por defecto de Los Pits?")) {
+      setBrandingForm(DEFAULT_BRANDING);
+      if (typeof setWorkshopBranding === "function") {
+        setWorkshopBranding(DEFAULT_BRANDING);
+      }
+    }
+  };
 
   const handleManualBackup = async () => {
     try {
@@ -927,6 +997,17 @@ export default function SettingsComponent({
       {/* Tabs */}
       <div style={styles.subTabs}>
         <button 
+          onClick={() => setActiveTab("branding")}
+          style={{ 
+            ...styles.subTabBtn, 
+            ...(activeTab === "branding" ? styles.subTabActive : {}),
+            borderColor: activeTab === "branding" ? "var(--color-primary)" : "rgba(234, 179, 8, 0.4)",
+            color: activeTab === "branding" ? "#fff" : "#eab308"
+          }}
+        >
+          <Palette size={16} /> 🎨 Personalización & Identidad de Marca
+        </button>
+        <button 
           onClick={() => setActiveTab("general")}
           style={{ ...styles.subTabBtn, ...(activeTab === "general" ? styles.subTabActive : {}) }}
         >
@@ -979,6 +1060,558 @@ export default function SettingsComponent({
       {/* Content Area */}
       <div style={{ width: "100%" }}>
         
+        {/* Tab 0: 🎨 Personalización & Identidad de Marca */}
+        {activeTab === "branding" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+            
+            {/* Live Preview Box */}
+            <div className="glass-panel" style={{ ...styles.formCard, border: "1px solid rgba(234, 179, 8, 0.3)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "10px" }}>
+                <div>
+                  <h3 style={{ ...styles.sectionTitle, display: "flex", alignItems: "center", gap: "8px", margin: 0 }}>
+                    <Sparkles size={20} color="#eab308" /> Vista Previa en Vivo de Documentos & Encabezados
+                  </h3>
+                  <p style={{ ...styles.sectionSubtitle, margin: "2px 0 0 0" }}>
+                    Así lucirán tus cotizaciones, hojas de recepción, tickets y documentos impresos o en PDF para tus clientes.
+                  </p>
+                </div>
+                {brandingSavedToast && (
+                  <div style={{
+                    backgroundColor: "rgba(16, 185, 129, 0.2)",
+                    border: "1px solid #10b981",
+                    color: "#34d399",
+                    padding: "6px 14px",
+                    borderRadius: "20px",
+                    fontSize: "0.85rem",
+                    fontWeight: "bold",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    animation: "fadeIn 0.3s ease"
+                  }}>
+                    <Check size={16} /> ¡Configuración Guardada!
+                  </div>
+                )}
+              </div>
+
+              {/* SIMULATED DOCUMENT HEADER */}
+              <div style={{
+                backgroundColor: brandingForm.colorPrimario || "#0a0c10",
+                borderRadius: "12px",
+                padding: "20px 24px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "16px",
+                borderBottom: `4px solid ${brandingForm.colorSecundario || "#f59e0b"}`,
+                boxShadow: "0 10px 25px rgba(0, 0, 0, 0.4)",
+                position: "relative",
+                overflow: "hidden"
+              }}>
+                {/* Left: Logo & Workshop Titles */}
+                <div style={{ display: "flex", alignItems: "center", gap: "16px", zIndex: 1 }}>
+                  {brandingForm.logoUrl ? (
+                    <img 
+                      src={brandingForm.logoUrl} 
+                      alt="Logo Taller" 
+                      style={{ maxHeight: "60px", maxWidth: "120px", objectFit: "contain", borderRadius: "8px", backgroundColor: "rgba(255,255,255,0.05)", padding: "4px" }}
+                    />
+                  ) : brandingForm.mostrarBanderaPits ? (
+                    <div style={{
+                      transform: "skewX(-15deg)",
+                      display: "grid",
+                      gridTemplateColumns: "repeat(4, 10px)",
+                      gridTemplateRows: "repeat(2, 10px)",
+                      backgroundColor: "#fff",
+                      padding: "2px",
+                      borderRadius: "2px"
+                    }}>
+                      {[...Array(8)].map((_, i) => (
+                        <div key={i} style={{ backgroundColor: ((Math.floor(i / 4) + (i % 4)) % 2 === 0) ? "#000" : "#fff" }} />
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div>
+                    <h2 style={{
+                      margin: 0,
+                      fontFamily: "'Orbitron', sans-serif",
+                      fontSize: "1.6rem",
+                      fontWeight: "900",
+                      color: brandingForm.colorTextoEncabezado || "#ffffff",
+                      letterSpacing: "1px",
+                      textTransform: "uppercase"
+                    }}>
+                      {brandingForm.nombreEmpresa || "NOMBRE DE TU TALLER"}
+                    </h2>
+                    {brandingForm.subtitulo && (
+                      <span style={{ fontSize: "0.8rem", color: "#9ca3af", fontWeight: "600", display: "block" }}>
+                        {brandingForm.subtitulo}
+                      </span>
+                    )}
+                    <span style={{
+                      display: "inline-block",
+                      color: brandingForm.colorSecundario || "#f59e0b",
+                      fontSize: "0.78rem",
+                      fontWeight: "800",
+                      letterSpacing: "0.5px",
+                      marginTop: "2px",
+                      textTransform: "uppercase"
+                    }}>
+                      {brandingForm.eslogan || "TU ESLOGAN O LEMA AQUÍ"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Right: Contact & Location */}
+                <div style={{ textAlign: "right", zIndex: 1, color: "#fff", fontSize: "0.8rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "6px", marginBottom: "4px" }}>
+                    <span style={{ color: "#d1d5db" }}>{brandingForm.direccion || "Dirección de tu taller"}</span>
+                    <span style={{ color: brandingForm.colorSecundario || "#f59e0b", fontWeight: "bold" }}>📍</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "6px", marginBottom: "4px" }}>
+                    <span style={{ fontWeight: "bold", fontSize: "1.1rem", color: brandingForm.colorTextoEncabezado || "#fff" }}>
+                      {brandingForm.telefono || "Tel: 0000-0000"}
+                    </span>
+                    <span style={{ backgroundColor: brandingForm.colorSecundario || "#f59e0b", color: "#000", padding: "2px 6px", borderRadius: "50%", fontSize: "0.7rem", fontWeight: "bold" }}>📞</span>
+                  </div>
+                  {brandingForm.nit && (
+                    <span style={{ fontSize: "0.72rem", color: "#9ca3af" }}>NIT: {brandingForm.nit}</span>
+                  )}
+                </div>
+
+                {/* Mini Total Simulation Box */}
+                <div style={{
+                  position: "absolute",
+                  bottom: "8px",
+                  right: "24px",
+                  opacity: 0.15,
+                  fontFamily: "monospace",
+                  fontSize: "0.7rem",
+                  color: "#fff"
+                }}>
+                  VISTA PREVIA
+                </div>
+              </div>
+            </div>
+
+            {/* FORM SETTINGS */}
+            <form onSubmit={handleSaveBranding} className="glass-panel" style={styles.formCard}>
+              
+              {/* 1. INFORMACIÓN DE MARCA */}
+              <div style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.08)", paddingBottom: "20px", marginBottom: "20px" }}>
+                <h3 style={{ ...styles.sectionTitle, color: "#eab308", marginBottom: "4px" }}>
+                  🏢 Identidad Comercial del Taller
+                </h3>
+                <p style={styles.sectionSubtitle}>Personaliza cómo se llamará tu taller en reportes, WhatsApp y PDFs.</p>
+                
+                <div style={styles.formGrid}>
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Nombre Comercial del Taller / Empresa *</label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder="Ej. Los Pits Taller & Carwash"
+                      value={brandingForm.nombreEmpresa}
+                      onChange={(e) => setBrandingForm({ ...brandingForm, nombreEmpresa: e.target.value })}
+                      required
+                    />
+                  </div>
+
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Subtítulo / Especialidad</label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder="Ej. Taller Mecánico, Carwash & Detailing"
+                      value={brandingForm.subtitulo}
+                      onChange={(e) => setBrandingForm({ ...brandingForm, subtitulo: e.target.value })}
+                    />
+                  </div>
+
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Lema / Eslogan Principal *</label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder="Ej. SERVICIO QUE SE SIENTE, CALIDAD QUE SE VE"
+                      value={brandingForm.eslogan}
+                      onChange={(e) => setBrandingForm({ ...brandingForm, eslogan: e.target.value })}
+                      required
+                    />
+                  </div>
+
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Frase Secundaria / Sub-lema</label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder="Ej. Tu vehículo en manos de profesionales certificados"
+                      value={brandingForm.fraseSecundaria}
+                      onChange={(e) => setBrandingForm({ ...brandingForm, fraseSecundaria: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. LOGO DEL TALLER */}
+              <div style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.08)", paddingBottom: "20px", marginBottom: "20px" }}>
+                <h3 style={{ ...styles.sectionTitle, color: "#eab308", marginBottom: "4px" }}>
+                  🖼️ Logotipo & Gráficos
+                </h3>
+                <p style={styles.sectionSubtitle}>Sube la imagen del logotipo de tu taller (PNG, JPG o WebP).</p>
+
+                <div style={{ display: "flex", gap: "20px", alignItems: "center", flexWrap: "wrap", marginTop: "12px" }}>
+                  {/* Upload Box */}
+                  <div style={{ flex: 1, minWidth: "260px" }}>
+                    <label style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: "24px",
+                      border: "2px dashed rgba(255, 255, 255, 0.2)",
+                      borderRadius: "12px",
+                      backgroundColor: "rgba(255, 255, 255, 0.02)",
+                      cursor: "pointer",
+                      transition: "all 0.2s ease"
+                    }}>
+                      <Upload size={28} color="#eab308" style={{ marginBottom: "8px" }} />
+                      <span style={{ fontSize: "0.9rem", fontWeight: "bold", color: "#fff" }}>
+                        {isUploadingLogo ? "Cargando imagen..." : "Haga clic para subir su Logo"}
+                      </span>
+                      <span style={{ fontSize: "0.75rem", color: "#9ca3af", marginTop: "4px" }}>
+                        PNG transparente o JPG (Máx. 2MB)
+                      </span>
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        onChange={handleLogoUpload} 
+                        style={{ display: "none" }}
+                      />
+                    </label>
+                  </div>
+
+                  {/* Preview / Current Logo Card */}
+                  <div style={{
+                    padding: "16px 20px",
+                    backgroundColor: "rgba(0,0,0,0.3)",
+                    borderRadius: "12px",
+                    border: "1px solid rgba(255, 255, 255, 0.08)",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: "10px",
+                    minWidth: "180px"
+                  }}>
+                    <span style={{ fontSize: "0.75rem", color: "#9ca3af", fontWeight: "bold" }}>LOGO ACTUAL</span>
+                    {brandingForm.logoUrl ? (
+                      <>
+                        <img 
+                          src={brandingForm.logoUrl} 
+                          alt="Logo Preview" 
+                          style={{ maxHeight: "70px", maxWidth: "160px", objectFit: "contain", borderRadius: "6px" }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setBrandingForm({ ...brandingForm, logoUrl: "" })}
+                          className="btn btn-ghost"
+                          style={{ fontSize: "0.75rem", color: "#ef4444", padding: "4px 8px" }}
+                        >
+                          <Trash2 size={13} /> Quitar Logo
+                        </button>
+                      </>
+                    ) : (
+                      <div style={{ textAlign: "center", padding: "10px", color: "#9ca3af", fontSize: "0.8rem" }}>
+                        <span>Sin logo personalizado</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ marginTop: "14px" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "0.85rem", color: "#d1d5db" }}>
+                    <input
+                      type="checkbox"
+                      checked={brandingForm.mostrarBanderaPits}
+                      onChange={(e) => setBrandingForm({ ...brandingForm, mostrarBanderaPits: e.target.checked })}
+                    />
+                    Mostrar bandera de carreras clásica si no hay logo cargado
+                  </label>
+                </div>
+              </div>
+
+              {/* 3. PALETA DE COLORES DE DOCUMENTOS */}
+              <div style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.08)", paddingBottom: "20px", marginBottom: "20px" }}>
+                <h3 style={{ ...styles.sectionTitle, color: "#eab308", marginBottom: "4px" }}>
+                  🎨 Paleta de Colores para Documentos y PDFs
+                </h3>
+                <p style={styles.sectionSubtitle}>Elige un tema predefinido o personaliza los colores exactos de tu taller.</p>
+
+                {/* Presets Row */}
+                <div style={{ marginBottom: "18px" }}>
+                  <label style={{ ...styles.label, marginBottom: "8px" }}>Temas Rápidos Predefinidos:</label>
+                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                    {COLOR_PRESETS.map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => handleApplyPreset(preset)}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          padding: "8px 14px",
+                          borderRadius: "10px",
+                          backgroundColor: "rgba(255, 255, 255, 0.04)",
+                          border: brandingForm.colorSecundario === preset.colorSecundario ? `2px solid ${preset.colorSecundario}` : "1px solid rgba(255, 255, 255, 0.1)",
+                          cursor: "pointer",
+                          color: "#fff",
+                          fontSize: "0.8rem",
+                          fontWeight: "600",
+                          transition: "all 0.2s ease"
+                        }}
+                      >
+                        <span style={{ width: "12px", height: "12px", borderRadius: "50%", backgroundColor: preset.colorPrimario, border: "1px solid rgba(255,255,255,0.3)" }} />
+                        <span style={{ width: "12px", height: "12px", borderRadius: "50%", backgroundColor: preset.colorSecundario }} />
+                        <span>{preset.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Custom Color Inputs */}
+                <div style={styles.formGrid}>
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Color Primario (Encabezados y Barras)</label>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <input
+                        type="color"
+                        value={brandingForm.colorPrimario || "#0a0c10"}
+                        onChange={(e) => setBrandingForm({ ...brandingForm, colorPrimario: e.target.value })}
+                        style={{ width: "42px", height: "38px", padding: 0, border: "none", borderRadius: "6px", cursor: "pointer", backgroundColor: "transparent" }}
+                      />
+                      <input
+                        type="text"
+                        className="input-field"
+                        value={brandingForm.colorPrimario}
+                        onChange={(e) => setBrandingForm({ ...brandingForm, colorPrimario: e.target.value })}
+                        style={{ flex: 1, textTransform: "uppercase" }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Color Secundario / Acento (Líneas y Badges)</label>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <input
+                        type="color"
+                        value={brandingForm.colorSecundario || "#f59e0b"}
+                        onChange={(e) => setBrandingForm({ ...brandingForm, colorSecundario: e.target.value })}
+                        style={{ width: "42px", height: "38px", padding: 0, border: "none", borderRadius: "6px", cursor: "pointer", backgroundColor: "transparent" }}
+                      />
+                      <input
+                        type="text"
+                        className="input-field"
+                        value={brandingForm.colorSecundario}
+                        onChange={(e) => setBrandingForm({ ...brandingForm, colorSecundario: e.target.value })}
+                        style={{ flex: 1, textTransform: "uppercase" }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Color de Texto en Encabezados</label>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <input
+                        type="color"
+                        value={brandingForm.colorTextoEncabezado || "#ffffff"}
+                        onChange={(e) => setBrandingForm({ ...brandingForm, colorTextoEncabezado: e.target.value })}
+                        style={{ width: "42px", height: "38px", padding: 0, border: "none", borderRadius: "6px", cursor: "pointer", backgroundColor: "transparent" }}
+                      />
+                      <input
+                        type="text"
+                        className="input-field"
+                        value={brandingForm.colorTextoEncabezado}
+                        onChange={(e) => setBrandingForm({ ...brandingForm, colorTextoEncabezado: e.target.value })}
+                        style={{ flex: 1, textTransform: "uppercase" }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Color Cuadro de Total</label>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <input
+                        type="color"
+                        value={brandingForm.colorTotalFondo || "#000000"}
+                        onChange={(e) => setBrandingForm({ ...brandingForm, colorTotalFondo: e.target.value })}
+                        style={{ width: "42px", height: "38px", padding: 0, border: "none", borderRadius: "6px", cursor: "pointer", backgroundColor: "transparent" }}
+                      />
+                      <input
+                        type="text"
+                        className="input-field"
+                        value={brandingForm.colorTotalFondo}
+                        onChange={(e) => setBrandingForm({ ...brandingForm, colorTotalFondo: e.target.value })}
+                        style={{ flex: 1, textTransform: "uppercase" }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. DATOS DE CONTACTO PARA DOCUMENTOS */}
+              <div style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.08)", paddingBottom: "20px", marginBottom: "20px" }}>
+                <h3 style={{ ...styles.sectionTitle, color: "#eab308", marginBottom: "4px" }}>
+                  📍 Datos de Contacto y Facturación
+                </h3>
+                <p style={styles.sectionSubtitle}>Información que aparecerá en los encabezados y pies de página.</p>
+
+                <div style={styles.formGrid}>
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Dirección Física Completa</label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder="Ej. 3 calle 6-47 zona 10, Ciudad de Guatemala"
+                      value={brandingForm.direccion}
+                      onChange={(e) => setBrandingForm({ ...brandingForm, direccion: e.target.value })}
+                    />
+                  </div>
+
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Teléfono de Atención</label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder="Ej. 3271-1268"
+                      value={brandingForm.telefono}
+                      onChange={(e) => setBrandingForm({ ...brandingForm, telefono: e.target.value })}
+                    />
+                  </div>
+
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>WhatsApp de Clientes</label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder="Ej. 3271-1268"
+                      value={brandingForm.whatsapp}
+                      onChange={(e) => setBrandingForm({ ...brandingForm, whatsapp: e.target.value })}
+                    />
+                  </div>
+
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Correo Electrónico</label>
+                    <input
+                      type="email"
+                      className="input-field"
+                      placeholder="Ej. contacto@mitaller.com"
+                      value={brandingForm.email}
+                      onChange={(e) => setBrandingForm({ ...brandingForm, email: e.target.value })}
+                    />
+                  </div>
+
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>NIT / Razón Social</label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder="Ej. CF o 1234567-8"
+                      value={brandingForm.nit}
+                      onChange={(e) => setBrandingForm({ ...brandingForm, nit: e.target.value })}
+                    />
+                  </div>
+
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Sitio Web / Portal</label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder="Ej. https://mitaller.com"
+                      value={brandingForm.sitioWeb}
+                      onChange={(e) => setBrandingForm({ ...brandingForm, sitioWeb: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 5. TÉRMINOS LEGALES, POLÍTICAS Y PIE DE PÁGINA */}
+              <div style={{ marginBottom: "24px" }}>
+                <h3 style={{ ...styles.sectionTitle, color: "#eab308", marginBottom: "4px" }}>
+                  📜 Términos, Políticas de Garantía y Pie de Página
+                </h3>
+                <p style={styles.sectionSubtitle}>Textos legales que se imprimirán al pie de cada tipo de documento.</p>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Términos y Condiciones de Hoja de Recepción (Taller & Carwash)</label>
+                    <textarea
+                      className="input-field"
+                      rows={3}
+                      value={brandingForm.terminosRecepcion}
+                      onChange={(e) => setBrandingForm({ ...brandingForm, terminosRecepcion: e.target.value })}
+                      style={{ width: "100%", resize: "vertical", fontSize: "0.85rem" }}
+                    />
+                  </div>
+
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Términos de Vigencia en Cotizaciones</label>
+                    <textarea
+                      className="input-field"
+                      rows={2}
+                      value={brandingForm.terminosCotizacion}
+                      onChange={(e) => setBrandingForm({ ...brandingForm, terminosCotizacion: e.target.value })}
+                      style={{ width: "100%", resize: "vertical", fontSize: "0.85rem" }}
+                    />
+                  </div>
+
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Política de Garantía Técnica</label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      value={brandingForm.garantiaTexto}
+                      onChange={(e) => setBrandingForm({ ...brandingForm, garantiaTexto: e.target.value })}
+                    />
+                  </div>
+
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Mensaje de Agradecimiento en Pie de Página</label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      value={brandingForm.piePaginaDocumento}
+                      onChange={(e) => setBrandingForm({ ...brandingForm, piePaginaDocumento: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* SAVE / RESET ACTIONS */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px", paddingTop: "12px", borderTop: "1px solid rgba(255, 255, 255, 0.08)" }}>
+                <button
+                  type="button"
+                  onClick={handleResetDefaultBranding}
+                  className="btn btn-ghost"
+                  style={{ display: "flex", alignItems: "center", gap: "8px", color: "#9ca3af" }}
+                >
+                  <RotateCcw size={16} /> Restaurar Valores por Defecto de Los Pits
+                </button>
+
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ ...styles.saveBtn, padding: "12px 28px", fontSize: "1rem", fontWeight: "700" }}
+                >
+                  <Save size={18} /> Guardar Personalización de Marca
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
         {/* Tab 1: General Settings & Presets CRUD */}
         {activeTab === "general" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "30px" }}>
