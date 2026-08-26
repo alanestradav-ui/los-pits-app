@@ -2111,6 +2111,7 @@ export default function SettingsComponent({
                     }}>
                       {[
                         { id: "dashboard", label: "📊 Dashboard" },
+                        { id: "citas", label: "📅 Citas & Agenda" },
                         { id: "taller", label: "🔧 Taller Mecánico" },
                         { id: "carwash", label: "🧼 Carwash" },
                         { id: "parqueo", label: "🚗 Parqueo" },
@@ -2120,6 +2121,7 @@ export default function SettingsComponent({
                         { id: "tienda", label: "🛒 Tienda POS" },
                         { id: "cuentas", label: "📋 Cuentas Pagar/Cobrar" },
                         { id: "compras", label: "🛍️ Compras & Gastos" },
+                        { id: "recompensas", label: "🎁 Recompensas Pits" },
                         { id: "historial", label: "⏳ Historial Vehículos" },
                         { id: "accesorios", label: "💎 Accesorios" },
                         { id: "cotizacionesVendedores", label: "📦 Cotizaciones Vendedores" },
@@ -3066,7 +3068,8 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.app_data;`}
                 }}>
                   {[
                     { id: "dashboard", label: "📊 Dashboard" },
-                    { id: "taller", label: "🔧 Taller" },
+                    { id: "citas", label: "📅 Citas & Agenda" },
+                    { id: "taller", label: "🔧 Taller Mecánico" },
                     { id: "carwash", label: "🧼 Carwash" },
                     { id: "parqueo", label: "🚗 Parqueo" },
                     { id: "bodega", label: "📦 Bodega Taller" },
@@ -3075,8 +3078,10 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.app_data;`}
                     { id: "tienda", label: "🛒 Tienda POS" },
                     { id: "cuentas", label: "📋 Cuentas Pagar/Cobrar" },
                     { id: "compras", label: "🛍️ Compras & Gastos" },
+                    { id: "recompensas", label: "🎁 Recompensas Pits" },
                     { id: "historial", label: "⏳ Historial Vehículos" },
                     { id: "accesorios", label: "💎 Accesorios" },
+                    { id: "cotizacionesVendedores", label: "📦 Cotizaciones Vendedores" },
                     { id: "finanzas", label: "📈 Finanzas" },
                     { id: "configuracion", label: "⚙️ Configuración" }
                   ].map((perm) => {

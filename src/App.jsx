@@ -22,6 +22,7 @@ import VendorQuotes from "./components/VendorQuotes";
 import LoyaltyRewards from "./components/LoyaltyRewards";
 import CustomerPortal from "./components/CustomerPortal";
 import SaaSAdmin from "./components/SaaSAdmin";
+import Citas from "./components/Citas";
 import { DEFAULT_CATALOGO_PREMIOS } from "./utils/wallet";
 import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocalStorage } from "./utils/storage";
 import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout, processOfflineQueue } from "./utils/supabase";
@@ -107,6 +108,7 @@ const ARRAY_KEYS = [
   "reglasPrograma",
   "regalosPasesReferidos",
   "cotizacionesRepuestos",
+  "citas",
   "payrollHistory"
 ];
 
@@ -899,6 +901,11 @@ export default function App() {
     return Array.isArray(val) ? val : [];
   });
 
+  const [citas, setCitas] = useState(() => {
+    const val = getTenantLocalStorage("citas", [], tenantId);
+    return Array.isArray(val) ? val : [];
+  });
+
   // 🏆 LOYALTY REWARDS HELPER: Auto-calculates & awards Puntos Pits for completed services
   const addPuntosLealtad = (clienteKey, clienteNombre, monto, area, tallerLaborMonto = 0) => {
     if (!clienteKey && !clienteNombre) return;
@@ -1145,6 +1152,7 @@ export default function App() {
     globalActiveSetters.catalogoPremios = setCatalogoPremios;
     globalActiveSetters.historialCanjes = setHistorialCanjes;
     globalActiveSetters.reglasPrograma = setReglasPrograma;
+    globalActiveSetters.citas = setCitas;
     globalActiveSetters.setIsInitialPullDone = setIsInitialPullDone;
     globalActiveSetters.setRealtimeStatus = setRealtimeStatus;
   });
@@ -1181,7 +1189,8 @@ export default function App() {
       puntosRecompensas,
       catalogoPremios,
       historialCanjes,
-      reglasPrograma
+      reglasPrograma,
+      citas
     };
   }, [
     usuarios,
@@ -1213,7 +1222,8 @@ export default function App() {
     puntosRecompensas,
     catalogoPremios,
     historialCanjes,
-    reglasPrograma
+    reglasPrograma,
+    citas
   ]);
 
   const globalBroadcastChannel = useRef(null);
@@ -1938,6 +1948,11 @@ export default function App() {
     syncToCloud("reglasPrograma", reglasPrograma);
   }, [reglasPrograma, tenantId]);
 
+  useEffect(() => {
+    setTenantLocalStorage("citas", citas, tenantId);
+    syncToCloud("citas", citas);
+  }, [citas, tenantId]);
+
   const usuarioActivo = usuarios.find(u => (u.user || "").toLowerCase().trim() === (usuarioActual?.user || "").toLowerCase().trim()) || usuarioActual;
 
   const userHasPermission = (user, tabId) => {
@@ -2066,6 +2081,25 @@ export default function App() {
             setCustomEndDate={setCustomEndDate}
             usuarioActual={usuarioActivo}
             userHasPermission={userHasPermission}
+          />
+        )}
+
+        {currentTab === "citas" && userHasPermission(usuarioActivo, "citas") && (
+          <Citas 
+            citas={citas}
+            setCitas={setCitas}
+            clientes={clientes}
+            setClientes={setClientes}
+            vehiculos={vehiculos}
+            setVehiculos={setVehiculos}
+            mecanicos={mecanicos}
+            lavadores={lavadores}
+            ordenes={ordenes}
+            setOrdenes={setOrdenes}
+            carwash={carwash}
+            setCarwash={setCarwash}
+            usuarioActual={usuarioActivo}
+            onNavigateTab={(tab) => setCurrentTab(tab)}
           />
         )}
 

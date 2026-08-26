@@ -25,7 +25,8 @@ import {
   Gem,
   Award,
   Sparkles,
-  Smartphone
+  Smartphone,
+  CalendarClock
 } from "lucide-react";
 import { testSupabaseConnection } from "../utils/supabase";
 
@@ -39,6 +40,12 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
       label: "Dashboard", 
       icon: Gauge, 
       roles: ["admin", "cajero"] 
+    },
+    { 
+      id: "citas", 
+      label: "Citas & Agenda", 
+      icon: CalendarClock, 
+      roles: ["admin", "cajero", "mecanico", "lavador", "jefe de taller"] 
     },
     { 
       id: "taller", 
