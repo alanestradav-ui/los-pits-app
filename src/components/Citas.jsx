@@ -32,6 +32,18 @@ import { formatMoney } from "../utils/storage";
 import { findVehiclesForClient } from "../utils/vehicleHelpers";
 import ClientVehiclesModal from "./ClientVehiclesModal";
 
+const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
+
+const parsePlate = (plateStr) => {
+  if (!plateStr) return { prefix: "P", number: "" };
+  for (const pref of prefixesList) {
+    if (plateStr.startsWith(`${pref}-`)) {
+      return { prefix: pref, number: plateStr.slice(pref.length + 1) };
+    }
+  }
+  return { prefix: "Extranjera", number: plateStr };
+};
+
 export default function Citas({
   citas = [],
   setCitas,
@@ -70,6 +82,8 @@ export default function Citas({
     clienteNombre: "",
     clienteTelefono: "",
     clienteNit: "CF",
+    platePrefix: "P",
+    plateNumber: "",
     vehiculoPlaca: "",
     vehiculoMarca: "",
     vehiculoLinea: "",
@@ -255,6 +269,8 @@ export default function Citas({
       clienteNombre: "",
       clienteTelefono: "",
       clienteNit: "CF",
+      platePrefix: "P",
+      plateNumber: "",
       vehiculoPlaca: "",
       vehiculoMarca: "",
       vehiculoLinea: "",
@@ -269,16 +285,21 @@ export default function Citas({
       notas: "",
       estado: "pendiente"
     });
+    setVehiculoSuggestions([]);
+    setClienteSuggestions([]);
     setIsNewCitaOpen(true);
   };
 
   // Handle edit appointment
   const handleOpenEditCita = (cita) => {
     setEditingCita(cita);
+    const parsed = parsePlate(cita.vehiculoPlaca || "");
     setFormData({
       clienteNombre: cita.clienteNombre || "",
       clienteTelefono: cita.clienteTelefono || "",
       clienteNit: cita.clienteNit || "CF",
+      platePrefix: parsed.prefix || "P",
+      plateNumber: parsed.number || "",
       vehiculoPlaca: cita.vehiculoPlaca || "",
       vehiculoMarca: cita.vehiculoMarca || "",
       vehiculoLinea: cita.vehiculoLinea || "",
@@ -293,6 +314,8 @@ export default function Citas({
       notas: cita.notas || "",
       estado: cita.estado || "pendiente"
     });
+    setVehiculoSuggestions([]);
+    setClienteSuggestions([]);
     setIsNewCitaOpen(true);
   };
 
@@ -322,11 +345,14 @@ export default function Citas({
 
     if (cVehicles.length === 1) {
       const v = cVehicles[0];
+      const parsed = parsePlate(v.placa || "");
       setFormData(prev => ({
         ...prev,
         clienteNombre: c.nombre || prev.clienteNombre,
         clienteTelefono: c.telefono || prev.clienteTelefono,
         clienteNit: c.nit || prev.clienteNit || "CF",
+        platePrefix: parsed.prefix,
+        plateNumber: parsed.number,
         vehiculoPlaca: v.placa || prev.vehiculoPlaca,
         vehiculoMarca: v.marca || prev.vehiculoMarca,
         vehiculoLinea: v.linea || prev.vehiculoLinea,
@@ -357,8 +383,11 @@ export default function Citas({
   };
 
   const handleVehicleModalSelect = (v) => {
+    const parsed = parsePlate(v.placa || "");
     setFormData(prev => ({
       ...prev,
+      platePrefix: parsed.prefix,
+      plateNumber: parsed.number,
       vehiculoPlaca: v.placa || prev.vehiculoPlaca,
       vehiculoMarca: v.marca || prev.vehiculoMarca,
       vehiculoLinea: v.linea || prev.vehiculoLinea,
@@ -368,22 +397,31 @@ export default function Citas({
     setClientVehiclesModalData({ isOpen: false, clienteNombre: "", vehicles: [] });
   };
 
-  const handlePlacaChange = (val) => {
+  const handlePlateNumberChange = (val) => {
     const upper = val.toUpperCase();
-    setFormData(prev => ({ ...prev, vehiculoPlaca: upper }));
-    if (!val || val.length < 2) {
+    const currentPrefix = formData.platePrefix || "P";
+    const fullPlc = currentPrefix === "Extranjera" ? upper : (upper ? `${currentPrefix}-${upper}` : "");
+    setFormData(prev => ({
+      ...prev,
+      plateNumber: upper,
+      vehiculoPlaca: fullPlc
+    }));
+    if (!upper || upper.length < 2) {
       setVehiculoSuggestions([]);
       return;
     }
     const matches = (vehiculos || []).filter(v => 
-      v.placa && v.placa.toUpperCase().includes(upper)
+      v.placa && (v.placa.toUpperCase().includes(fullPlc) || v.placa.toUpperCase().includes(upper))
     ).slice(0, 5);
     setVehiculoSuggestions(matches);
   };
 
   const handleSelectVehiculoSuggestion = (v) => {
+    const parsed = parsePlate(v.placa || "");
     setFormData(prev => ({
       ...prev,
+      platePrefix: parsed.prefix,
+      plateNumber: parsed.number,
       vehiculoPlaca: v.placa || prev.vehiculoPlaca,
       vehiculoMarca: v.marca || prev.vehiculoMarca,
       vehiculoLinea: v.linea || prev.vehiculoLinea,
@@ -410,7 +448,16 @@ export default function Citas({
       return;
     }
 
-    const newRecordatorios = generateDefaultReminders(formData);
+    const finalPlaca = (formData.plateNumber || "").trim()
+      ? (formData.platePrefix === "Extranjera" ? formData.plateNumber.trim() : `${formData.platePrefix}-${formData.plateNumber.trim()}`)
+      : (formData.vehiculoPlaca || "");
+
+    const dataToSave = {
+      ...formData,
+      vehiculoPlaca: finalPlaca
+    };
+
+    const newRecordatorios = generateDefaultReminders(dataToSave);
 
     if (editingCita) {
       // Update existing
@@ -418,7 +465,7 @@ export default function Citas({
         if (c.id === editingCita.id) {
           return {
             ...c,
-            ...formData,
+            ...dataToSave,
             recordatorios: {
               confirmacion: {
                 ...newRecordatorios.confirmacion,
@@ -443,7 +490,7 @@ export default function Citas({
       // Create new
       const newCita = {
         id: `cita_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-        ...formData,
+        ...dataToSave,
         recordatorios: newRecordatorios,
         fechaCreacion: new Date().toISOString(),
         creadoPor: usuarioActual?.user || "Admin"
@@ -477,19 +524,20 @@ export default function Citas({
       });
     }
 
-    if (formData.vehiculoPlaca.trim() && setVehiculos) {
+    if (finalPlaca.trim() && setVehiculos) {
       setVehiculos(prev => {
         const list = Array.isArray(prev) ? [...prev] : [];
-        const exists = list.some(vh => vh.placa?.toUpperCase().trim() === formData.vehiculoPlaca.toUpperCase().trim());
+        const exists = list.some(vh => vh.placa?.toUpperCase().trim() === finalPlaca.toUpperCase().trim());
         if (!exists) {
           list.push({
             id: `v_${Date.now()}`,
-            placa: formData.vehiculoPlaca.toUpperCase().trim(),
+            placa: finalPlaca.toUpperCase().trim(),
             marca: formData.vehiculoMarca.trim(),
             linea: formData.vehiculoLinea.trim(),
             color: formData.vehiculoColor.trim(),
             modelo: formData.vehiculoModelo.trim(),
-            propietario: formData.clienteNombre.trim()
+            propietario: formData.clienteNombre.trim(),
+            clienteTelefono: formData.clienteTelefono.trim()
           });
         }
         return list;
@@ -972,14 +1020,44 @@ export default function Citas({
               <div style={{ ...styles.formSectionTitle, marginTop: "16px" }}>🚘 Información del Vehículo</div>
               <div style={styles.formGrid3}>
                 <div style={{ position: "relative" }}>
-                  <label style={styles.formLabel}>Placa</label>
-                  <input 
-                    type="text" 
-                    placeholder="Ej. P-123ABC"
-                    value={formData.vehiculoPlaca}
-                    onChange={(e) => handlePlacaChange(e.target.value)}
-                    style={styles.formInput}
-                  />
+                  <label style={styles.formLabel}>Placa *</label>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <select
+                      className="input-field"
+                      value={formData.platePrefix || "P"}
+                      onChange={(e) => {
+                        const newPref = e.target.value;
+                        const num = (formData.plateNumber || "").trim();
+                        const newFull = newPref === "Extranjera" ? num : (num ? `${newPref}-${num}` : "");
+                        setFormData(prev => ({ ...prev, platePrefix: newPref, vehiculoPlaca: newFull }));
+                      }}
+                      style={{ 
+                        width: "100px", 
+                        padding: "8px", 
+                        cursor: "pointer", 
+                        backgroundColor: "rgba(255, 255, 255, 0.05)",
+                        border: "1px solid rgba(255, 255, 255, 0.1)",
+                        borderRadius: "8px",
+                        color: "#fff"
+                      }}
+                    >
+                      <option value="P">P</option>
+                      <option value="A">A</option>
+                      <option value="MI">MI</option>
+                      <option value="CD">CD</option>
+                      <option value="C">C</option>
+                      <option value="M">M</option>
+                      <option value="DIS">DIS</option>
+                      <option value="Extranjera">Extranjera</option>
+                    </select>
+                    <input 
+                      type="text" 
+                      placeholder="123XYZ"
+                      value={formData.plateNumber || ""}
+                      onChange={(e) => handlePlateNumberChange(e.target.value)}
+                      style={{ ...styles.formInput, flex: 1, textTransform: "uppercase" }}
+                    />
+                  </div>
                   {vehiculoSuggestions.length > 0 && (
                     <div style={styles.suggestionsDropdown}>
                       {vehiculoSuggestions.map((v, i) => (
