@@ -31,21 +31,9 @@ export const getTenantLocalStorage = (key, defaultValue, tenantId = null) => {
   const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
   const scopedKey = `${activeTenant}_${key}`;
   const storedScoped = localStorage.getItem(scopedKey);
-  const storedBase = localStorage.getItem(key);
 
-  if (activeTenant === "lospits") {
-    if (storedScoped !== null && storedBase !== null) {
-      try {
-        const parsedScoped = JSON.parse(storedScoped);
-        const parsedBase = JSON.parse(storedBase);
-        if (Array.isArray(parsedScoped) && Array.isArray(parsedBase)) {
-          return parsedScoped.length >= parsedBase.length ? parsedScoped : parsedBase;
-        }
-        return parsedScoped || parsedBase || defaultValue;
-      } catch (e) {}
-    }
-  }
-
+  // 🔒 STRICT TENANT ISOLATION: Only read from the scoped key.
+  // NEVER fall back to the unscoped key — that would leak data between tenants.
   if (storedScoped !== null) {
     try {
       return JSON.parse(storedScoped);
@@ -54,17 +42,31 @@ export const getTenantLocalStorage = (key, defaultValue, tenantId = null) => {
     }
   }
 
-  // Fallback for initial load if scoped key has not been written yet
-  return getLocalStorage(key, defaultValue);
+  // 🔄 ONE-TIME MIGRATION for "lospits" tenant:
+  // If the scoped key doesn't exist yet but old unscoped data does,
+  // migrate it to the scoped key and return it.
+  if (activeTenant === "lospits") {
+    const storedBase = localStorage.getItem(key);
+    if (storedBase !== null) {
+      try {
+        const parsed = JSON.parse(storedBase);
+        // Migrate: write to scoped key so next read hits the fast path
+        localStorage.setItem(scopedKey, storedBase);
+        return parsed;
+      } catch (e) {
+        return defaultValue;
+      }
+    }
+  }
+
+  return defaultValue;
 };
 
 export const setTenantLocalStorage = (key, value, tenantId = null) => {
   const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
   const scopedKey = `${activeTenant}_${key}`;
+  // 🔒 ALWAYS write to the scoped key only — strict tenant isolation
   setLocalStorage(scopedKey, value);
-  if (activeTenant === "lospits") {
-    setLocalStorage(key, value);
-  }
 };
 
 export const formatMoney = (amount) => {

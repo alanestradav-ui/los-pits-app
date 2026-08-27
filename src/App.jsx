@@ -560,7 +560,16 @@ export default function App() {
 
   // 🔑 LOGIN STATES
   const [usuarioActual, setUsuarioActual] = useState(() => {
-    const saved = getLocalStorage("usuarioActual", null);
+    // 🔒 Read session scoped by tenant to prevent cross-tenant session leaks
+    const scopedSessionKey = `${tenantId}_usuarioActual`;
+    let saved = getLocalStorage(scopedSessionKey, null);
+    // One-time migration: if scoped key doesn't exist, try unscoped key for lospits only
+    if (!saved && tenantId === "lospits") {
+      saved = getLocalStorage("usuarioActual", null);
+      if (saved) {
+        setLocalStorage(scopedSessionKey, saved);
+      }
+    }
     if (saved && (saved.user || "").toLowerCase().trim() === "armando avila") {
       if (Array.isArray(saved.permissions)) {
         saved.permissions = saved.permissions.filter(p => p !== "finanzas");
@@ -1090,10 +1099,11 @@ export default function App() {
     alert(`¡Sistema restaurado con éxito al estado del ${new Date(snapshot.fecha).toLocaleString()}!`);
   };
 
-  // 💾 PERSISTENCE EFFECT
+  // 💾 PERSISTENCE EFFECT — scoped to tenant for strict isolation
   useEffect(() => {
-    setLocalStorage("usuarioActual", usuarioActual);
-  }, [usuarioActual]);
+    const scopedSessionKey = `${tenantId}_usuarioActual`;
+    setLocalStorage(scopedSessionKey, usuarioActual);
+  }, [usuarioActual, tenantId]);
 
   // 🔄 Sync logged-in user permissions & role with updated usuarios array (e.g. when Admin updates permissions)
   useEffect(() => {
@@ -1110,13 +1120,7 @@ export default function App() {
     }
   }, [usuarios]);
 
-  // 💾 Save usuarios state to LocalStorage and sync to Cloud when changed
-  useEffect(() => {
-    if (Array.isArray(usuarios) && usuarios.length > 0) {
-      setLocalStorage("usuarios", usuarios);
-      syncKeyToCloud("usuarios", usuarios);
-    }
-  }, [usuarios]);
+  // NOTE: usuarios are now synced exclusively via the tenant-scoped effect further below (syncToCloud + setTenantLocalStorage)
 
   // 🧹 Purge stale finanzas & configuracion permissions for Armando if cached locally
   useEffect(() => {
@@ -1368,7 +1372,8 @@ export default function App() {
     if (!client) return;
 
     const activeTenant = (tenantId || "lospits").toLowerCase().trim();
-    const cloudKey = activeTenant === "lospits" ? baseKey : `${activeTenant}_${baseKey}`;
+    // 🔒 ALWAYS use tenant-prefixed key in Supabase — strict isolation for ALL tenants
+    const cloudKey = `${activeTenant}_${baseKey}`;
 
     const cleanVal = filterOutMockItems(baseKey, safeParseJSON(value));
     const valueStr = JSON.stringify(cleanVal);
@@ -1422,12 +1427,22 @@ export default function App() {
       }
       
       const activeTenant = (tenantId || "lospits").toLowerCase().trim();
-      const getScopedKey = (k) => activeTenant === "lospits" ? k : `${activeTenant}_${k}`;
+      // 🔒 ALWAYS use tenant-prefixed keys — strict isolation for ALL tenants
+      const getScopedKey = (k) => `${activeTenant}_${k}`;
 
       const cloudDataMap = new Map();
       const allKeysList = Array.from(new Set([...ARRAY_KEYS, "usuarios", "ordenes", "carwash", "parkingEntries", "parkingHistory", "vehiculosVenta", "workshopInventory", "cafeteriaInventory", "cafeteriaSales", "carwashPresets", "carwashInventory", "carwashConsumption", "tiendaSales", "cuentasPorCobrar", "cuentasPorPagar", "fixedCosts", "clientes", "vehiculos", "compras", "toolsInventory", "accesoriosInventory", "papeleraSistema", "cotizacionesRepuestos", "puntosRecompensas", "catalogoPremios", "historialCanjes", "reglasPrograma", "workshopBranding", "activeModules", "cotizacionesExpress"])).filter(k => k !== "systemSnapshots" && k !== "app_data_backup_snapshot");
 
+      // Build query keys: always scoped. For lospits, also include old unscoped keys for migration.
       const scopedQueryKeys = allKeysList.map(k => getScopedKey(k));
+      if (activeTenant === "lospits") {
+        // 🔄 MIGRATION: Also fetch old unscoped keys to migrate data to new scoped format
+        allKeysList.forEach(k => {
+          if (!scopedQueryKeys.includes(k)) {
+            scopedQueryKeys.push(k);
+          }
+        });
+      }
       // Consultar llaves en paralelo en lotes de 15 con timeout generoso
       const chunkSize = 15;
       const batchChunks = [];
@@ -1468,14 +1483,15 @@ export default function App() {
         const scopedKey = getScopedKey(baseKey);
 
         // 🛡️ If this key was in a FAILED batch, skip entirely — don't touch state or cloud
-        const prefixedKey = `lospits_${baseKey}`;
-        if (failedBatchKeys.has(scopedKey) && (activeTenant !== "lospits" || failedBatchKeys.has(prefixedKey))) {
+        if (failedBatchKeys.has(scopedKey)) {
           return; // Protect: don't merge with null cloud data, don't push stale local data
         }
 
+        // 🔒 Read from scoped key first; for lospits, also try old unscoped key for migration
         let cloudRaw = cloudDataMap.get(scopedKey);
         if (cloudRaw === undefined && activeTenant === "lospits") {
-          cloudRaw = cloudDataMap.get(`lospits_${baseKey}`) || cloudDataMap.get(baseKey);
+          // 🔄 MIGRATION: Try reading from old unscoped key (pre-isolation data)
+          cloudRaw = cloudDataMap.get(baseKey);
         }
 
         const cloudValue = cloudRaw !== undefined ? safeParseJSON(cloudRaw) : null;
