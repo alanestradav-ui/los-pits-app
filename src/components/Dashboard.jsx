@@ -36,6 +36,12 @@ export default function Dashboard({
   const safeOrdenes = Array.isArray(ordenes) ? ordenes.filter(Boolean) : [];
   const safeCarwash = Array.isArray(carwash) ? carwash.filter(Boolean) : [];
 
+  // 🔄 While the initial cloud sync is in progress, show a loading placeholder for KPI numbers
+  const syncing = !isInitialPullDone;
+  const LoadingVal = ({ children, style = {} }) => syncing
+    ? <span style={{ ...style, opacity: 0.35, animation: "pulse 1.5s ease-in-out infinite" }}>⏳</span>
+    : <>{children}</>;
+
   const canSeeFinanzas = userHasPermission 
     ? userHasPermission(usuarioActual, "finanzas") 
     : (Array.isArray(usuarioActual?.permissions) ? usuarioActual.permissions.includes("finanzas") : usuarioActual?.user === "admin");
@@ -405,9 +411,9 @@ export default function Dashboard({
           </div>
           <div style={styles.statDetails}>
             <span style={styles.statLabel}>Trabajos Activos</span>
-            <span style={{ ...styles.statVal, fontFamily: "var(--font-display)" }}>{totalActive}</span>
+            <span style={{ ...styles.statVal, fontFamily: "var(--font-display)" }}><LoadingVal>{totalActive}</LoadingVal></span>
             <div style={styles.statSubText}>
-              <span>🔧 {activeTaller} Mecánica</span> • <span>🧼 {activeCarwash} Lavado</span>
+              <span>🔧 <LoadingVal>{activeTaller}</LoadingVal> Mecánica</span> • <span>🧼 <LoadingVal>{activeCarwash}</LoadingVal> Lavado</span>
             </div>
           </div>
         </div>
@@ -419,9 +425,9 @@ export default function Dashboard({
           </div>
           <div style={styles.statDetails}>
             <span style={styles.statLabel}>Listos para Entrega</span>
-            <span style={{ ...styles.statVal, fontFamily: "var(--font-display)" }}>{totalReady}</span>
+            <span style={{ ...styles.statVal, fontFamily: "var(--font-display)" }}><LoadingVal>{totalReady}</LoadingVal></span>
             <div style={styles.statSubText}>
-              <span>🔧 {readyTaller} Taller</span> • <span>🧼 {readyCarwash} Carwash</span>
+              <span>🔧 <LoadingVal>{readyTaller}</LoadingVal> Taller</span> • <span>🧼 <LoadingVal>{readyCarwash}</LoadingVal> Carwash</span>
             </div>
           </div>
         </div>
@@ -436,7 +442,7 @@ export default function Dashboard({
               <div style={styles.statDetails}>
                 <span style={styles.statLabel}>Caja (Efectivo) ({currentPeriodLabel})</span>
                 <span style={{ ...styles.statVal, color: "#10b981", fontFamily: "var(--font-display)" }}>
-                  {formatMoney(cashRevenue)}
+                  <LoadingVal>{formatMoney(cashRevenue)}</LoadingVal>
                 </span>
                 <span style={styles.statSubText}>Total cobrado en efectivo</span>
               </div>
@@ -450,7 +456,7 @@ export default function Dashboard({
               <div style={styles.statDetails}>
                 <span style={styles.statLabel}>Bancos ({currentPeriodLabel})</span>
                 <span style={{ ...styles.statVal, color: "var(--color-primary)", fontFamily: "var(--font-display)" }}>
-                  {formatMoney(bankRevenue)}
+                  <LoadingVal>{formatMoney(bankRevenue)}</LoadingVal>
                 </span>
                 <span style={styles.statSubText}>Tarjetas, transferencias, cheques</span>
               </div>
@@ -464,7 +470,7 @@ export default function Dashboard({
               <div style={styles.statDetails}>
                 <span style={styles.statLabel}>Total Recaudado ({currentPeriodLabel})</span>
                 <span style={{ ...styles.statVal, color: "#10b981", fontFamily: "var(--font-display)" }}>
-                  {formatMoney(totalRevenue)}
+                  <LoadingVal>{formatMoney(totalRevenue)}</LoadingVal>
                 </span>
                 <span style={styles.statSubText}>Efectivo + Bancos (sin flujo pendiente)</span>
               </div>
@@ -480,7 +486,7 @@ export default function Dashboard({
           <div style={styles.statDetails}>
             <span style={styles.statLabel}>Flujo en Proceso / Listo</span>
             <span style={{ ...styles.statVal, color: "var(--color-primary)", fontFamily: "var(--font-display)" }}>
-              {formatMoney(pendingRevenueEstimate)}
+              <LoadingVal>{formatMoney(pendingRevenueEstimate)}</LoadingVal>
             </span>
             <span style={styles.statSubText}>Valor de trabajos pendientes</span>
           </div>
@@ -586,7 +592,7 @@ export default function Dashboard({
             <div style={styles.progressContainer}>
               <div style={styles.progressLabelRow}>
                 <span>Carga de Taller</span>
-                <span>{activeTaller} Autos</span>
+                <span><LoadingVal>{activeTaller}</LoadingVal> Autos</span>
               </div>
               <div style={styles.progressBarBg}>
                 <div style={{ 
@@ -600,7 +606,7 @@ export default function Dashboard({
             <div style={styles.progressContainer}>
               <div style={styles.progressLabelRow}>
                 <span>Cola Carwash</span>
-                <span>{activeCarwash} Trabajos</span>
+                <span><LoadingVal>{activeCarwash}</LoadingVal> Trabajos</span>
               </div>
               <div style={styles.progressBarBg}>
                 <div style={{ 
