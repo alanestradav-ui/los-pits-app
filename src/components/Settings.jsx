@@ -28,10 +28,27 @@ import {
   Sparkles,
   RotateCcw,
   Check,
-  FileText
+  FileText,
+  Layers,
+  LayoutGrid,
+  Warehouse,
+  Store,
+  ShoppingBag,
+  ShoppingCart,
+  Receipt,
+  Wallet,
+  Gift,
+  Smartphone,
+  History,
+  CalendarClock,
+  Tv,
+  Gauge,
+  Sliders,
+  CheckCircle2
 } from "lucide-react";
 import { formatMoney } from "../utils/storage";
 import { DEFAULT_BRANDING, COLOR_PRESETS, getCleanBranding } from "../utils/branding";
+import { ALL_AVAILABLE_MODULES, DEFAULT_ACTIVE_MODULES, MODULE_PRESETS, isModuleActive } from "../utils/modulesConfig";
 import { getSupabaseClient, resetSupabaseClient, syncKeyToCloud, testSupabaseConnection } from "../utils/supabase";
 import PapeleraModal from "./PapeleraModal";
 import { createBackup, exportBackupToFile, restoreFromBackup, getBackupsList } from "../services/backupService";
@@ -83,12 +100,87 @@ export default function SettingsComponent({
   restoreTrashItem,
   restoreSystemSnapshot,
   workshopBranding = DEFAULT_BRANDING,
-  setWorkshopBranding
+  setWorkshopBranding,
+  activeModules = DEFAULT_ACTIVE_MODULES,
+  setActiveModules
 }) {
-  const [activeTab, setActiveTab] = useState("general");
+  const [activeTab, setActiveTab] = useState("branding");
   const [trashFilter, setTrashFilter] = useState("todos");
   const [showPapeleraModal, setShowPapeleraModal] = useState(false);
   const [isBackupCreating, setIsBackupCreating] = useState(false);
+
+  // 📦 Active Modules & Services State
+  const [selectedModules, setSelectedModules] = useState(() => {
+    return Array.isArray(activeModules) && activeModules.length > 0 ? activeModules : DEFAULT_ACTIVE_MODULES;
+  });
+  const [modulesCategoryFilter, setModulesCategoryFilter] = useState("todos");
+  const [modulesSavedToast, setModulesSavedToast] = useState(false);
+
+  useEffect(() => {
+    if (Array.isArray(activeModules) && activeModules.length > 0) {
+      setSelectedModules(activeModules);
+    }
+  }, [activeModules]);
+
+  const handleToggleModule = (moduleId) => {
+    if (moduleId === "dashboard" || moduleId === "configuracion") return;
+    const isCurrentlyActive = selectedModules.includes(moduleId);
+    let updated;
+    if (isCurrentlyActive) {
+      updated = selectedModules.filter(id => id !== moduleId);
+    } else {
+      updated = [...selectedModules, moduleId];
+    }
+    setSelectedModules(updated);
+    if (typeof setActiveModules === "function") {
+      setActiveModules(updated);
+    }
+    setModulesSavedToast(true);
+    setTimeout(() => setModulesSavedToast(false), 2000);
+  };
+
+  const handleApplyModulePreset = (presetModules) => {
+    setSelectedModules(presetModules);
+    if (typeof setActiveModules === "function") {
+      setActiveModules(presetModules);
+    }
+    setModulesSavedToast(true);
+    setTimeout(() => setModulesSavedToast(false), 3000);
+  };
+
+  const handleSaveModules = (e) => {
+    if (e) e.preventDefault();
+    if (typeof setActiveModules === "function") {
+      setActiveModules(selectedModules);
+    }
+    setModulesSavedToast(true);
+    setTimeout(() => setModulesSavedToast(false), 3000);
+  };
+
+  const renderModuleIcon = (iconName, size = 20) => {
+    switch (iconName) {
+      case "Gauge": return <Gauge size={size} />;
+      case "CalendarClock": return <CalendarClock size={size} />;
+      case "Wrench": return <Wrench size={size} />;
+      case "Car": return <Car size={size} />;
+      case "Tv": return <Tv size={size} />;
+      case "CircleParking": return <CircleParking size={size} />;
+      case "Warehouse": return <Warehouse size={size} />;
+      case "Coffee": return <Coffee size={size} />;
+      case "Store": return <Store size={size} />;
+      case "ShoppingBag": return <ShoppingBag size={size} />;
+      case "ShoppingCart": return <ShoppingCart size={size} />;
+      case "Receipt": return <Receipt size={size} />;
+      case "Wallet": return <Wallet size={size} />;
+      case "Users": return <Users size={size} />;
+      case "Gift": return <Gift size={size} />;
+      case "Smartphone": return <Smartphone size={size} />;
+      case "History": return <History size={size} />;
+      case "TrendingUp": return <TrendingUp size={size} />;
+      case "Settings": return <Settings size={size} />;
+      default: return <Sparkles size={size} />;
+    }
+  };
 
   // 🎨 Branding & Document Customization State
   const [brandingForm, setBrandingForm] = useState(() => getCleanBranding(workshopBranding));
@@ -1005,7 +1097,18 @@ export default function SettingsComponent({
             color: activeTab === "branding" ? "#fff" : "#eab308"
           }}
         >
-          <Palette size={16} /> 🎨 Personalización & Identidad de Marca
+          <Palette size={16} /> 🎨 Personalización & Identidad
+        </button>
+        <button 
+          onClick={() => setActiveTab("modulos")}
+          style={{ 
+            ...styles.subTabBtn, 
+            ...(activeTab === "modulos" ? styles.subTabActive : {}),
+            borderColor: activeTab === "modulos" ? "#3b82f6" : "rgba(59, 130, 246, 0.4)",
+            color: activeTab === "modulos" ? "#fff" : "#60a5fa"
+          }}
+        >
+          <Layers size={16} /> 📦 Módulos Activos ({selectedModules.length})
         </button>
         <button 
           onClick={() => setActiveTab("general")}
@@ -1609,6 +1712,352 @@ export default function SettingsComponent({
                 </button>
               </div>
             </form>
+          </div>
+        )}
+
+        {/* Tab: 📦 Módulos & Servicios Activos del Taller */}
+        {activeTab === "modulos" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "24px" }} className="animate-fade-in">
+            
+            {/* Header & Status Summary Card */}
+            <div className="glass-panel" style={{ ...styles.formCard, border: "1px solid rgba(59, 130, 246, 0.3)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "16px" }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+                    <div style={{ padding: "8px", borderRadius: "10px", backgroundColor: "rgba(59, 130, 246, 0.15)", color: "#60a5fa", display: "flex" }}>
+                      <Layers size={22} />
+                    </div>
+                    <h3 style={{ ...styles.sectionTitle, margin: 0, fontSize: "1.4rem" }}>
+                      Módulos y Servicios Habilitados
+                    </h3>
+                  </div>
+                  <p style={{ ...styles.sectionSubtitle, margin: 0, maxWidth: "700px" }}>
+                    Activa únicamente las herramientas y áreas de negocio que apliquen a tu taller. Los módulos desactivados no aparecerán en el menú lateral de ningún usuario.
+                  </p>
+                </div>
+
+                {/* Progress & Counter Pill */}
+                <div style={{ 
+                  backgroundColor: "rgba(15, 23, 42, 0.8)", 
+                  padding: "12px 20px", 
+                  borderRadius: "12px", 
+                  border: "1px solid rgba(59, 130, 246, 0.3)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "6px",
+                  minWidth: "220px"
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.85rem" }}>
+                    <span style={{ color: "var(--text-muted)", fontWeight: "600" }}>Disponibilidad:</span>
+                    <span style={{ color: "#60a5fa", fontWeight: "800" }}>
+                      {selectedModules.length} de {ALL_AVAILABLE_MODULES.length} Activos
+                    </span>
+                  </div>
+                  <div style={{ width: "100%", height: "8px", backgroundColor: "rgba(255,255,255,0.08)", borderRadius: "4px", overflow: "hidden" }}>
+                    <div style={{ 
+                      width: `${(selectedModules.length / ALL_AVAILABLE_MODULES.length) * 100}%`, 
+                      height: "100%", 
+                      background: "linear-gradient(90deg, #3b82f6, #10b981)",
+                      transition: "width 0.3s ease"
+                    }} />
+                  </div>
+                </div>
+              </div>
+
+              {modulesSavedToast && (
+                <div style={{
+                  marginTop: "16px",
+                  padding: "12px 16px",
+                  backgroundColor: "rgba(16, 185, 129, 0.15)",
+                  border: "1px solid #10b981",
+                  borderRadius: "8px",
+                  color: "#10b981",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  fontWeight: "600",
+                  fontSize: "0.9rem"
+                }}>
+                  <CheckCircle2 size={18} /> ¡Configuración de módulos actualizada y sincronizada en tiempo real!
+                </div>
+              )}
+            </div>
+
+            {/* Quick Presets Section */}
+            <div className="glass-panel" style={styles.formCard}>
+              <h4 style={{ ...styles.sectionTitle, fontSize: "1.1rem", marginBottom: "6px", display: "flex", alignItems: "center", gap: "8px" }}>
+                <Sparkles size={18} color="#eab308" /> Plantillas de Configuración Rápida (1-Clic)
+              </h4>
+              <p style={{ ...styles.sectionSubtitle, marginBottom: "16px" }}>
+                Aplica combinaciones optimizadas según el giro específico de tu establecimiento:
+              </p>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px" }}>
+                {MODULE_PRESETS.map(preset => {
+                  const isPresetActive = preset.modules.length === selectedModules.length && preset.modules.every(m => selectedModules.includes(m));
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => handleApplyModulePreset(preset.modules)}
+                      style={{
+                        padding: "14px",
+                        borderRadius: "12px",
+                        backgroundColor: isPresetActive ? "rgba(59, 130, 246, 0.18)" : "rgba(255, 255, 255, 0.03)",
+                        border: isPresetActive ? "2px solid #3b82f6" : "1px solid rgba(255, 255, 255, 0.08)",
+                        color: "#fff",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "6px",
+                        transition: "all 0.2s ease"
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isPresetActive) {
+                          e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.06)";
+                          e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.2)";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isPresetActive) {
+                          e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.03)";
+                          e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.08)";
+                        }
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontWeight: "700", fontSize: "0.95rem" }}>{preset.nombre}</span>
+                        {isPresetActive && (
+                          <span style={{ fontSize: "0.75rem", backgroundColor: "#3b82f6", color: "#fff", padding: "2px 8px", borderRadius: "10px", fontWeight: "700" }}>
+                            Activo
+                          </span>
+                        )}
+                      </div>
+                      <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", lineHeight: "1.3" }}>
+                        {preset.desc}
+                      </span>
+                      <span style={{ fontSize: "0.75rem", color: "#60a5fa", fontWeight: "600", marginTop: "4px" }}>
+                        {preset.modules.length} módulos incluidos
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Category Filter Tabs */}
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+              {["todos", "Operaciones", "Ventas", "Inventarios", "Finanzas", "Clientes", "Compras", "General"].map(cat => {
+                const count = cat === "todos" 
+                  ? ALL_AVAILABLE_MODULES.length 
+                  : ALL_AVAILABLE_MODULES.filter(m => m.categoria === cat).length;
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setModulesCategoryFilter(cat)}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: "20px",
+                      fontSize: "0.85rem",
+                      fontWeight: "700",
+                      cursor: "pointer",
+                      border: modulesCategoryFilter === cat ? "1px solid #3b82f6" : "1px solid rgba(255, 255, 255, 0.1)",
+                      backgroundColor: modulesCategoryFilter === cat ? "rgba(59, 130, 246, 0.2)" : "rgba(255, 255, 255, 0.04)",
+                      color: modulesCategoryFilter === cat ? "#fff" : "var(--text-muted)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      transition: "all 0.2s ease"
+                    }}
+                  >
+                    <span>{cat === "todos" ? "Todos los Módulos" : cat}</span>
+                    <span style={{ 
+                      fontSize: "0.75rem", 
+                      padding: "1px 6px", 
+                      borderRadius: "10px", 
+                      backgroundColor: modulesCategoryFilter === cat ? "#3b82f6" : "rgba(255,255,255,0.08)",
+                      color: "#fff" 
+                    }}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Modules Grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(330px, 1fr))", gap: "16px" }}>
+              {ALL_AVAILABLE_MODULES
+                .filter(m => modulesCategoryFilter === "todos" || m.categoria === modulesCategoryFilter)
+                .map(mod => {
+                  const isActive = selectedModules.includes(mod.id);
+                  const isCore = Boolean(mod.core);
+
+                  return (
+                    <div
+                      key={mod.id}
+                      className="glass-panel"
+                      onClick={() => !isCore && handleToggleModule(mod.id)}
+                      style={{
+                        padding: "18px",
+                        borderRadius: "14px",
+                        backgroundColor: isActive ? "rgba(255, 255, 255, 0.04)" : "rgba(15, 23, 42, 0.4)",
+                        border: isActive ? "1px solid rgba(59, 130, 246, 0.4)" : "1px solid rgba(255, 255, 255, 0.05)",
+                        boxShadow: isActive ? "0 4px 20px rgba(59, 130, 246, 0.08)" : "none",
+                        cursor: isCore ? "default" : "pointer",
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "space-between",
+                        gap: "14px",
+                        transition: "all 0.2s ease",
+                        opacity: isActive ? 1 : 0.65
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isCore) {
+                          e.currentTarget.style.borderColor = isActive ? "#60a5fa" : "rgba(255, 255, 255, 0.2)";
+                          e.currentTarget.style.transform = "translateY(-2px)";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isCore) {
+                          e.currentTarget.style.borderColor = isActive ? "rgba(59, 130, 246, 0.4)" : "rgba(255, 255, 255, 0.05)";
+                          e.currentTarget.style.transform = "translateY(0px)";
+                        }
+                      }}
+                    >
+                      {/* Top Header of Card */}
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: "14px" }}>
+                        <div style={{
+                          padding: "12px",
+                          borderRadius: "12px",
+                          backgroundColor: isActive ? "rgba(59, 130, 246, 0.15)" : "rgba(255, 255, 255, 0.05)",
+                          color: isActive ? "#60a5fa" : "#9ca3af",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0
+                        }}>
+                          {renderModuleIcon(mod.iconName, 24)}
+                        </div>
+
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "4px" }}>
+                            <h4 style={{ margin: 0, fontSize: "1.05rem", fontWeight: "700", color: "#fff" }}>
+                              {mod.label}
+                            </h4>
+                          </div>
+
+                          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                            <span style={{ 
+                              fontSize: "0.7rem", 
+                              fontWeight: "700", 
+                              padding: "2px 8px", 
+                              borderRadius: "6px", 
+                              backgroundColor: "rgba(255, 255, 255, 0.08)", 
+                              color: "var(--text-muted)",
+                              textTransform: "uppercase"
+                            }}>
+                              {mod.categoria}
+                            </span>
+                            {isCore && (
+                              <span style={{ 
+                                fontSize: "0.7rem", 
+                                fontWeight: "700", 
+                                padding: "2px 8px", 
+                                borderRadius: "6px", 
+                                backgroundColor: "rgba(234, 179, 8, 0.15)", 
+                                color: "#eab308" 
+                              }}>
+                                🔒 Requerido
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Description */}
+                      <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--text-muted)", lineHeight: "1.4" }}>
+                        {mod.desc}
+                      </p>
+
+                      {/* Toggle Bar */}
+                      <div style={{ 
+                        display: "flex", 
+                        justifyContent: "space-between", 
+                        alignItems: "center", 
+                        paddingTop: "12px", 
+                        borderTop: "1px solid rgba(255, 255, 255, 0.06)" 
+                      }}>
+                        <span style={{ 
+                          fontSize: "0.8rem", 
+                          fontWeight: "700", 
+                          color: isActive ? "#10b981" : "#9ca3af",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px"
+                        }}>
+                          <span style={{ 
+                            width: "8px", 
+                            height: "8px", 
+                            borderRadius: "50%", 
+                            backgroundColor: isActive ? "#10b981" : "#6b7280" 
+                          }} />
+                          {isActive ? "Visible en Menú Lateral" : "Oculto para el Taller"}
+                        </span>
+
+                        {/* Interactive Switch */}
+                        <div style={{
+                          width: "44px",
+                          height: "24px",
+                          borderRadius: "12px",
+                          backgroundColor: isActive ? "#10b981" : "rgba(255, 255, 255, 0.12)",
+                          position: "relative",
+                          cursor: isCore ? "not-allowed" : "pointer",
+                          transition: "background-color 0.2s ease"
+                        }}>
+                          <div style={{
+                            width: "18px",
+                            height: "18px",
+                            borderRadius: "50%",
+                            backgroundColor: "#fff",
+                            position: "absolute",
+                            top: "3px",
+                            left: isActive ? "23px" : "3px",
+                            transition: "left 0.2s ease",
+                            boxShadow: "0 2px 4px rgba(0,0,0,0.3)"
+                          }} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+
+            {/* Bottom Actions Card */}
+            <div className="glass-panel" style={{ ...styles.formCard, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px" }}>
+              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => handleApplyModulePreset(DEFAULT_ACTIVE_MODULES)}
+                  className="btn btn-ghost"
+                  style={{ display: "flex", alignItems: "center", gap: "8px", color: "var(--text-muted)" }}
+                >
+                  <RotateCcw size={16} /> Activar Todos los Módulos
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSaveModules}
+                className="btn btn-primary"
+                style={{ ...styles.saveBtn, padding: "12px 28px", fontSize: "1rem", fontWeight: "700" }}
+              >
+                <Save size={18} /> Guardar Configuración de Módulos
+              </button>
+            </div>
+
           </div>
         )}
 

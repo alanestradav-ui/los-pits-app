@@ -29,8 +29,21 @@ import {
   CalendarClock
 } from "lucide-react";
 import { testSupabaseConnection } from "../utils/supabase";
+import { isModuleActive, DEFAULT_ACTIVE_MODULES } from "../utils/modulesConfig";
 
-export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLogout, isOpen, setIsOpen, realtimeStatus, handleForceSyncMobile, activeTenantId = "lospits", onTenantChange }) {
+export default function Sidebar({ 
+  usuarioActual, 
+  currentTab, 
+  setCurrentTab, 
+  onLogout, 
+  isOpen, 
+  setIsOpen, 
+  realtimeStatus, 
+  handleForceSyncMobile, 
+  activeTenantId = "lospits", 
+  onTenantChange,
+  activeModules = DEFAULT_ACTIVE_MODULES
+}) {
   const rol = usuarioActual?.rol?.toLowerCase()?.trim();
   
   // Define menu items based on role permissions
@@ -183,6 +196,11 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
   // Sync menu list with permissions and saved order
   useEffect(() => {
     const visible = menuItems.filter(item => {
+      // 0. WORKSHOP ACTIVE MODULES FILTER: If the workshop disabled this module, hide it from the sidebar!
+      if (!isModuleActive(item.id, activeModules)) {
+        return false;
+      }
+
       // 1. Primary master super-admin ("admin") retains full access
       if (usuarioActual?.user?.toLowerCase()?.trim() === "admin") return true;
 
@@ -215,7 +233,7 @@ export default function Sidebar({ usuarioActual, currentTab, setCurrentTab, onLo
     } catch (e) {
       setOrderedItems(visible);
     }
-  }, [usuarioActual, rol, storageKey]);
+  }, [usuarioActual, rol, storageKey, activeModules]);
 
   // Swaps items and saves array state to localStorage
   const reorderItems = (fromIndex, toIndex) => {

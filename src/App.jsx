@@ -25,6 +25,7 @@ import SaaSAdmin from "./components/SaaSAdmin";
 import Citas from "./components/Citas";
 import { DEFAULT_CATALOGO_PREMIOS } from "./utils/wallet";
 import { DEFAULT_BRANDING, getCleanBranding } from "./utils/branding";
+import { DEFAULT_ACTIVE_MODULES, isModuleActive } from "./utils/modulesConfig";
 import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocalStorage } from "./utils/storage";
 import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout, processOfflineQueue } from "./utils/supabase";
 import { initHourlyBackupScheduler, checkAndCreateHourlyBackup } from "./services/backupService";
@@ -110,7 +111,8 @@ const ARRAY_KEYS = [
   "regalosPasesReferidos",
   "cotizacionesRepuestos",
   "citas",
-  "payrollHistory"
+  "payrollHistory",
+  "activeModules"
 ];
 
 const filterOutMockItems = (key, list) => {
@@ -924,6 +926,11 @@ export default function App() {
     return val && typeof val === "object" ? getCleanBranding(val) : DEFAULT_BRANDING;
   });
 
+  const [activeModules, setActiveModules] = useState(() => {
+    const val = getTenantLocalStorage("activeModules", DEFAULT_ACTIVE_MODULES, tenantId);
+    return Array.isArray(val) && val.length > 0 ? val : DEFAULT_ACTIVE_MODULES;
+  });
+
   // 🏆 LOYALTY REWARDS HELPER: Auto-calculates & awards Puntos Pits for completed services
   const addPuntosLealtad = (clienteKey, clienteNombre, monto, area, tallerLaborMonto = 0) => {
     if (!clienteKey && !clienteNombre) return;
@@ -1162,6 +1169,7 @@ export default function App() {
     globalActiveSetters.reglasPrograma = setReglasPrograma;
     globalActiveSetters.citas = setCitas;
     globalActiveSetters.workshopBranding = setWorkshopBranding;
+    globalActiveSetters.activeModules = setActiveModules;
     globalActiveSetters.setIsInitialPullDone = setIsInitialPullDone;
     globalActiveSetters.setRealtimeStatus = setRealtimeStatus;
   });
@@ -1200,7 +1208,8 @@ export default function App() {
       historialCanjes,
       reglasPrograma,
       citas,
-      workshopBranding
+      workshopBranding,
+      activeModules
     };
   }, [
     usuarios,
@@ -1234,7 +1243,8 @@ export default function App() {
     historialCanjes,
     reglasPrograma,
     citas,
-    workshopBranding
+    workshopBranding,
+    activeModules
   ]);
 
   const globalBroadcastChannel = useRef(null);
@@ -1406,7 +1416,7 @@ export default function App() {
       const getScopedKey = (k) => activeTenant === "lospits" ? k : `${activeTenant}_${k}`;
 
       const cloudDataMap = new Map();
-      const allKeysList = Array.from(new Set([...ARRAY_KEYS, "usuarios", "ordenes", "carwash", "parkingEntries", "parkingHistory", "vehiculosVenta", "workshopInventory", "cafeteriaInventory", "cafeteriaSales", "carwashPresets", "carwashInventory", "carwashConsumption", "tiendaSales", "cuentasPorCobrar", "cuentasPorPagar", "fixedCosts", "clientes", "vehiculos", "compras", "toolsInventory", "accesoriosInventory", "papeleraSistema", "cotizacionesRepuestos", "puntosRecompensas", "catalogoPremios", "historialCanjes", "reglasPrograma", "workshopBranding"])).filter(k => k !== "systemSnapshots" && k !== "app_data_backup_snapshot");
+      const allKeysList = Array.from(new Set([...ARRAY_KEYS, "usuarios", "ordenes", "carwash", "parkingEntries", "parkingHistory", "vehiculosVenta", "workshopInventory", "cafeteriaInventory", "cafeteriaSales", "carwashPresets", "carwashInventory", "carwashConsumption", "tiendaSales", "cuentasPorCobrar", "cuentasPorPagar", "fixedCosts", "clientes", "vehiculos", "compras", "toolsInventory", "accesoriosInventory", "papeleraSistema", "cotizacionesRepuestos", "puntosRecompensas", "catalogoPremios", "historialCanjes", "reglasPrograma", "workshopBranding", "activeModules"])).filter(k => k !== "systemSnapshots" && k !== "app_data_backup_snapshot");
 
       const scopedQueryKeys = allKeysList.map(k => getScopedKey(k));
       // Consultar llaves en paralelo en lotes de 15 con timeout generoso
@@ -1969,6 +1979,20 @@ export default function App() {
     syncToCloud("workshopBranding", workshopBranding);
   }, [workshopBranding, tenantId]);
 
+  useEffect(() => {
+    setTenantLocalStorage("activeModules", activeModules, tenantId);
+    syncToCloud("activeModules", activeModules);
+  }, [activeModules, tenantId]);
+
+  // If the active module is disabled by the workshop, seamlessly route back to Dashboard
+  useEffect(() => {
+    if (currentTab && currentTab !== "dashboard" && currentTab !== "configuracion" && currentTab !== "saasAdmin" && currentTab !== "pantalla" && currentTab !== "portal") {
+      if (!isModuleActive(currentTab, activeModules)) {
+        setCurrentTab("dashboard");
+      }
+    }
+  }, [activeModules, currentTab]);
+
   const usuarioActivo = usuarios.find(u => (u.user || "").toLowerCase().trim() === (usuarioActual?.user || "").toLowerCase().trim()) || usuarioActual;
 
   const userHasPermission = (user, tabId) => {
@@ -2079,6 +2103,7 @@ export default function App() {
         handleForceSyncMobile={forcePullFromCloud}
         activeTenantId={tenantId}
         onTenantChange={handleSwitchTenant}
+        activeModules={activeModules}
       />
 
       {/* Floating Menu Button for mobile */}
@@ -2445,6 +2470,8 @@ export default function App() {
             restoreSystemSnapshot={restoreSystemSnapshot}
             workshopBranding={workshopBranding}
             setWorkshopBranding={setWorkshopBranding}
+            activeModules={activeModules}
+            setActiveModules={setActiveModules}
           />
         )}
 
