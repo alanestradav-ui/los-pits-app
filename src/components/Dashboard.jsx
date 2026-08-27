@@ -29,7 +29,9 @@ export default function Dashboard({
   customEndDate,
   setCustomEndDate,
   usuarioActual,
-  userHasPermission
+  userHasPermission,
+  isInitialPullDone = true,
+  realtimeStatus = "connected"
 }) {
   const safeOrdenes = Array.isArray(ordenes) ? ordenes.filter(Boolean) : [];
   const safeCarwash = Array.isArray(carwash) ? carwash.filter(Boolean) : [];
@@ -318,9 +320,18 @@ export default function Dashboard({
           )}
         </div>
 
-        <div style={styles.timeBadge}>
-          <div style={styles.pulseDot} />
-          <span>Sistema en Línea</span>
+        <div style={{
+          ...styles.timeBadge,
+          borderColor: isInitialPullDone ? "rgba(16, 185, 129, 0.4)" : "rgba(245, 158, 11, 0.4)",
+          backgroundColor: isInitialPullDone ? "rgba(16, 185, 129, 0.08)" : "rgba(245, 158, 11, 0.08)"
+        }}>
+          <div style={{
+            ...styles.pulseDot,
+            backgroundColor: isInitialPullDone ? "#10b981" : "#f59e0b"
+          }} />
+          <span style={{ color: isInitialPullDone ? "#10b981" : "#f59e0b", fontWeight: "600" }}>
+            {isInitialPullDone ? "Sistema en Línea" : "Sincronizando con la nube..."}
+          </span>
         </div>
       </div>
 

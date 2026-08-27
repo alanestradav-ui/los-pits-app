@@ -567,8 +567,20 @@ export default function App() {
   });
 
   // 📂 ROUTING TAB STATE
-  const [currentTab, setCurrentTab] = useState("dashboard");
+  const [currentTab, setCurrentTab] = useState(() => {
+    try {
+      const savedTab = sessionStorage.getItem("currentTab");
+      if (savedTab) return savedTab;
+    } catch (e) {}
+    return "dashboard";
+  });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (currentTab) sessionStorage.setItem("currentTab", currentTab);
+    } catch (e) {}
+  }, [currentTab]);
 
   // 🚗 INITIAL MOCK DATA (Gives a wow factor on first load)
   const initialOrdenes = [
@@ -1068,16 +1080,6 @@ export default function App() {
   // 💾 PERSISTENCE EFFECT
   useEffect(() => {
     setLocalStorage("usuarioActual", usuarioActual);
-    
-    if (usuarioActual) {
-      if (usuarioActual.rol === "mecanico") {
-        setCurrentTab("taller");
-      } else if (usuarioActual.rol === "lavador") {
-        setCurrentTab("carwash");
-      } else {
-        setCurrentTab("dashboard");
-      }
-    }
   }, [usuarioActual]);
 
   // 🔄 Sync logged-in user permissions & role with updated usuarios array (e.g. when Admin updates permissions)
@@ -1997,11 +1999,25 @@ export default function App() {
     }
     setUsuarioActual(cleanUserObj);
     setLocalStorage("usuarioActual", cleanUserObj);
+
+    if (cleanUserObj) {
+      if (cleanUserObj.rol === "mecanico") {
+        setCurrentTab("taller");
+      } else if (cleanUserObj.rol === "lavador") {
+        setCurrentTab("carwash");
+      } else {
+        setCurrentTab("dashboard");
+      }
+    }
   };
 
   const handleLogout = () => {
     setUsuarioActual(null);
     localStorage.removeItem("usuarioActual");
+    try {
+      sessionStorage.removeItem("currentTab");
+    } catch (e) {}
+    setCurrentTab("dashboard");
   };
 
   // 🌐 PUBLIC CLIENT PORTAL VIEW (Direct access for clients via WhatsApp / QR / Portal links)
@@ -2095,6 +2111,8 @@ export default function App() {
             setCustomEndDate={setCustomEndDate}
             usuarioActual={usuarioActivo}
             userHasPermission={userHasPermission}
+            isInitialPullDone={isInitialPullDone}
+            realtimeStatus={realtimeStatus}
           />
         )}
 
