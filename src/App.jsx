@@ -112,7 +112,8 @@ const ARRAY_KEYS = [
   "cotizacionesRepuestos",
   "citas",
   "payrollHistory",
-  "activeModules"
+  "activeModules",
+  "cotizacionesExpress"
 ];
 
 const filterOutMockItems = (key, list) => {
@@ -931,6 +932,11 @@ export default function App() {
     return Array.isArray(val) && val.length > 0 ? val : DEFAULT_ACTIVE_MODULES;
   });
 
+  const [cotizacionesExpress, setCotizacionesExpress] = useState(() => {
+    const val = getTenantLocalStorage("cotizacionesExpress", [], tenantId);
+    return Array.isArray(val) ? val : [];
+  });
+
   // 🏆 LOYALTY REWARDS HELPER: Auto-calculates & awards Puntos Pits for completed services
   const addPuntosLealtad = (clienteKey, clienteNombre, monto, area, tallerLaborMonto = 0) => {
     if (!clienteKey && !clienteNombre) return;
@@ -1170,6 +1176,7 @@ export default function App() {
     globalActiveSetters.citas = setCitas;
     globalActiveSetters.workshopBranding = setWorkshopBranding;
     globalActiveSetters.activeModules = setActiveModules;
+    globalActiveSetters.cotizacionesExpress = setCotizacionesExpress;
     globalActiveSetters.setIsInitialPullDone = setIsInitialPullDone;
     globalActiveSetters.setRealtimeStatus = setRealtimeStatus;
   });
@@ -1209,7 +1216,8 @@ export default function App() {
       reglasPrograma,
       citas,
       workshopBranding,
-      activeModules
+      activeModules,
+      cotizacionesExpress
     };
   }, [
     usuarios,
@@ -1244,7 +1252,8 @@ export default function App() {
     reglasPrograma,
     citas,
     workshopBranding,
-    activeModules
+    activeModules,
+    cotizacionesExpress
   ]);
 
   const globalBroadcastChannel = useRef(null);
@@ -1416,7 +1425,7 @@ export default function App() {
       const getScopedKey = (k) => activeTenant === "lospits" ? k : `${activeTenant}_${k}`;
 
       const cloudDataMap = new Map();
-      const allKeysList = Array.from(new Set([...ARRAY_KEYS, "usuarios", "ordenes", "carwash", "parkingEntries", "parkingHistory", "vehiculosVenta", "workshopInventory", "cafeteriaInventory", "cafeteriaSales", "carwashPresets", "carwashInventory", "carwashConsumption", "tiendaSales", "cuentasPorCobrar", "cuentasPorPagar", "fixedCosts", "clientes", "vehiculos", "compras", "toolsInventory", "accesoriosInventory", "papeleraSistema", "cotizacionesRepuestos", "puntosRecompensas", "catalogoPremios", "historialCanjes", "reglasPrograma", "workshopBranding", "activeModules"])).filter(k => k !== "systemSnapshots" && k !== "app_data_backup_snapshot");
+      const allKeysList = Array.from(new Set([...ARRAY_KEYS, "usuarios", "ordenes", "carwash", "parkingEntries", "parkingHistory", "vehiculosVenta", "workshopInventory", "cafeteriaInventory", "cafeteriaSales", "carwashPresets", "carwashInventory", "carwashConsumption", "tiendaSales", "cuentasPorCobrar", "cuentasPorPagar", "fixedCosts", "clientes", "vehiculos", "compras", "toolsInventory", "accesoriosInventory", "papeleraSistema", "cotizacionesRepuestos", "puntosRecompensas", "catalogoPremios", "historialCanjes", "reglasPrograma", "workshopBranding", "activeModules", "cotizacionesExpress"])).filter(k => k !== "systemSnapshots" && k !== "app_data_backup_snapshot");
 
       const scopedQueryKeys = allKeysList.map(k => getScopedKey(k));
       // Consultar llaves en paralelo en lotes de 15 con timeout generoso
@@ -1984,6 +1993,11 @@ export default function App() {
     syncToCloud("activeModules", activeModules);
   }, [activeModules, tenantId]);
 
+  useEffect(() => {
+    setTenantLocalStorage("cotizacionesExpress", cotizacionesExpress, tenantId);
+    syncToCloud("cotizacionesExpress", cotizacionesExpress);
+  }, [cotizacionesExpress, tenantId]);
+
   // If the active module is disabled by the workshop, seamlessly route back to Dashboard
   useEffect(() => {
     if (currentTab && currentTab !== "dashboard" && currentTab !== "configuracion" && currentTab !== "saasAdmin" && currentTab !== "pantalla" && currentTab !== "portal") {
@@ -2193,6 +2207,8 @@ export default function App() {
             tenantId={tenantId}
             addPuntosLealtad={addPuntosLealtad}
             workshopBranding={workshopBranding}
+            cotizacionesExpress={cotizacionesExpress}
+            setCotizacionesExpress={setCotizacionesExpress}
           />
         )}
 

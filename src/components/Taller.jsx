@@ -16,13 +16,15 @@ import {
   CheckCircle2,
   AlertTriangle,
   Pencil,
-  ShoppingBag
+  ShoppingBag,
+  Zap
 } from "lucide-react";
 import { formatMoney, getLocalStorage, setLocalStorage, setTenantLocalStorage } from "../utils/storage";
 import { syncKeyToCloud } from "../utils/supabase";
 import { findVehiclesForClient } from "../utils/vehicleHelpers";
 import { DEFAULT_BRANDING, getCleanBranding, drawCanvasHeader } from "../utils/branding";
 import ClientVehiclesModal from "./ClientVehiclesModal";
+import ExpressQuoteModal from "./ExpressQuoteModal";
 import { jsPDF } from "jspdf";
 
 const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
@@ -194,8 +196,11 @@ export default function Taller({
   setCompras,
   tenantId = "lospits",
   addPuntosLealtad,
-  workshopBranding = DEFAULT_BRANDING
+  workshopBranding = DEFAULT_BRANDING,
+  cotizacionesExpress = [],
+  setCotizacionesExpress
 }) {
+  const [showExpressQuoteModal, setShowExpressQuoteModal] = useState(false);
   const [viewingVendorQuotesOrder, setViewingVendorQuotesOrder] = useState(null);
   const [cliente, setCliente] = useState("");
   const [telefono, setTelefono] = useState("");
@@ -3152,10 +3157,66 @@ export default function Taller({
     }
   };
 
+  const handleConvertExpressToOrder = (q) => {
+    if (!q) return;
+    const fullPlaca = q.placa || (q.plateNumber ? `${q.platePrefix || "P"}-${q.plateNumber}` : "P-000XXX");
+    const newOrder = {
+      id: Date.now(),
+      cliente: q.cliente || "Cliente General",
+      telefono: q.telefono || "",
+      nit: q.nit || "C/F",
+      nombreFacturacion: q.nombreFacturacion || q.cliente || "Cliente General",
+      vehiculo: `${q.marca || ""} ${q.linea || ""} (${fullPlaca})`.trim(),
+      placa: fullPlaca,
+      marca: q.marca || "",
+      linea: q.linea || "",
+      anio: q.anio || "",
+      color: q.color || "",
+      kilometraje: q.kilometraje || "",
+      chasis: q.chasis || "",
+      combustible: 50,
+      luces: [],
+      checklist: {},
+      trabajo: (q.servicios || []).map(s => s.desc).filter(Boolean).join(", ") || "Reparación General",
+      mecanico: "",
+      estado: "En proceso de diagnóstico y presupuesto",
+      precio: q.subtotalLabor || 0,
+      total: q.total || 0,
+      anticipo: 0,
+      metodoPago: "Efectivo",
+      presupuestoDetallado: [
+        ...(q.servicios || []).map(s => ({
+          id: s.id || Date.now(),
+          type: "labor",
+          desc: s.desc || "Mano de obra",
+          price: parseFloat(s.price) || 0
+        })),
+        ...(q.repuestos || []).map(r => ({
+          id: r.id || Date.now(),
+          type: "part",
+          desc: r.name || "Repuesto",
+          brand: r.brand || "",
+          qty: parseFloat(r.qty) || 1,
+          unitPrice: parseFloat(r.price) || 0,
+          totalPrice: (parseFloat(r.qty) || 1) * (parseFloat(r.price) || 0)
+        }))
+      ],
+      presupuesto: {
+        labor: (q.servicios || []).map(s => ({ desc: s.desc, price: parseFloat(s.price) || 0 })),
+        parts: (q.repuestos || []).map(r => ({ desc: r.name, brand: r.brand, qty: parseFloat(r.qty) || 1, salePrice: parseFloat(r.price) || 0, price: parseFloat(r.price) || 0 }))
+      },
+      descuentoMonto: q.descuento || 0,
+      notas: q.notas || "",
+      fecha: new Date().toISOString()
+    };
+
+    setOrdenes(prev => [newOrder, ...(Array.isArray(prev) ? prev : [])]);
+  };
+
   return (
     <div style={styles.container} className="animate-fade-in">
       {/* Module Header */}
-      <div style={styles.header}>
+      <div style={{ ...styles.header, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px" }}>
         <div>
           <h1 style={styles.title}>Taller de Mecánica</h1>
           <p>
@@ -3164,6 +3225,34 @@ export default function Taller({
               : "Gestión de reparaciones, diagnósticos y mecánicos."}
           </p>
         </div>
+
+        {isManager && (
+          <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={() => setShowExpressQuoteModal(true)}
+              className="btn"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                backgroundColor: "#f59e0b",
+                background: "linear-gradient(135deg, #f59e0b, #d97706)",
+                color: "#000",
+                fontWeight: "800",
+                fontSize: "0.95rem",
+                padding: "11px 20px",
+                borderRadius: "12px",
+                boxShadow: "0 4px 18px rgba(245, 158, 11, 0.4)",
+                cursor: "pointer",
+                border: "none",
+                transition: "all 0.2s ease"
+              }}
+            >
+              <Zap size={18} color="#000" /> ⚡ Cotización Rápida Express
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Main Layout Grid */}
@@ -6970,6 +7059,22 @@ export default function Taller({
         vehicles={clientVehiclesModalData.vehicles}
         onSelectVehicle={applySelectedVehicle}
         onClose={() => setClientVehiclesModalData({ isOpen: false, clienteNombre: "", vehicles: [] })}
+      />
+
+      {/* EXPRESS QUOTE MODAL (COTIZACIÓN RÁPIDA SIN INGRESAR VEHÍCULO) */}
+      <ExpressQuoteModal
+        isOpen={showExpressQuoteModal}
+        onClose={() => setShowExpressQuoteModal(false)}
+        clientes={clientes}
+        vehiculos={vehiculos}
+        ordenes={ordenes}
+        carwash={carwash}
+        workshopInventory={workshopInventory}
+        workshopBranding={workshopBranding}
+        cotizacionesExpress={cotizacionesExpress}
+        setCotizacionesExpress={setCotizacionesExpress}
+        onConvertToOrder={handleConvertExpressToOrder}
+        usuarioActual={usuarioActual}
       />
     </div>
   );
