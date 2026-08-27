@@ -26,7 +26,7 @@ import Citas from "./components/Citas";
 import { DEFAULT_CATALOGO_PREMIOS } from "./utils/wallet";
 import { DEFAULT_BRANDING, getCleanBranding } from "./utils/branding";
 import { DEFAULT_ACTIVE_MODULES, isModuleActive } from "./utils/modulesConfig";
-import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocalStorage } from "./utils/storage";
+import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocalStorage, getActiveTenantId } from "./utils/storage";
 import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout, processOfflineQueue } from "./utils/supabase";
 import { initHourlyBackupScheduler, checkAndCreateHourlyBackup } from "./services/backupService";
 import { autoPurgeTrash } from "./services/trashService";
@@ -2239,6 +2239,10 @@ export default function App() {
             setCuentasPorCobrar={setCuentasPorCobrar}
             clientes={clientes}
             setClientes={setClientes}
+            vehiculos={vehiculos}
+            setVehiculos={setVehiculos}
+            ordenes={ordenes}
+            carwash={carwash}
             addPuntosLealtad={addPuntosLealtad}
             workshopBranding={workshopBranding}
           />

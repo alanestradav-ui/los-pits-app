@@ -121,6 +121,7 @@ export default function Carwash({
   const [precioLavado, setPrecioLavado] = useState("");
   const [customPriceEnabled, setCustomPriceEnabled] = useState(false);
   const [editingCardId, setEditingCardId] = useState(null);
+  const [editingWashOrder, setEditingWashOrder] = useState(null);
   const [editCardPrecioBase, setEditCardPrecioBase] = useState("");
   const [editCardComision, setEditCardComision] = useState("");
   const [trabajoAdicionalNombre, setTrabajoAdicionalNombre] = useState("");

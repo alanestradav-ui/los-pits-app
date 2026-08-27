@@ -75,6 +75,10 @@ export default function Parking({
   setCuentasPorCobrar,
   clientes = [],
   setClientes,
+  vehiculos = [],
+  setVehiculos,
+  ordenes = [],
+  carwash = [],
   addPuntosLealtad,
   workshopBranding = DEFAULT_BRANDING
 }) {
