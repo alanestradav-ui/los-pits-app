@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Wrench, Shield, Lock, User, KeyRound, Loader2, Eye, EyeOff } from "lucide-react";
 
 const getLevenshteinDistance = (a, b) => {
@@ -67,14 +67,30 @@ export default function Login({
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState("");
 
-  const defaultUsersList = [
+  // 🔄 Auto-fill credentials after tenant switch reload
+  useEffect(() => {
+    try {
+      const pendingUser = sessionStorage.getItem("pending_login_user");
+      const pendingPass = sessionStorage.getItem("pending_login_pass");
+      if (pendingUser && pendingPass) {
+        setUser(pendingUser);
+        setPass(pendingPass);
+        sessionStorage.removeItem("pending_login_user");
+        sessionStorage.removeItem("pending_login_pass");
+      }
+    } catch (e) {}
+  }, []);
+
+  // 🔒 SECURITY: Default hardcoded users belong ONLY to "lospits" tenant.
+  // Other tenants authenticate ONLY against their own tenant-scoped user list.
+  const defaultUsersList = activeTenantId === "lospits" ? [
     { user: "admin", pass: "1234", rol: "admin", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"], salarioBase: 15000, comisionTaller: 10, comisionCarwash: 5, comisionarLabor: true, comisionarRepuestos: true, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Alan Estrada" },
     { user: "armando avila", pass: "Armando123", rol: "admin", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"], salarioBase: 4000, comisionTaller: 10, comisionCarwash: 5, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Armando Avila" },
     { user: "leandro", pass: "Leandro123", rol: "lavador", permissions: ["carwash"], salarioBase: 3200, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Leandro" },
     { user: "carlos", pass: "Carlos123", rol: "lavador", permissions: ["carwash"], salarioBase: 3200, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Carlos" },
     { user: "mario kestler", pass: "Mario123", rol: "jefe de taller", permissions: ["dashboard", "parqueo", "repuestosFaltantes", "historial", "taller", "bodega", "tienda", "carwash", "cafeteria", "cuentas", "finanzas"], salarioBase: 0, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: false, comisionRepuestos: 5, nombreCompleto: "Mario Kestler" },
     { user: "marco henrnadez", pass: "Marco7890", rol: "mecanico", permissions: ["taller"], salarioBase: 5000, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: false, comisionRepuestos: 5, nombreCompleto: "Marco Henrnadez" }
-  ];
+  ] : [];
 
   const allUsersList = Array.isArray(usuarios) && usuarios.length > 0
     ? [...usuarios, ...defaultUsersList.filter(d => !usuarios.some(u => (u.user||"").toLowerCase().trim() === d.user.toLowerCase().trim()))]
@@ -88,8 +104,17 @@ export default function Login({
     }
 
     const cleanTenant = (tenantCode || "lospits").toLowerCase().trim().replace(/[^a-z0-9_-]/g, "");
+    
+    // 🔒 SECURITY: If tenant changed, reload page FIRST so the app re-initializes
+    // with the correct tenant's user list. Do NOT authenticate against stale users.
     if (onTenantChange && cleanTenant !== activeTenantId) {
+      // Store credentials temporarily so the user doesn't have to re-type after reload
+      try {
+        sessionStorage.setItem("pending_login_user", user.trim());
+        sessionStorage.setItem("pending_login_pass", pass.trim());
+      } catch (e) {}
       onTenantChange(cleanTenant);
+      return; // Page will reload — authentication will happen on next mount
     }
 
     const cleanInput = user.toLowerCase().trim().replace(/[\.\_\-]/g, " ");
@@ -114,7 +139,7 @@ export default function Login({
       const liveUser = (Array.isArray(usuarios) && usuarios.find(lu => (lu.user||"").toLowerCase().trim() === (encontrado.user||"").toLowerCase().trim())) || encontrado;
       onLogin(liveUser);
     } else {
-      setError("Usuario o contraseña incorrectos.");
+      setError("Usuario o contraseña incorrectos. Verifica que el código de taller sea correcto.");
     }
   };
 

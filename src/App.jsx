@@ -506,14 +506,16 @@ export default function App() {
 
   // 🔐 USER DEFINITIONS
   const [usuarios, setUsuarios] = useState(() => {
-    const defaultUsers = [
+    // 🔒 SECURITY: Default hardcoded users only belong to "lospits" tenant.
+    // Other tenants start with an empty user list and must create their own users.
+    const defaultUsers = tenantId === "lospits" ? [
       { user: "admin", pass: "1234", rol: "admin", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"], salarioBase: 15000, comisionTaller: 10, comisionCarwash: 5, comisionarLabor: true, comisionarRepuestos: true, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Alan Estrada" },
       { user: "armando avila", pass: "Armando123", rol: "admin", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"], salarioBase: 4000, comisionTaller: 10, comisionCarwash: 5, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Armando Avila" },
       { user: "leandro", pass: "Leandro123", rol: "lavador", permissions: ["carwash"], salarioBase: 3200, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Leandro" },
       { user: "carlos", pass: "Carlos123", rol: "lavador", permissions: ["carwash"], salarioBase: 3200, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Carlos" },
       { user: "mario kestler", pass: "Mario123", rol: "jefe de taller", permissions: ["dashboard", "parqueo", "repuestosFaltantes", "historial", "taller", "bodega", "tienda", "carwash", "cafeteria", "cuentas", "finanzas"], salarioBase: 0, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: false, comisionRepuestos: 5, nombreCompleto: "Mario Kestler" },
       { user: "marco henrnadez", pass: "Marco7890", rol: "mecanico", permissions: ["taller"], salarioBase: 5000, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: false, comisionRepuestos: 5, nombreCompleto: "Marco Henrnadez" }
-    ];
+    ] : [];
     const val = getTenantLocalStorage("usuarios", [], tenantId);
     const localUsers = Array.isArray(val) ? val : [];
     const loaded = deduplicateUsers([...defaultUsers, ...localUsers]);
@@ -2052,7 +2054,9 @@ export default function App() {
       }
     }
     setUsuarioActual(cleanUserObj);
-    setLocalStorage("usuarioActual", cleanUserObj);
+    // 🔒 Save session scoped to tenant
+    const scopedSessionKey = `${tenantId}_usuarioActual`;
+    setLocalStorage(scopedSessionKey, cleanUserObj);
 
     if (cleanUserObj) {
       if (cleanUserObj.rol === "mecanico") {
@@ -2067,7 +2071,10 @@ export default function App() {
 
   const handleLogout = () => {
     setUsuarioActual(null);
-    localStorage.removeItem("usuarioActual");
+    // 🔒 Clear tenant-scoped session key
+    const scopedSessionKey = `${tenantId}_usuarioActual`;
+    localStorage.removeItem(scopedSessionKey);
+    localStorage.removeItem("usuarioActual"); // also clear legacy unscoped key
     try {
       sessionStorage.removeItem("currentTab");
     } catch (e) {}
