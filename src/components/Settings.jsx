@@ -859,17 +859,27 @@ export default function SettingsComponent({
 
   // Remove a user
   const handleRemoveUser = (username) => {
-    if (username.toLowerCase().trim() === usuarioActual?.user?.toLowerCase()?.trim()) {
-      alert("No puedes eliminar tu propio usuario actual con el que tienes sesión iniciada.");
-      return;
-    }
-    if (username.toLowerCase().trim() === "admin") {
+    const cleanTarget = String(username || "").toLowerCase().trim();
+    if (cleanTarget === "admin") {
       alert("El usuario administrador principal ('admin') no se puede eliminar por motivos de seguridad.");
       return;
     }
 
-    if (window.confirm(`¿Seguro que deseas eliminar al usuario "${username}"?`)) {
-      setUsuarios(usuarios.filter(u => u.user.toLowerCase().trim() !== username.toLowerCase().trim()));
+    const isCurrent = cleanTarget === String(usuarioActual?.user || "").toLowerCase().trim();
+    const confirmMsg = isCurrent 
+      ? `⚠️ ATENCIÓN: Estás a punto de eliminar al usuario "${username}" con el que tienes la sesión iniciada actualmente.\n\nAl eliminarlo, se cerrará tu sesión de inmediato.\n\n¿Deseas continuar y eliminar este usuario?`
+      : `¿Seguro que deseas eliminar al usuario "${username}"?`;
+
+    if (window.confirm(confirmMsg)) {
+      const updated = usuarios.filter(u => String(u.user || "").toLowerCase().trim() !== cleanTarget);
+      setUsuarios(updated);
+      if (isCurrent) {
+        try {
+          localStorage.removeItem("usuarioActual");
+          localStorage.removeItem("lospits_usuarioActual");
+        } catch (e) {}
+        window.location.reload();
+      }
     }
   };
 
@@ -3359,17 +3369,17 @@ export default function SettingsComponent({
                                   >
                                     <Edit size={16} />
                                   </button>
-                                  {(!isCurrentUser && !isMainAdmin) ? (
+                                  {!isMainAdmin ? (
                                     <button
                                       onClick={() => handleRemoveUser(userObj.user)}
                                       style={{ background: "none", border: "none", color: "var(--color-danger)", cursor: "pointer" }}
-                                      title="Eliminar Usuario"
+                                      title={isCurrentUser ? "Eliminar Usuario (Cerrará sesión)" : "Eliminar Usuario"}
                                       type="button"
                                     >
                                       <Trash2 size={16} />
                                     </button>
                                   ) : (
-                                    <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontStyle: "italic", alignSelf: "center" }}>Protegido</span>
+                                    <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontStyle: "italic", alignSelf: "center" }}>Principal</span>
                                   )}
                                 </div>
                               </td>

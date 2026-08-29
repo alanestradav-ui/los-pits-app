@@ -472,7 +472,14 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null, active
     return Array.from(mergedMap.values());
   }
 
-  return key === "usuarios" ? deduplicateUsers(cleanCloud) : cleanCloud;
+  if (key === "usuarios") {
+    const rawDedup = deduplicateUsers(cleanCloud);
+    if (activeTenant === "lospits") {
+      return rawDedup.filter(u => !String(u?.user || "").toLowerCase().includes("cristian"));
+    }
+    return rawDedup;
+  }
+  return cleanCloud;
 };
 
 
@@ -517,7 +524,10 @@ export default function App() {
       { user: "marco henrnadez", pass: "Marco7890", rol: "mecanico", permissions: ["taller"], salarioBase: 5000, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: false, comisionRepuestos: 5, nombreCompleto: "Marco Henrnadez" }
     ] : [];
     const val = getTenantLocalStorage("usuarios", [], tenantId);
-    const localUsers = Array.isArray(val) ? val : [];
+    let localUsers = Array.isArray(val) ? val : [];
+    if (tenantId === "lospits") {
+      localUsers = localUsers.filter(u => !String(u?.user || "").toLowerCase().includes("cristian"));
+    }
     const loaded = deduplicateUsers([...defaultUsers, ...localUsers]);
     return loaded.map(u => {
       const updatedPerms = Array.isArray(u.permissions) ? u.permissions : [];
@@ -572,6 +582,14 @@ export default function App() {
         setLocalStorage(scopedSessionKey, saved);
       }
     }
+    // 🛡️ If saved user in lospits is foreign "cristian", discard it!
+    if (tenantId === "lospits" && saved && String(saved.user || "").toLowerCase().includes("cristian")) {
+      try {
+        localStorage.removeItem(scopedSessionKey);
+        localStorage.removeItem("usuarioActual");
+      } catch (e) {}
+      return null;
+    }
     if (saved && (saved.user || "").toLowerCase().trim() === "armando avila") {
       if (Array.isArray(saved.permissions)) {
         saved.permissions = saved.permissions.filter(p => p !== "finanzas");
@@ -579,6 +597,26 @@ export default function App() {
     }
     return saved;
   });
+
+  // 🧹 Auto-purge any foreign "cristian" account from Los Pits state and sync clean list to Supabase
+  useEffect(() => {
+    if (tenantId === "lospits" && Array.isArray(usuarios)) {
+      const hasCristian = usuarios.some(u => String(u?.user || "").toLowerCase().includes("cristian"));
+      if (hasCristian) {
+        const cleaned = usuarios.filter(u => !String(u?.user || "").toLowerCase().includes("cristian"));
+        setUsuarios(cleaned);
+        setTenantLocalStorage("usuarios", cleaned, "lospits");
+        syncToCloud("usuarios", cleaned);
+      }
+    }
+    if (tenantId === "lospits" && usuarioActual && String(usuarioActual?.user || "").toLowerCase().includes("cristian")) {
+      setUsuarioActual(null);
+      try {
+        localStorage.removeItem("lospits_usuarioActual");
+        localStorage.removeItem("usuarioActual");
+      } catch (e) {}
+    }
+  }, [tenantId, usuarios, usuarioActual]);
 
   // 📂 ROUTING TAB STATE
   const [currentTab, setCurrentTab] = useState(() => {
