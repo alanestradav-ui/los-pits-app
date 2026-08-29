@@ -1193,7 +1193,7 @@ export default function Taller({
 
         // Sync: Create linked wash in Carwash module if transitioning to "En proceso de lavado"
         if (nuevoEstado === "En proceso de lavado") {
-          const alreadyLinked = carwash.some(c => c.tallerOrderId === o.id);
+          const alreadyLinked = (carwash || []).some(c => String(c.tallerOrderId) === String(o.id));
           if (!alreadyLinked) {
             const carwashServices = o.presupuesto?.services?.filter(s => s.desc.startsWith("Carwash:")) || [];
             
@@ -1224,7 +1224,7 @@ export default function Taller({
                   fecha: new Date().toISOString()
                 };
               });
-              setCarwash([...newWashes, ...carwash]);
+              setCarwash([...newWashes, ...(carwash || [])]);
             } else {
               const nuevoLavadoTaller = {
                 id: Date.now(),
@@ -1250,8 +1250,19 @@ export default function Taller({
                 fecha: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
               };
-              setCarwash([nuevoLavadoTaller, ...carwash]);
+              setCarwash([nuevoLavadoTaller, ...(carwash || [])]);
             }
+          }
+        }
+
+        // If moving out of washing to Listo para entrega or Entregado, mark linked carwash as Entregado
+        if (nuevoEstado === "Listo para entrega" || nuevoEstado === "Entregado") {
+          if (typeof setCarwash === "function") {
+            setCarwash(prevCw => (prevCw || []).map(c => 
+              String(c.tallerOrderId) === String(o.id)
+                ? { ...c, estado: "Entregado", updatedAt: new Date().toISOString() }
+                : c
+            ));
           }
         }
 
@@ -1331,13 +1342,13 @@ export default function Taller({
       if (o.id === checkoutOrder.id) {
         // Sync carwash
         setCarwash((prevCarwash) => 
-          prevCarwash.map(c => c.tallerOrderId === o.id ? { 
+          (prevCarwash || []).map(c => String(c.tallerOrderId) === String(o.id) ? { 
             ...c, 
             estado: "Entregado",
-            fecha: new Date().toISOString(),
+            fecha: c.fecha || new Date().toISOString(),
             formaPago: breakdown,
             formaPagoDesc: paymentMethodsSelected.map(m => `${m.toUpperCase()} (Q${breakdown[m].toFixed(2)})`).join(", "),
-            cajero: usuarioActual.user
+            cajero: usuarioActual?.user || "Admin"
           } : c)
         );
 
@@ -4103,7 +4114,7 @@ export default function Taller({
 
                       {/* Real-time Taller Washers Sync */}
                       {(o.estado === "En proceso de lavado" || o.estado === "Listo para entrega" || o.estado === "Entregado") && (() => {
-                        const linkedWashes = carwash.filter(c => c.tallerOrderId === o.id);
+                        const linkedWashes = (carwash || []).filter(c => String(c.tallerOrderId) === String(o.id));
                         const assignedWashers = [];
                         linkedWashes.forEach(w => {
                           const washers = w.lavadores || (w.lavador ? w.lavador.split(", ").filter(Boolean) : []);

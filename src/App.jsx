@@ -1768,6 +1768,45 @@ export default function App() {
     syncToCloud("carwash", carwash);
   }, [carwash, isInitialPullDone]);
 
+  // 🔄 Auto-reconcile completed workshop carwashes to return to Taller as "Listo para entrega"
+  useEffect(() => {
+    if (!Array.isArray(ordenes) || !Array.isArray(carwash)) return;
+
+    let ordersChanged = false;
+    let carwashChanged = false;
+
+    const newOrdenes = ordenes.map(o => {
+      if (o.estado === "En proceso de lavado") {
+        const linkedWash = carwash.find(c => String(c.tallerOrderId) === String(o.id));
+        if (linkedWash && (linkedWash.estado === "Entregado" || linkedWash.estado === "Listo para entrega")) {
+          ordersChanged = true;
+          return { ...o, estado: "Listo para entrega", updatedAt: new Date().toISOString() };
+        }
+      }
+      return o;
+    });
+
+    const newCarwash = carwash.map(c => {
+      if (c.tallerOrderId && c.estado === "Listo para entrega") {
+        carwashChanged = true;
+        return {
+          ...c,
+          estado: "Entregado",
+          formaPagoDesc: "Lavado de Taller (Listo para entrega)",
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return c;
+    });
+
+    if (ordersChanged) {
+      setOrdenes(newOrdenes);
+    }
+    if (carwashChanged) {
+      setCarwash(newCarwash);
+    }
+  }, [ordenes, carwash]);
+
   useEffect(() => {
     if (!isInitialPullDone) return;
     setTenantLocalStorage("parkingEntries", parkingEntries, tenantId);

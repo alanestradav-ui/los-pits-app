@@ -811,28 +811,49 @@ export default function Carwash({
   };
 
   const avanzarLavado = (id) => {
-    const wash = carwash.find((c) => c.id === id);
+    const wash = (carwash || []).find((c) => String(c.id) === String(id));
+    if (!wash) return;
     const washerList = wash ? (wash.lavadores || (wash.lavador ? wash.lavador.split(", ").filter(Boolean) : [])) : [];
-    if (wash && washerList.length === 0) {
+    if (washerList.length === 0) {
       alert("Por favor, asigna al menos un lavador a este servicio antes de avanzar.");
       return;
     }
     
     let cancelado = false;
-    const nuevasCarwash = carwash.map((c) => {
-      if (c.id === id) {
-        let nuevoEstado = c.estado;
-        if (c.estado === "En proceso") {
-          nuevoEstado = "Listo para entrega";
+    let isWorkshopCompleted = false;
 
-          // Sync: If linked to Taller order, automatically transition linked Taller order to "Listo para entrega"
-          if (c.tallerOrderId) {
+    const nuevasCarwash = (carwash || []).map((c) => {
+      if (String(c.id) === String(id)) {
+        // CASE 1: Linked to a Workshop (Taller) order
+        if (c.tallerOrderId) {
+          // Transition linked Taller order to "Listo para entrega"
+          if (typeof setOrdenes === "function") {
             setOrdenes((prevOrdenes) =>
-              prevOrdenes.map((o) =>
-                o.id === c.tallerOrderId ? { ...o, estado: "Listo para entrega" } : o
+              (prevOrdenes || []).map((o) =>
+                String(o.id) === String(c.tallerOrderId)
+                  ? { ...o, estado: "Listo para entrega", updatedAt: new Date().toISOString() }
+                  : o
               )
             );
           }
+
+          isWorkshopCompleted = true;
+
+          // In Carwash module, this wash is completed and delivered back to the workshop
+          return {
+            ...c,
+            estado: "Entregado",
+            fecha: c.fecha || new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            formaPagoDesc: "Lavado de Taller (Listo para entrega)",
+            cajero: usuarioActual?.user || "Taller"
+          };
+        }
+
+        // CASE 2: Regular standalone carwash order
+        let nuevoEstado = c.estado;
+        if (c.estado === "En proceso") {
+          nuevoEstado = "Listo para entrega";
         } else if (c.estado === "Listo para entrega" && isManager) {
           // Open split payment modal instead of directly updating order state!
           setCheckoutOrder({ ...c, total: c.precio });
@@ -850,6 +871,9 @@ export default function Carwash({
 
     if (!cancelado) {
       setCarwash(nuevasCarwash);
+      if (isWorkshopCompleted) {
+        alert("¡Lavado de taller completado con éxito! El vehículo ha regresado a Gestión de Taller con estado 'Listo para entrega'.");
+      }
     }
   };
 
@@ -2661,14 +2685,17 @@ export default function Carwash({
                       )}
 
                       {/* Advance State */}
-                      {c.estado !== "Entregado" && (c.estado === "En proceso" || !c.tallerOrderId) && (
+                      {c.estado !== "Entregado" && (
                         <button
                           onClick={() => avanzarLavado(c.id)}
                           className={`btn ${c.estado === "En proceso" ? "btn-warning-glow-wash" : "btn-success-glow"}`}
                           style={styles.cardActionBtn}
                         >
                           <CheckCircle size={16} />
-                          {c.estado === "En proceso" ? "Completar Lavado" : "Facturar y Entregar"}
+                          {c.tallerOrderId 
+                            ? (c.estado === "En proceso" ? "Completar y Regresar a Taller" : "Retornar a Taller (Listo)")
+                            : (c.estado === "En proceso" ? "Completar Lavado" : "Facturar y Entregar")
+                          }
                         </button>
                       )}
                       
