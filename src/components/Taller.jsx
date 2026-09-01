@@ -696,11 +696,11 @@ export default function Taller({
       
     return matchesSearch;
   }).sort((a, b) => {
-    // 📅 Sort by most recent first: use updatedAt if available, then fecha, then id
-    const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : (a.fecha ? new Date(a.fecha).getTime() : 0);
-    const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : (b.fecha ? new Date(b.fecha).getTime() : 0);
+    // 📅 Stable Sort by creation date / ID: ensures editing or advancing an order never jumps its physical position
+    const timeA = a.fecha ? new Date(a.fecha).getTime() : 0;
+    const timeB = b.fecha ? new Date(b.fecha).getTime() : 0;
     if (timeB !== timeA) return timeB - timeA;
-    // Fallback: higher id = more recent
+    // Fallback: higher numeric ID = more recently created
     return String(b.id || "").localeCompare(String(a.id || ""), undefined, { numeric: true });
   });
 
