@@ -954,6 +954,55 @@ export default function SettingsComponent({
     }
   };
 
+  const handleExportDeviceBackup = () => {
+    try {
+      const backupData = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k) {
+          try {
+            backupData[k] = JSON.parse(localStorage.getItem(k));
+          } catch (e) {
+            backupData[k] = localStorage.getItem(k);
+          }
+        }
+      }
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `LosPits_Respaldo_${new Date().toISOString().slice(0,10)}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      alert("¡Copia de seguridad descargada exitosamente en este dispositivo!");
+    } catch (err) {
+      alert("Error exportando respaldo: " + err.message);
+    }
+  };
+
+  const handleImportDeviceBackup = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const importedData = JSON.parse(e.target.result);
+        let count = 0;
+        for (const [k, v] of Object.entries(importedData)) {
+          if (k && v !== undefined) {
+            localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
+            count++;
+          }
+        }
+        alert(`¡Se importaron ${count} registros con éxito! La página se recargará.`);
+        window.location.reload();
+      } catch (err) {
+        alert("Error al importar el archivo: " + err.message);
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const handleUploadLocalDataToCloud = async () => {
     const client = getSupabaseClient();
     if (!client) {
@@ -961,7 +1010,7 @@ export default function SettingsComponent({
       return;
     }
 
-    if (window.confirm("¿Seguro que deseas subir todos los datos de este equipo a la nube? Esto sobrescribirá cualquier dato existente en la base de datos de Supabase.")) {
+    if (window.confirm("¿Seguro que deseas subir todos los datos de este equipo a la nube? Esto actualizará la base de datos de Supabase para que los demás dispositivos la reciban.")) {
       setIsUploadingToCloud(true);
       try {
         const collections = {
@@ -990,9 +1039,10 @@ export default function SettingsComponent({
 
         for (const [key, value] of Object.entries(collections)) {
           await syncKeyToCloud(key, value);
+          await syncKeyToCloud(`lospits_${key}`, value);
         }
 
-        alert("¡Todos tus datos locales se subieron con éxito a la nube! Los demás dispositivos ya pueden conectarse y verlos en tiempo real.");
+        alert(`¡Todos tus datos locales se subieron con éxito a la nube (${ordenes?.length || 0} órdenes)! Los demás dispositivos ya pueden conectarse y verlos.`);
       } catch (err) {
          console.error("Error uploading to cloud:", err);
          alert("Ocurrió un error al subir los datos: " + err.message);
@@ -1004,14 +1054,17 @@ export default function SettingsComponent({
 
   const handleForceSyncFromCloud = () => {
     if (window.confirm("¿Seguro que deseas borrar el caché local de este dispositivo y forzar la descarga de los datos desde la nube? Tu configuración de enlace de Supabase no se borrará.")) {
-      const keysToClear = [
+      const baseKeys = [
         "ordenes", "carwash", "parkingEntries", "parkingRate", "parkingHistory", 
         "vehiculosVenta", "workshopInventory", "cafeteriaInventory", "cafeteriaSales", 
         "comisionMecanico", "dashboardPeriod", "carwashPresets", "carwashInventory", 
         "carwashConsumption", "tiendaSales", "cuentasPorCobrar", "cuentasPorPagar", 
-        "fixedCosts", "clientes", "vehiculos", "usuarios", "accesoriosInventory"
+        "fixedCosts", "clientes", "vehiculos", "usuarios", "accesoriosInventory", "papeleraSistema"
       ];
-      keysToClear.forEach(key => localStorage.removeItem(key));
+      baseKeys.forEach(k => {
+        localStorage.removeItem(k);
+        localStorage.removeItem(`lospits_${k}`);
+      });
       alert("Caché local limpiado con éxito. La página se recargará para descargar los datos actualizados desde Supabase.");
       window.location.reload();
     }
@@ -3512,12 +3565,12 @@ export default function SettingsComponent({
                   </div>
                 )}
 
-                {connectionStatus === "connected" && (
+                 {connectionStatus === "connected" && (
                   <>
                     <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "15px", marginTop: "15px" }}>
-                      <h4 style={{ ...styles.label, color: "#fff", marginBottom: "10px" }}>Cargar Datos de la PC a la Nube (Solo la primera vez)</h4>
+                      <h4 style={{ ...styles.label, color: "#fff", marginBottom: "10px" }}>Subir Datos de este Dispositivo a la Nube</h4>
                       <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "12px" }}>
-                        Si ya tienes órdenes de taller, clientes e inventario en este navegador de PC, súbelos a Supabase para que los celulares y otras computadoras puedan cargarlos automáticamente al abrir el sistema.
+                        Si este dispositivo (celular o PC) tiene las órdenes más recientes, súbelas a Supabase para que todos los demás equipos las reciban al instante.
                       </p>
                       <button
                         type="button"
@@ -3526,7 +3579,7 @@ export default function SettingsComponent({
                         className="btn btn-secondary"
                         style={{ width: "100%", fontWeight: "700" }}
                       >
-                        {isUploadingToCloud ? "Subiendo Información..." : "⬆️ Subir Datos de esta PC a la Nube"}
+                        {isUploadingToCloud ? "Subiendo Información..." : "⬆️ Subir Datos de este Dispositivo a la Nube"}
                       </button>
                     </div>
 
@@ -3541,11 +3594,41 @@ export default function SettingsComponent({
                         className="btn btn-ghost"
                         style={{ width: "100%", fontWeight: "700", borderColor: "var(--color-primary)", color: "var(--color-primary)", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", height: "38px" }}
                       >
-                        🔄 Restablecer y Forzar Sincronización desde la Nube
+                        🔄 Restablecer y Forzar Descarga desde la Nube
                       </button>
                     </div>
                   </>
                 )}
+
+                {/* Copia de Seguridad Local Independiente */}
+                <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "15px", marginTop: "15px" }}>
+                  <h4 style={{ ...styles.label, color: "#fff", marginBottom: "10px" }}>Copia de Seguridad de este Dispositivo (Offline / Respaldo)</h4>
+                  <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "12px" }}>
+                    Guarda una copia de seguridad directa en tu teléfono o PC en un archivo JSON descargable para proteger 100% tus órdenes e información.
+                  </p>
+                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={handleExportDeviceBackup}
+                      className="btn btn-primary"
+                      style={{ flex: 1, minWidth: "220px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
+                    >
+                      📥 Descargar Respaldo de este Equipo (JSON)
+                    </button>
+                    <label
+                      className="btn btn-secondary"
+                      style={{ flex: 1, minWidth: "220px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", cursor: "pointer", margin: 0 }}
+                    >
+                      📤 Restaurar Respaldo desde Archivo
+                      <input
+                        type="file"
+                        accept=".json"
+                        onChange={handleImportDeviceBackup}
+                        style={{ display: "none" }}
+                      />
+                    </label>
+                  </div>
+                </div>
 
                 <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "15px", marginTop: "15px" }}>
                   <h4 style={{ ...styles.label, color: "#fff", marginBottom: "8px" }}>Instrucciones en Supabase:</h4>
