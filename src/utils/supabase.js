@@ -1,8 +1,8 @@
 // src/utils/supabase.js
 import { createClient } from '@supabase/supabase-js';
 
-const DEFAULT_SUPABASE_URL = 'https://qxgwbihypspisenmwwih.supabase.co';
-const DEFAULT_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF4Z3diaWh5cHNwaXNlbm13d2loIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NjA0OTMyOCwiZXhwIjoyMTAxNjI1MzI4fQ.1iNouSCLvape4RtUUM0eEzBaWGj7RA_rgtqLH8XRsv4';
+const DEFAULT_SUPABASE_URL = 'https://mrpdkjhmzioyygictjua.supabase.co';
+const DEFAULT_SUPABASE_KEY = 'sb_publishable_0kZjBWa7tBuHTCXIzEYKTA_3QusIMTf';
 
 let supabaseInstance = null;
 
@@ -13,12 +13,12 @@ export const getSupabaseClient = () => {
   let url = (localStorage.getItem('supabase_url') || '').trim();
   let key = (localStorage.getItem('supabase_key') || '').trim();
 
-  if (!url || url.includes('mrpdkjhmzioyygictjua')) {
+  if (!url || url.includes('qxgwbihypspisenmwwih')) {
     url = DEFAULT_SUPABASE_URL;
     localStorage.setItem('supabase_url', url);
     supabaseInstance = null;
   }
-  if (!key || key.includes('0kZjBWa7tBuHTCXIzEYKTA')) {
+  if (!key || key.includes('qxgwbihypspisenmwwih')) {
     key = DEFAULT_SUPABASE_KEY;
     localStorage.setItem('supabase_key', key);
     supabaseInstance = null;
