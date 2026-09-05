@@ -102,7 +102,9 @@ export default function SettingsComponent({
   workshopBranding = DEFAULT_BRANDING,
   setWorkshopBranding,
   activeModules = DEFAULT_ACTIVE_MODULES,
-  setActiveModules
+  setActiveModules,
+  restoreMasterBackup,
+  tenantId = "lospits"
 }) {
   const [activeTab, setActiveTab] = useState("branding");
   const [trashFilter, setTrashFilter] = useState("todos");
@@ -3664,6 +3666,23 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.app_data;`}
                     📥 Importar Respaldo JSON
                     <input type="file" accept=".json" onChange={handleImportBackupFile} style={{ display: "none" }} />
                   </label>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm("¿Deseas restaurar la base de datos maestra completa de Los Pits (19 Órdenes, 51 Carwash, 103 Clientes, 93 Vehículos, Inventario y Finanzas)?")) {
+                        if (restoreMasterBackup) {
+                          restoreMasterBackup(tenantId);
+                          alert("¡Base de datos maestra restaurada con éxito! La página se recargará para aplicar los cambios.");
+                          window.location.reload();
+                        }
+                      }
+                    }}
+                    className="btn"
+                    style={{ backgroundColor: "rgba(234, 179, 8, 0.2)", color: "#facc15", border: "1px solid rgba(234, 179, 8, 0.4)", fontWeight: "800", display: "flex", alignItems: "center", gap: "6px" }}
+                  >
+                    🛡️ Restaurar Copia Maestra
+                  </button>
 
                   <button
                     type="button"

@@ -26,7 +26,8 @@ import Citas from "./components/Citas";
 import { DEFAULT_CATALOGO_PREMIOS } from "./utils/wallet";
 import { DEFAULT_BRANDING, getCleanBranding } from "./utils/branding";
 import { DEFAULT_ACTIVE_MODULES, isModuleActive } from "./utils/modulesConfig";
-import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocalStorage, getActiveTenantId } from "./utils/storage";
+import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocalStorage, getActiveTenantId, restoreMasterBackup } from "./utils/storage";
+import masterBackupData from "./data/masterBackupData.json";
 import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout, processOfflineQueue } from "./utils/supabase";
 import { initHourlyBackupScheduler, checkAndCreateHourlyBackup } from "./services/backupService";
 import { autoPurgeTrash } from "./services/trashService";
@@ -985,6 +986,25 @@ export default function App() {
     const val = getTenantLocalStorage("cotizacionesExpress", [], tenantId);
     return Array.isArray(val) ? val : [];
   });
+
+  // 🛡️ AUTO-RECOVERY FOR LOS PITS: If collections are empty on mount (e.g. storage cleared or Supabase 402 quota),
+  // automatically seed state from the pristine master backup!
+  useEffect(() => {
+    if (tenantId === "lospits" && masterBackupData) {
+      const needsRestore = (!ordenes || ordenes.length === 0) && (!carwash || carwash.length === 0) && (!clientes || clientes.length === 0);
+      if (needsRestore) {
+        if (Array.isArray(masterBackupData.ordenes) && masterBackupData.ordenes.length > 0) setOrdenes(masterBackupData.ordenes);
+        if (Array.isArray(masterBackupData.carwash) && masterBackupData.carwash.length > 0) setCarwash(masterBackupData.carwash);
+        if (Array.isArray(masterBackupData.clientes) && masterBackupData.clientes.length > 0) setClientes(masterBackupData.clientes);
+        if (Array.isArray(masterBackupData.vehiculos) && masterBackupData.vehiculos.length > 0) setVehiculos(masterBackupData.vehiculos);
+        if (Array.isArray(masterBackupData.workshopInventory) && masterBackupData.workshopInventory.length > 0) setWorkshopInventory(masterBackupData.workshopInventory);
+        if (Array.isArray(masterBackupData.cafeteriaSales) && masterBackupData.cafeteriaSales.length > 0) setCafeteriaSales(masterBackupData.cafeteriaSales);
+        if (Array.isArray(masterBackupData.cuentasPorCobrar) && masterBackupData.cuentasPorCobrar.length > 0) setCuentasPorCobrar(masterBackupData.cuentasPorCobrar);
+        if (Array.isArray(masterBackupData.cuentasPorPagar) && masterBackupData.cuentasPorPagar.length > 0) setCuentasPorPagar(masterBackupData.cuentasPorPagar);
+        restoreMasterBackup("lospits");
+      }
+    }
+  }, [tenantId]);
 
   // 🏆 LOYALTY REWARDS HELPER: Auto-calculates & awards Puntos Pits for completed services
   const addPuntosLealtad = (clienteKey, clienteNombre, monto, area, tallerLaborMonto = 0) => {
@@ -2592,6 +2612,8 @@ export default function App() {
             setWorkshopBranding={setWorkshopBranding}
             activeModules={activeModules}
             setActiveModules={setActiveModules}
+            restoreMasterBackup={restoreMasterBackup}
+            tenantId={tenantId}
           />
         )}
 

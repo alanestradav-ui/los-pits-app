@@ -27,35 +27,60 @@ export const getActiveTenantId = () => {
   }
 };
 
+import masterBackupData from '../data/masterBackupData.json';
+
+export const restoreMasterBackup = (tenantId = "lospits") => {
+  if (!masterBackupData) return false;
+  const activeTenant = (tenantId || "lospits").toLowerCase().trim();
+  Object.keys(masterBackupData).forEach(key => {
+    const scopedKey = `${activeTenant}_${key}`;
+    try {
+      localStorage.setItem(scopedKey, JSON.stringify(masterBackupData[key]));
+    } catch (e) {}
+  });
+  return true;
+};
+
 export const getTenantLocalStorage = (key, defaultValue, tenantId = null) => {
   const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
   const scopedKey = `${activeTenant}_${key}`;
   const storedScoped = localStorage.getItem(scopedKey);
 
-  // 🔒 STRICT TENANT ISOLATION: Only read from the scoped key.
-  // NEVER fall back to the unscoped key — that would leak data between tenants.
+  // 🔒 STRICT TENANT ISOLATION: Read from the scoped key.
   if (storedScoped !== null) {
     try {
-      return JSON.parse(storedScoped);
+      const parsed = JSON.parse(storedScoped);
+      // Auto-recovery for lospits if key is empty array and master backup has real items
+      if (activeTenant === "lospits" && Array.isArray(parsed) && parsed.length === 0 && masterBackupData && Array.isArray(masterBackupData[key]) && masterBackupData[key].length > 0) {
+        localStorage.setItem(scopedKey, JSON.stringify(masterBackupData[key]));
+        return masterBackupData[key];
+      }
+      return parsed;
     } catch (e) {
       return defaultValue;
     }
   }
 
-  // 🔄 ONE-TIME MIGRATION for "lospits" tenant:
-  // If the scoped key doesn't exist yet but old unscoped data does,
-  // migrate it to the scoped key and return it.
+  // 🔄 ONE-TIME MIGRATION / RECOVERY for "lospits" tenant:
   if (activeTenant === "lospits") {
     const storedBase = localStorage.getItem(key);
     if (storedBase !== null) {
       try {
         const parsed = JSON.parse(storedBase);
-        // Migrate: write to scoped key so next read hits the fast path
-        localStorage.setItem(scopedKey, storedBase);
-        return parsed;
-      } catch (e) {
-        return defaultValue;
-      }
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          localStorage.setItem(scopedKey, storedBase);
+          return parsed;
+        }
+      } catch (e) {}
+    }
+
+    // 🛡️ RECOVERY FROM MASTER BACKUP DATASET:
+    if (masterBackupData && masterBackupData[key] !== undefined) {
+      const backupVal = masterBackupData[key];
+      try {
+        localStorage.setItem(scopedKey, JSON.stringify(backupVal));
+      } catch (e) {}
+      return backupVal;
     }
   }
 
