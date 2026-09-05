@@ -47,36 +47,29 @@ export const getTenantLocalStorage = (key, defaultValue, tenantId = null) => {
   const storedScoped = localStorage.getItem(scopedKey);
 
   // 🔒 STRICT TENANT ISOLATION: Read from the scoped key.
+  // If data exists in localStorage, ALWAYS trust it — never overwrite with static backup.
   if (storedScoped !== null) {
     try {
-      const parsed = JSON.parse(storedScoped);
-      // Auto-recovery for lospits if key is missing items that exist in master backup
-      if (activeTenant === "lospits" && masterBackupData && Array.isArray(masterBackupData[key]) && masterBackupData[key].length > 0) {
-        if (!Array.isArray(parsed) || parsed.length < masterBackupData[key].length) {
-          localStorage.setItem(scopedKey, JSON.stringify(masterBackupData[key]));
-          return masterBackupData[key];
-        }
-      }
-      return parsed;
+      return JSON.parse(storedScoped);
     } catch (e) {
       return defaultValue;
     }
   }
 
-  // 🔄 ONE-TIME MIGRATION / RECOVERY for "lospits" tenant:
+  // 🔄 ONE-TIME MIGRATION for "lospits" tenant:
+  // If the scoped key doesn't exist yet but old unscoped data does, migrate it.
   if (activeTenant === "lospits") {
     const storedBase = localStorage.getItem(key);
     if (storedBase !== null) {
       try {
         const parsed = JSON.parse(storedBase);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          localStorage.setItem(scopedKey, storedBase);
-          return parsed;
-        }
+        localStorage.setItem(scopedKey, storedBase);
+        return parsed;
       } catch (e) {}
     }
 
-    // 🛡️ RECOVERY FROM MASTER BACKUP DATASET:
+    // 🛡️ FIRST-VISIT SEED: Only restore from master backup when NO data exists at all
+    // (neither scoped nor unscoped key found in localStorage).
     if (masterBackupData && masterBackupData[key] !== undefined) {
       const backupVal = masterBackupData[key];
       try {
