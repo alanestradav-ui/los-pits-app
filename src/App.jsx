@@ -987,21 +987,61 @@ export default function App() {
     return Array.isArray(val) ? val : [];
   });
 
-  // 🛡️ AUTO-RECOVERY FOR LOS PITS: If collections are empty on mount (e.g. storage cleared or Supabase 402 quota),
-  // automatically seed state from the pristine master backup!
+  // 🛡️ AUTO-RECOVERY FOR LOS PITS: If collections have missing records on mount (e.g. storage cleared or Supabase 402 quota),
+  // automatically seed state and localStorage from the pristine master backup!
   useEffect(() => {
     if (tenantId === "lospits" && masterBackupData) {
-      const needsRestore = (!ordenes || ordenes.length === 0) && (!carwash || carwash.length === 0) && (!clientes || clientes.length === 0);
-      if (needsRestore) {
-        if (Array.isArray(masterBackupData.ordenes) && masterBackupData.ordenes.length > 0) setOrdenes(masterBackupData.ordenes);
-        if (Array.isArray(masterBackupData.carwash) && masterBackupData.carwash.length > 0) setCarwash(masterBackupData.carwash);
-        if (Array.isArray(masterBackupData.clientes) && masterBackupData.clientes.length > 0) setClientes(masterBackupData.clientes);
-        if (Array.isArray(masterBackupData.vehiculos) && masterBackupData.vehiculos.length > 0) setVehiculos(masterBackupData.vehiculos);
-        if (Array.isArray(masterBackupData.workshopInventory) && masterBackupData.workshopInventory.length > 0) setWorkshopInventory(masterBackupData.workshopInventory);
-        if (Array.isArray(masterBackupData.cafeteriaSales) && masterBackupData.cafeteriaSales.length > 0) setCafeteriaSales(masterBackupData.cafeteriaSales);
-        if (Array.isArray(masterBackupData.cuentasPorCobrar) && masterBackupData.cuentasPorCobrar.length > 0) setCuentasPorCobrar(masterBackupData.cuentasPorCobrar);
-        if (Array.isArray(masterBackupData.cuentasPorPagar) && masterBackupData.cuentasPorPagar.length > 0) setCuentasPorPagar(masterBackupData.cuentasPorPagar);
-        restoreMasterBackup("lospits");
+      if (Array.isArray(masterBackupData.ordenes) && (!ordenes || ordenes.length < masterBackupData.ordenes.length)) {
+        setOrdenes(masterBackupData.ordenes);
+        setTenantLocalStorage("ordenes", masterBackupData.ordenes, "lospits");
+      }
+      if (Array.isArray(masterBackupData.carwash) && (!carwash || carwash.length < masterBackupData.carwash.length)) {
+        setCarwash(masterBackupData.carwash);
+        setTenantLocalStorage("carwash", masterBackupData.carwash, "lospits");
+      }
+      if (Array.isArray(masterBackupData.clientes) && (!clientes || clientes.length < masterBackupData.clientes.length)) {
+        setClientes(masterBackupData.clientes);
+        setTenantLocalStorage("clientes", masterBackupData.clientes, "lospits");
+      }
+      if (Array.isArray(masterBackupData.vehiculos) && (!vehiculos || vehiculos.length < masterBackupData.vehiculos.length)) {
+        setVehiculos(masterBackupData.vehiculos);
+        setTenantLocalStorage("vehiculos", masterBackupData.vehiculos, "lospits");
+      }
+      if (Array.isArray(masterBackupData.workshopInventory) && (!workshopInventory || workshopInventory.length < masterBackupData.workshopInventory.length)) {
+        setWorkshopInventory(masterBackupData.workshopInventory);
+        setTenantLocalStorage("workshopInventory", masterBackupData.workshopInventory, "lospits");
+      }
+      if (Array.isArray(masterBackupData.cafeteriaSales) && (!cafeteriaSales || cafeteriaSales.length < masterBackupData.cafeteriaSales.length)) {
+        setCafeteriaSales(masterBackupData.cafeteriaSales);
+        setTenantLocalStorage("cafeteriaSales", masterBackupData.cafeteriaSales, "lospits");
+      }
+      if (Array.isArray(masterBackupData.cuentasPorCobrar) && (!cuentasPorCobrar || cuentasPorCobrar.length < masterBackupData.cuentasPorCobrar.length)) {
+        setCuentasPorCobrar(masterBackupData.cuentasPorCobrar);
+        setTenantLocalStorage("cuentasPorCobrar", masterBackupData.cuentasPorCobrar, "lospits");
+      }
+      if (Array.isArray(masterBackupData.cuentasPorPagar) && (!cuentasPorPagar || cuentasPorPagar.length < masterBackupData.cuentasPorPagar.length)) {
+        setCuentasPorPagar(masterBackupData.cuentasPorPagar);
+        setTenantLocalStorage("cuentasPorPagar", masterBackupData.cuentasPorPagar, "lospits");
+      }
+      if (Array.isArray(masterBackupData.fixedCosts) && (!fixedCosts || fixedCosts.length < masterBackupData.fixedCosts.length)) {
+        setFixedCosts(masterBackupData.fixedCosts);
+        setTenantLocalStorage("fixedCosts", masterBackupData.fixedCosts, "lospits");
+      }
+      if (Array.isArray(masterBackupData.carwashInventory) && (!carwashInventory || carwashInventory.length < masterBackupData.carwashInventory.length)) {
+        setCarwashInventory(masterBackupData.carwashInventory);
+        setTenantLocalStorage("carwashInventory", masterBackupData.carwashInventory, "lospits");
+      }
+      if (Array.isArray(masterBackupData.cafeteriaInventory) && (!cafeteriaInventory || cafeteriaInventory.length < masterBackupData.cafeteriaInventory.length)) {
+        setCafeteriaInventory(masterBackupData.cafeteriaInventory);
+        setTenantLocalStorage("cafeteriaInventory", masterBackupData.cafeteriaInventory, "lospits");
+      }
+      if (Array.isArray(masterBackupData.carwashPresets) && (!carwashPresets || carwashPresets.length < masterBackupData.carwashPresets.length)) {
+        setCarwashPresets(masterBackupData.carwashPresets);
+        setTenantLocalStorage("carwashPresets", masterBackupData.carwashPresets, "lospits");
+      }
+      if (Array.isArray(masterBackupData.parkingHistory) && (!parkingHistory || parkingHistory.length < masterBackupData.parkingHistory.length)) {
+        setParkingHistory(masterBackupData.parkingHistory);
+        setTenantLocalStorage("parkingHistory", masterBackupData.parkingHistory, "lospits");
       }
     }
   }, [tenantId]);

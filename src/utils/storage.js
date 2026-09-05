@@ -50,10 +50,12 @@ export const getTenantLocalStorage = (key, defaultValue, tenantId = null) => {
   if (storedScoped !== null) {
     try {
       const parsed = JSON.parse(storedScoped);
-      // Auto-recovery for lospits if key is empty array and master backup has real items
-      if (activeTenant === "lospits" && Array.isArray(parsed) && parsed.length === 0 && masterBackupData && Array.isArray(masterBackupData[key]) && masterBackupData[key].length > 0) {
-        localStorage.setItem(scopedKey, JSON.stringify(masterBackupData[key]));
-        return masterBackupData[key];
+      // Auto-recovery for lospits if key is missing items that exist in master backup
+      if (activeTenant === "lospits" && masterBackupData && Array.isArray(masterBackupData[key]) && masterBackupData[key].length > 0) {
+        if (!Array.isArray(parsed) || parsed.length < masterBackupData[key].length) {
+          localStorage.setItem(scopedKey, JSON.stringify(masterBackupData[key]));
+          return masterBackupData[key];
+        }
       }
       return parsed;
     } catch (e) {
