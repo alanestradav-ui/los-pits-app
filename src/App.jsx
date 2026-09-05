@@ -1568,7 +1568,13 @@ export default function App() {
         // Always persist to localStorage even if state hasn't changed
         setTenantLocalStorage(baseKey, mergedValue, activeTenant);
 
-        // Note: forcePullFromCloud pulls data into local storage/state and does NOT push back to Cloud
+        // 🔄 Two-way synchronization: If local had items not yet in cloud, push merged dataset to cloud
+        if (mergedValStr !== cloudValStr && (Array.isArray(mergedValue) ? mergedValue.length >= (Array.isArray(cloudValue) ? cloudValue.length : 0) : true)) {
+          syncKeyToCloud(scopedKey, mergedValue);
+          if (activeTenant === "lospits") {
+            syncKeyToCloud(baseKey, mergedValue);
+          }
+        }
       });
 
       // 🚀 Apply all state updates in a single microtask batch to minimize re-renders
