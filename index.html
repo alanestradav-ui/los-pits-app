@@ -6,6 +6,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Los Pits Auto Center</title>
     <script>
+      // FORCE cache bust v2 - Sep 8 2026
+      (function() {
+        var FORCE_VERSION = 'v2026-09-08';
+        var lastForced = localStorage.getItem('_sw_force_version');
+        if (lastForced !== FORCE_VERSION) {
+          localStorage.setItem('_sw_force_version', FORCE_VERSION);
+          // Fix Supabase credentials immediately
+          localStorage.setItem('supabase_url', 'https://mrpdkjhmzioyygictjua.supabase.co');
+          localStorage.setItem('supabase_key', 'sb_publishable_0kZjBWa7tBuHTCXIzEYKTA_3QusIMTf');
+          // Clear old SW and caches
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+              if (regs) { for (var i = 0; i < regs.length; i++) { regs[i].unregister(); } }
+            }).catch(function(){});
+          }
+          if ('caches' in window) {
+            caches.keys().then(function(names) {
+              if (names) { for (var j = 0; j < names.length; j++) { caches.delete(names[j]); } }
+            }).catch(function(){});
+          }
+          // Reload after a brief delay to ensure SW is cleared
+          setTimeout(function() { window.location.reload(); }, 500);
+        }
+      })();
       window.addEventListener('error', function(e) {
         try {
           if (e.target && (e.target.tagName === 'SCRIPT' || e.target.tagName === 'LINK')) {
