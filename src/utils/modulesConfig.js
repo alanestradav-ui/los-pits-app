@@ -189,6 +189,9 @@ export const MODULE_PRESETS = [
 
 export const isModuleActive = (moduleId, activeModules) => {
   if (moduleId === "dashboard" || moduleId === "configuracion" || moduleId === "saasAdmin") return true;
-  if (!Array.isArray(activeModules)) return true; // Si no está configurado aún, asumir activo
+  if (!Array.isArray(activeModules) || activeModules.length === 0) return true; // Si no está configurado o vacío, asumir todos activos
+  // 🛡️ CORRUPTION GUARD: If the array contains objects instead of strings, data is corrupted.
+  // In this case, assume all modules are active to prevent hiding the entire UI.
+  if (activeModules.length > 0 && typeof activeModules[0] !== "string") return true;
   return activeModules.includes(moduleId);
 };

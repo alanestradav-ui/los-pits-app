@@ -979,7 +979,23 @@ export default function App() {
 
   const [activeModules, setActiveModules] = useState(() => {
     const val = getTenantLocalStorage("activeModules", DEFAULT_ACTIVE_MODULES, tenantId);
-    return Array.isArray(val) && val.length > 0 ? val : DEFAULT_ACTIVE_MODULES;
+    if (!Array.isArray(val) || val.length === 0) return DEFAULT_ACTIVE_MODULES;
+    // 🛡️ FIX: Detect and repair corrupted activeModules loaded from localStorage
+    if (typeof val[0] !== "string") {
+      console.warn("[Init] Corrupted activeModules in localStorage — resetting to defaults");
+      const repaired = val.map(item => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object") {
+          const numKeys = Object.keys(item).filter(k => /^\d+$/.test(k)).sort((a, b) => Number(a) - Number(b));
+          if (numKeys.length > 0) return numKeys.map(k => item[k]).join("");
+        }
+        return null;
+      }).filter(Boolean);
+      const result = repaired.length > 0 ? repaired : DEFAULT_ACTIVE_MODULES;
+      setTenantLocalStorage("activeModules", result, tenantId);
+      return result;
+    }
+    return val;
   });
 
   const [cotizacionesExpress, setCotizacionesExpress] = useState(() => {
@@ -1550,6 +1566,26 @@ export default function App() {
             mergedValue = Object.values(mergedValue);
           } else {
             mergedValue = Array.isArray(cloudValue) ? cloudValue : [];
+          }
+        }
+
+        // 🛡️ FIX: Sanitize corrupted activeModules — reconstruct strings from character-indexed objects
+        if (baseKey === "activeModules" && Array.isArray(mergedValue)) {
+          const needsRepair = mergedValue.length > 0 && typeof mergedValue[0] !== "string";
+          if (needsRepair) {
+            console.warn("[Sync] Detected corrupted activeModules data — repairing...");
+            const repaired = mergedValue.map(item => {
+              if (typeof item === "string") return item;
+              if (item && typeof item === "object") {
+                // Reconstruct string from {"0":"d","1":"a","2":"s",...} format
+                const numKeys = Object.keys(item).filter(k => /^\d+$/.test(k)).sort((a, b) => Number(a) - Number(b));
+                if (numKeys.length > 0) {
+                  return numKeys.map(k => item[k]).join("");
+                }
+              }
+              return null;
+            }).filter(Boolean);
+            mergedValue = repaired.length > 0 ? repaired : DEFAULT_ACTIVE_MODULES;
           }
         }
 

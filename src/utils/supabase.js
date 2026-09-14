@@ -149,7 +149,10 @@ export const syncKeyToCloud = async (key, value) => {
     
     if (Array.isArray(parsed)) {
       return parsed.map(item => {
-        if (!item || typeof item !== "object") return item;
+        // 🛡️ CRITICAL: Leave primitive items (strings, numbers, booleans) untouched.
+        // This prevents corrupting arrays like activeModules which contain plain strings.
+        if (item === null || item === undefined) return item;
+        if (typeof item !== "object" || item instanceof Date) return item;
         const newItem = { ...item };
         
         const sanitizePhotoItem = (f) => {
