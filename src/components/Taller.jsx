@@ -4274,6 +4274,13 @@ export default function Taller({
                         const missingParts = [];
                         if (o.presupuesto && o.presupuesto.parts) {
                           o.presupuesto.parts.forEach(part => {
+                            // If the part already has a purchasePrice > 0 in the budget,
+                            // it was already purchased for this order — not missing
+                            const partPurchasePrice = part.purchasePrice !== undefined && part.purchasePrice !== null && part.purchasePrice !== ""
+                              ? Number(part.purchasePrice)
+                              : 0;
+                            if (partPurchasePrice > 0) return;
+
                             const invItem = (workshopInventory || []).find(inv => 
                               (part.code && inv.code && inv.code.toUpperCase().trim() === part.code.toUpperCase().trim()) || 
                               (inv.name || "").toLowerCase().trim() === (part.desc || "").toLowerCase().trim()

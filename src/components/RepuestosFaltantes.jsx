@@ -94,6 +94,13 @@ export default function RepuestosFaltantes({
       o.presupuesto.parts.forEach(part => {
         if (!part) return;
         
+        // If the part already has a purchasePrice > 0 in the budget, it means
+        // it was already purchased and assigned to this order — skip it from missing list
+        const partPurchasePrice = part.purchasePrice !== undefined && part.purchasePrice !== null && part.purchasePrice !== "" 
+          ? Number(part.purchasePrice) 
+          : 0;
+        if (partPurchasePrice > 0) return;
+
         const partCodeStr = String(part.code || "");
         const partDescStr = String(part.desc || "");
 
