@@ -10,11 +10,56 @@ export const getLocalStorage = (key, defaultValue) => {
   }
 };
 
+// Purges heavy, non-critical keys to protect localStorage quota on mobile
+export const purgeStorageBloat = () => {
+  try {
+    const keysToEvict = [
+      "app_data_backup_snapshot",
+      "lospits_app_data_backup_snapshot",
+      "systemSnapshots",
+      "lospits_systemSnapshots"
+    ];
+    keysToEvict.forEach(k => {
+      try { localStorage.removeItem(k); } catch (e) {}
+    });
+
+    // Also remove duplicate unscoped keys for lospits if scoped versions exist
+    const baseKeys = ["ordenes", "carwash", "usuarios", "parkingEntries", "workshopInventory", "cafeteriaInventory", "clientes", "vehiculos"];
+    baseKeys.forEach(bk => {
+      if (localStorage.getItem(`lospits_${bk}`) !== null) {
+        try { localStorage.removeItem(bk); } catch (e) {}
+      }
+    });
+
+    // Sanitize activeModules in localStorage if corrupted/duplicated
+    ["activeModules", "lospits_activeModules"].forEach(modKey => {
+      const raw = localStorage.getItem(modKey);
+      if (raw && raw.length > 2000) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const deduped = Array.from(new Set(parsed)).filter(x => typeof x === "string" && x.trim() !== "");
+            localStorage.setItem(modKey, JSON.stringify(deduped));
+          }
+        } catch (e) {}
+      }
+    });
+  } catch (err) {
+    console.warn("[Storage] Error during storage cleanup:", err);
+  }
+};
+
 export const setLocalStorage = (key, value) => {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch (error) {
-    console.error(`Error setting localStorage key "${key}":`, error);
+    console.warn(`[Storage] Quota or error setting "${key}", attempting automatic cleanup...`);
+    purgeStorageBloat();
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (retryError) {
+      console.error(`[Storage] Failed to set "${key}" even after cleanup:`, retryError);
+    }
   }
 };
 
@@ -33,6 +78,7 @@ export const restoreMasterBackup = (tenantId = "lospits") => {
   if (!masterBackupData) return false;
   const activeTenant = (tenantId || "lospits").toLowerCase().trim();
   Object.keys(masterBackupData).forEach(key => {
+    if (key === "systemSnapshots" || key === "app_data_backup_snapshot") return;
     const scopedKey = `${activeTenant}_${key}`;
     try {
       localStorage.setItem(scopedKey, JSON.stringify(masterBackupData[key]));
@@ -70,7 +116,8 @@ export const getTenantLocalStorage = (key, defaultValue, tenantId = null) => {
 
     // 🛡️ FIRST-VISIT SEED: Only restore from master backup when NO data exists at all
     // (neither scoped nor unscoped key found in localStorage).
-    if (masterBackupData && masterBackupData[key] !== undefined) {
+    // NEVER seed heavy systemSnapshots or backup snapshots into client localStorage!
+    if (key !== "systemSnapshots" && key !== "app_data_backup_snapshot" && masterBackupData && masterBackupData[key] !== undefined) {
       const backupVal = masterBackupData[key];
       try {
         localStorage.setItem(scopedKey, JSON.stringify(backupVal));

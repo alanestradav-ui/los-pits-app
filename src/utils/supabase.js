@@ -13,8 +13,12 @@ export const getSupabaseClient = () => {
   // 🔒 ALWAYS force correct credentials - override ANY stale cached values
   const url = DEFAULT_SUPABASE_URL;
   const key = DEFAULT_SUPABASE_KEY;
-  localStorage.setItem('supabase_url', url);
-  localStorage.setItem('supabase_key', key);
+  try {
+    localStorage.setItem('supabase_url', url);
+    localStorage.setItem('supabase_key', key);
+  } catch (e) {
+    // Quota exceeded or private browsing - safe to ignore, client still initializes with in-memory constants
+  }
 
   if (supabaseInstance) return supabaseInstance;
 

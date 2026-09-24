@@ -26,7 +26,7 @@ import Citas from "./components/Citas";
 import { DEFAULT_CATALOGO_PREMIOS } from "./utils/wallet";
 import { DEFAULT_BRANDING, getCleanBranding } from "./utils/branding";
 import { DEFAULT_ACTIVE_MODULES, isModuleActive } from "./utils/modulesConfig";
-import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocalStorage, getActiveTenantId, restoreMasterBackup } from "./utils/storage";
+import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocalStorage, getActiveTenantId, restoreMasterBackup, purgeStorageBloat } from "./utils/storage";
 import masterBackupData from "./data/masterBackupData.json";
 import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout, processOfflineQueue } from "./utils/supabase";
 import { initHourlyBackupScheduler, checkAndCreateHourlyBackup } from "./services/backupService";
@@ -219,13 +219,20 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null, active
     return false;
   };
 
-  const CONFIG_KEYS = ["fixedCosts", "carwashPresets", "usuarios"];
+  const CONFIG_KEYS = ["fixedCosts", "carwashPresets", "usuarios", "activeModules"];
   const isConfigKey = CONFIG_KEYS.includes(key);
 
   const cleanLocal = isConfigKey ? (Array.isArray(localVal) ? localVal : []) : (Array.isArray(localVal) ? localVal.filter(item => !isItemDeleted(item)) : localVal);
   const cleanCloud = isConfigKey ? (Array.isArray(cloudVal) ? cloudVal : []) : (Array.isArray(cloudVal) ? cloudVal.filter(item => !isItemDeleted(item)) : cloudVal);
 
   if (isConfigKey) {
+    if (key === "activeModules") {
+      const cMods = Array.isArray(cleanCloud) ? cleanCloud : [];
+      const lMods = Array.isArray(cleanLocal) ? cleanLocal : [];
+      const combined = Array.from(new Set([...lMods, ...cMods])).filter(item => typeof item === "string" && item.trim() !== "");
+      return combined.length > 0 ? combined : DEFAULT_ACTIVE_MODULES;
+    }
+
     if (key === "usuarios") {
       const cloudUsers = Array.isArray(cleanCloud) ? deduplicateUsers(cleanCloud) : [];
       const localUsers = Array.isArray(cleanLocal) ? deduplicateUsers(cleanLocal) : [];
@@ -1646,6 +1653,7 @@ export default function App() {
 
   // Initial Sync from Cloud on mount + Background & Focus Sync
   useEffect(() => {
+    purgeStorageBloat();
     forcePullFromCloud(true);
 
     const handleSyncEvent = () => {
@@ -2097,7 +2105,7 @@ export default function App() {
   }, [papeleraSistema]);
 
   useEffect(() => {
-    setTenantLocalStorage("systemSnapshots", systemSnapshots, tenantId);
+    // 🛡️ Do NOT save heavy full database snapshots to mobile localStorage — sync directly to Supabase cloud
     syncToCloud("systemSnapshots", systemSnapshots);
   }, [systemSnapshots]);
 

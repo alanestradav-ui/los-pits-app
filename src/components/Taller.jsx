@@ -1041,6 +1041,9 @@ export default function Taller({
       try {
         const activeTenant = (tenantId || "lospits").toLowerCase().trim();
         syncKeyToCloud(`${activeTenant}_ordenes`, updated);
+        if (activeTenant === "lospits") {
+          syncKeyToCloud("ordenes", updated);
+        }
       } catch (e) {}
       return updated;
     });
