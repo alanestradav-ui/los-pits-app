@@ -31,6 +31,27 @@ export const purgeStorageBloat = () => {
       }
     });
 
+    // 🧼 Purge stale/corrupted carwash cache on mobile devices to resync cleanly with Supabase
+    const CW_CLEANUP_FLAG = "lospits_cw_sync_clean_v5";
+    if (localStorage.getItem(CW_CLEANUP_FLAG) !== "true") {
+      try {
+        localStorage.removeItem("carwash");
+        localStorage.removeItem("lospits_carwash");
+        localStorage.setItem(CW_CLEANUP_FLAG, "true");
+        console.log("[Storage] Cache local de Carwash purgado para sincronización limpia.");
+      } catch (e) {}
+    }
+
+    // Safety eviction for oversized or corrupted carwash local storage
+    ["carwash", "lospits_carwash"].forEach(cwKey => {
+      const raw = localStorage.getItem(cwKey);
+      if (raw) {
+        if (raw.length > 150000 || raw.includes("null,null") || raw.includes(",null,")) {
+          try { localStorage.removeItem(cwKey); } catch (e) {}
+        }
+      }
+    });
+
     // Sanitize activeModules in localStorage if corrupted/duplicated
     ["activeModules", "lospits_activeModules"].forEach(modKey => {
       const raw = localStorage.getItem(modKey);

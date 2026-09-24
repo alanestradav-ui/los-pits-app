@@ -119,7 +119,21 @@ const ARRAY_KEYS = [
 
 const filterOutMockItems = (key, list) => {
   if (!Array.isArray(list)) return list;
-  return list.filter(item => Boolean(item));
+  return list.filter(item => {
+    if (!item || typeof item !== "object") return false;
+    if (Object.keys(item).length === 0) return false;
+    if (key === "carwash") {
+      const hasId = item.id !== undefined && item.id !== null && String(item.id).trim() !== "";
+      const hasContent = Boolean(item.cliente || item.vehiculo || item.placa || item.servicio || item.total);
+      return hasId || hasContent;
+    }
+    if (key === "ordenes") {
+      const hasId = item.id !== undefined && item.id !== null && String(item.id).trim() !== "";
+      const hasContent = Boolean(item.cliente || item.vehiculo || item.placa);
+      return hasId || hasContent;
+    }
+    return true;
+  });
 };
 
 export const deduplicateUsers = (userList) => {
@@ -1733,11 +1747,8 @@ export default function App() {
             }
           }
 
-          // 🛑 IF EVENT IS FOR A DIFFERENT TENANT OR DUPLICATE PREFIXED KEY, IGNORE IMMEDIATELY!
+          // 🛑 IF EVENT IS FOR A DIFFERENT TENANT, IGNORE IMMEDIATELY!
           if (eventTenant !== activeTenant) {
-            return;
-          }
-          if (activeTenant === "lospits" && key.startsWith("lospits_")) {
             return;
           }
 
