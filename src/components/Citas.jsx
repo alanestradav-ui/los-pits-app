@@ -614,7 +614,9 @@ export default function Citas({
         total: parseFloat(cita.precioEstimado) || 0,
         comision: 0,
         fecha: new Date().toISOString(),
-        origenCitaId: cita.id
+        origenCitaId: cita.id,
+        _isNewOffline: true,
+        isOfflineCreated: true
       };
 
       if (setOrdenes) {

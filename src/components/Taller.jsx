@@ -885,7 +885,9 @@ export default function Taller({
           nombre: order.cliente.trim(),
           nit: order.nit || "C/F",
           nombreFacturacion: order.nombreFacturacion || order.cliente.trim(),
-          fechaRegistro: new Date().toISOString()
+          fechaRegistro: new Date().toISOString(),
+          _isNewOffline: true,
+          isOfflineCreated: true
         }];
         setTenantLocalStorage("clientes", updated, tenantId);
         return updated;
@@ -917,7 +919,9 @@ export default function Taller({
           anio: order.anio || "",
           color: order.color || "",
           clienteTelefono: tel || "",
-          fechaRegistro: new Date().toISOString()
+          fechaRegistro: new Date().toISOString(),
+          _isNewOffline: true,
+          isOfflineCreated: true
         }];
         setTenantLocalStorage("vehiculos", updated, tenantId);
         return updated;
@@ -996,6 +1000,8 @@ export default function Taller({
 
     const nueva = {
       id: `ord_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+      _isNewOffline: true,
+      isOfflineCreated: true,
       cliente: cliente.trim(),
       telefono: telefono.trim(),
       placa: fullPlaca,
@@ -1032,6 +1038,10 @@ export default function Taller({
       const exists = safePrev.some(o => String(o.id) === String(nueva.id));
       const updated = exists ? safePrev : [nueva, ...safePrev];
       setTenantLocalStorage("ordenes", updated, tenantId);
+      try {
+        const activeTenant = (tenantId || "lospits").toLowerCase().trim();
+        syncKeyToCloud(`${activeTenant}_ordenes`, updated);
+      } catch (e) {}
       return updated;
     });
     registrarClienteYVehiculo(nueva);
@@ -3173,6 +3183,8 @@ export default function Taller({
     const fullPlaca = q.placa || (q.plateNumber ? `${q.platePrefix || "P"}-${q.plateNumber}` : "P-000XXX");
     const newOrder = {
       id: Date.now(),
+      _isNewOffline: true,
+      isOfflineCreated: true,
       cliente: q.cliente || "Cliente General",
       telefono: q.telefono || "",
       nit: q.nit || "C/F",

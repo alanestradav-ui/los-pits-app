@@ -181,18 +181,25 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null, active
 
   const isItemDeleted = (item) => {
     if (!item) return true;
-    const candidates = [
-      item.id,
-      item.placa,
-      item.chasis,
-      item.codigo,
-      item.code,
-      item.uuid,
-      item.telefono,
-      item.clienteTelefono,
-      item.targetOriginalId,
-      item.originalId
-    ];
+    const candidates = [];
+    if (item.id !== undefined && item.id !== null) candidates.push(item.id);
+    if (item.uuid) candidates.push(item.uuid);
+    if (item.targetOriginalId) candidates.push(item.targetOriginalId);
+    if (item.originalId) candidates.push(item.originalId);
+
+    // Contextual candidates based on module key to avoid false-positive deletions
+    // (e.g., an order must NEVER be marked deleted just because a vehicle or phone was once deleted)
+    if (key === "clientes") {
+      if (item.telefono) candidates.push(item.telefono);
+      if (item.clienteTelefono) candidates.push(item.clienteTelefono);
+    } else if (key === "vehiculos") {
+      if (item.placa) candidates.push(item.placa);
+      if (item.chasis) candidates.push(item.chasis);
+    } else if (key === "workshopInventory" || key === "cafeteriaInventory" || key === "carwashInventory" || key === "toolsInventory" || key === "accesoriosInventory") {
+      if (item.code) candidates.push(item.code);
+      if (item.codigo) candidates.push(item.codigo);
+    }
+
     for (const cand of candidates) {
       if (cand !== undefined && cand !== null) {
         const strId = String(cand).trim();
@@ -273,9 +280,7 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null, active
       cleanLocal.forEach((c, idx) => {
         const id = (c.telefono && c.telefono.trim()) || (c.nombre && c.nombre.trim()) || `local_c_${idx}`;
         if (!mergedMap.has(id)) {
-          if (c && (c._isNewOffline || c.isOfflineCreated)) {
-            mergedMap.set(id, c);
-          }
+          mergedMap.set(id, c);
         } else {
           const cloudItem = mergedMap.get(id);
           mergedMap.set(id, { ...cloudItem, ...c });
@@ -293,9 +298,7 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null, active
       cleanLocal.forEach((v, idx) => {
         const id = (v.placa && v.placa.trim().toUpperCase()) || (v.chasis && v.chasis.trim().toUpperCase()) || `local_v_${idx}`;
         if (!mergedMap.has(id)) {
-          if (v && (v._isNewOffline || v.isOfflineCreated)) {
-            mergedMap.set(id, v);
-          }
+          mergedMap.set(id, v);
         } else {
           const cloudItem = mergedMap.get(id);
           mergedMap.set(id, { ...cloudItem, ...v });
@@ -460,9 +463,7 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null, active
         const norm = normalizeStatus(item);
         const id = getItemId(norm, idx);
         if (!mergedMap.has(id)) {
-          if (item && (item._isNewOffline || item.isOfflineCreated)) {
-            mergedMap.set(id, norm);
-          }
+          mergedMap.set(id, norm);
         } else {
           const cloudItem = mergedMap.get(id);
           mergedMap.set(id, mergeSingleItem(cloudItem, norm));
@@ -1556,7 +1557,7 @@ export default function App() {
         }
 
         const cloudValue = cloudRaw !== undefined ? safeParseJSON(cloudRaw) : null;
-        const localValue = getTenantLocalStorage(baseKey, null, activeTenant);
+        const localValue = getLatestLocalValue(baseKey);
 
         const papeleraRaw = cloudDataMap.get(getScopedKey("papeleraSistema"));
         let mergedValue = mergeCollections(baseKey, localValue, cloudValue, papeleraRaw, activeTenant);
