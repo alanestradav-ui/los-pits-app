@@ -1444,7 +1444,7 @@ export default function App() {
     pendingBroadcastFetches[targetKey] = setTimeout(() => {
       delete pendingBroadcastFetches[targetKey];
       fetchSingleKeyFromCloud(targetKey);
-    }, 150); // 150ms debounce — fast enough to feel instant, prevents duplicate fetches
+    }, 80); // 80ms debounce — fast enough for instant feel, prevents duplicate fetches
   };
 
   // Sync a key-value pair to cloud if it has actually changed
@@ -1687,13 +1687,13 @@ export default function App() {
       }
     }, 60000);
 
-    // ⏰ Background polling interval: 30s is enough since Realtime handles instant sync
-    // The 5s interval was causing flickering by competing with realtime updates
+    // ⏰ Background polling interval: 15s for responsive cross-device sync
+    // Realtime handles instant sync via broadcast, but polling catches any missed events
     const interval = setInterval(() => {
       if (navigator.onLine && !document.hidden && failedPullCount.current < 5) {
         forcePullFromCloud(false);
       }
-    }, 30000);
+    }, 15000);
 
     return () => {
       window.removeEventListener("online", handleSyncEvent);
@@ -1991,8 +1991,14 @@ export default function App() {
   }, [regalosPasesReferidos, isInitialPullDone]);
 
   // Auto-recover missing clients and vehicles from orders/carwash/parking history deterministically
+  // 🛡️ This runs ONCE after initial cloud pull — NOT on every order/carwash change.
+  // Running on every change caused edited vehicle plates to be reverted because old plates
+  // in order history would re-create the vehicle with old data.
+  const hasRunAutoRecoveryRef = useRef(false);
   useEffect(() => {
     if (!isInitialPullDone) return;
+    if (hasRunAutoRecoveryRef.current) return; // Only run once after initial pull
+    hasRunAutoRecoveryRef.current = true;
 
     const safeClientes = Array.isArray(clientes) ? [...clientes] : [];
     const safeVehiculos = Array.isArray(vehiculos) ? [...vehiculos] : [];
@@ -2063,7 +2069,7 @@ export default function App() {
     if (vehiclesAdded) {
       setVehiculos(safeVehiculos);
     }
-  }, [isInitialPullDone, ordenes, carwash, parkingEntries, parkingHistory, vehiculosVenta]);
+  }, [isInitialPullDone]);
 
   useEffect(() => {
     setTenantLocalStorage("clientes", clientes, tenantId);

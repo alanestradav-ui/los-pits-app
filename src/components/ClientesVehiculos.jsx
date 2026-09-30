@@ -387,10 +387,12 @@ export default function ClientesVehiculos({
     }
     
     if (editingVehicle) {
+      const oldPlaca = editingVehicle.placa;
+      const oldChasis = editingVehicle.chasis;
       const updated = vehiculos.map(v => {
         if (!v) return v;
-        const isSelf = (editingVehicle.placa && v.placa === editingVehicle.placa) ||
-                       (editingVehicle.chasis && v.chasis === editingVehicle.chasis);
+        const isSelf = (oldPlaca && v.placa === oldPlaca) ||
+                       (oldChasis && v.chasis === oldChasis);
         return isSelf ? {
           ...v,
           placa: plcClean,
@@ -403,6 +405,47 @@ export default function ClientesVehiculos({
         } : v;
       });
       setVehiculos(updated);
+
+      // Propagate plate change to all orders and carwash records so the old plate
+      // doesn't linger in the system and get re-created by auto-recovery
+      if (oldPlaca && oldPlaca !== plcClean) {
+        const newVehicleDesc = `${marcaClean} ${lineaClean} (${plcClean})`;
+        if (setOrdenes) {
+          setOrdenes(prev => (prev || []).map(o => {
+            if (!o) return o;
+            const orderPlaca = (o.placa || "").toUpperCase().trim();
+            if (orderPlaca === oldPlaca.toUpperCase().trim()) {
+              const updatedOrder = { ...o, placa: plcClean };
+              // Update the vehiculo string description if it contains the old plate
+              if (typeof o.vehiculo === "string" && o.vehiculo.includes(oldPlaca)) {
+                updatedOrder.vehiculo = o.vehiculo.replace(oldPlaca, plcClean);
+              } else {
+                updatedOrder.vehiculo = newVehicleDesc;
+              }
+              // Update nested vehiculo object if it exists
+              if (o.vehiculo && typeof o.vehiculo === "object" && o.vehiculo.placa) {
+                updatedOrder.vehiculo = { ...o.vehiculo, placa: plcClean };
+              }
+              return updatedOrder;
+            }
+            return o;
+          }));
+        }
+        if (setCarwash) {
+          setCarwash(prev => (prev || []).map(c => {
+            if (!c) return c;
+            const cwPlaca = (c.placa || "").toUpperCase().trim();
+            if (cwPlaca === oldPlaca.toUpperCase().trim()) {
+              const updatedCw = { ...c, placa: plcClean };
+              if (typeof c.vehiculo === "string" && c.vehiculo.includes(oldPlaca)) {
+                updatedCw.vehiculo = c.vehiculo.replace(oldPlaca, plcClean);
+              }
+              return updatedCw;
+            }
+            return c;
+          }));
+        }
+      }
     } else {
       const newVehicle = {
         placa: plcClean,

@@ -153,6 +153,61 @@ export default function RepuestosFaltantes({
       });
     }
 
+    // Also process budget INSUMOS — these are consumable materials that also need
+    // to be purchased and should appear in the pending parts list
+    if (o.presupuesto && o.presupuesto.insumos && o.presupuesto.insumos.length > 0) {
+      o.presupuesto.insumos.forEach(insumo => {
+        if (!insumo) return;
+        
+        const insumoPurchasePrice = insumo.purchasePrice !== undefined && insumo.purchasePrice !== null && insumo.purchasePrice !== "" 
+          ? Number(insumo.purchasePrice) 
+          : 0;
+        if (insumoPurchasePrice > 0) return;
+
+        const insumoDescStr = String(insumo.desc || "");
+
+        const invItem = (workshopInventory || []).find(inv => {
+          if (!inv) return false;
+          const invNameStr = String(inv.name || "").trim();
+          if (normalizeName(invNameStr) && normalizeName(insumoDescStr) && normalizeName(invNameStr) === normalizeName(insumoDescStr)) {
+            return true;
+          }
+          return false;
+        });
+
+        const key = invItem ? getInvKey(invItem) : `NAME:${normalizeName(insumoDescStr)}`;
+        const stockDisponible = key in stockReservado ? stockReservado[key] : (invItem ? Number(invItem.quantity || 0) : 0);
+        const requerido = Number(insumo.qty || 0);
+        
+        if (requerido > stockDisponible) {
+          const faltanteQty = requerido - stockDisponible;
+          const purchasePriceEst = (invItem ? Number(invItem.purchasePrice || 0) : 0);
+          const salePriceEst = (insumo.salePrice !== undefined && insumo.salePrice !== null && insumo.salePrice > 0)
+            ? Number(insumo.salePrice)
+            : (invItem ? Number(invItem.salePrice || 0) : 0);
+          
+          missingPartsForThisVehicle.push({
+            partCode: (invItem && isValidCode(invItem.code)) ? invItem.code : "S/C",
+            partName: `${insumoDescStr} (Insumo)`,
+            partBrand: invItem ? invItem.brand : "",
+            partPresentation: invItem ? invItem.presentation : "",
+            requerido: requerido,
+            stockBodega: invItem ? Number(invItem.quantity || 0) : 0,
+            faltante: faltanteQty,
+            purchasePrice: purchasePriceEst,
+            salePrice: salePriceEst,
+            totalCostoFaltante: faltanteQty * purchasePriceEst
+          });
+
+          totalFaltantesQtyGlobal += faltanteQty;
+          inversionCompraEstimadaGlobal += faltanteQty * purchasePriceEst;
+          stockReservado[key] = 0;
+        } else {
+          stockReservado[key] = Math.max(0, stockDisponible - requerido);
+        }
+      });
+    }
+
     if (missingPartsForThisVehicle.length > 0) {
       vehiclesWithMissingParts.push({
         id: o.id,
