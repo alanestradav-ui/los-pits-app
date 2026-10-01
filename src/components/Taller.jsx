@@ -933,9 +933,11 @@ export default function Taller({
     if (e && e.preventDefault) e.preventDefault();
     if (!editingEntryOrder) return;
     
+    // Use parsePlate on the live .placa value — the form updates .placa directly,
+    // so .plateNumber/.platePrefix (set when the dialog opened) are stale after edits.
     const parsedPlate = parsePlate(editingEntryOrder.placa || "");
-    const cleanNum = (editingEntryOrder.plateNumber || parsedPlate.number || editingEntryOrder.placa || "").trim().toUpperCase();
-    const pref = editingEntryOrder.platePrefix || parsedPlate.prefix || "P";
+    const cleanNum = (parsedPlate.number || editingEntryOrder.placa || "").trim().toUpperCase();
+    const pref = parsedPlate.prefix || "P";
 
     const clienteVal = (editingEntryOrder.cliente || "").trim();
     const telVal = (editingEntryOrder.telefono || "").trim();
@@ -948,6 +950,10 @@ export default function Taller({
     }
 
     const fullPlaca = pref === "Extranjera" ? cleanNum : (cleanNum.includes("-") ? cleanNum : `${pref}-${cleanNum}`);
+
+    // Track the original plate (before any edits) so we can update old references
+    const originalPlaca = (editingEntryOrder._originalPlaca || editingEntryOrder.placa || "").toUpperCase().trim();
+    const placaChanged = originalPlaca && originalPlaca !== fullPlaca.toUpperCase().trim();
 
     const updatedOrder = {
       ...editingEntryOrder,
@@ -965,11 +971,101 @@ export default function Taller({
       vehiculo: `${marcaVal || "Marca"} ${lineaVal || "Línea"} (${fullPlaca})`,
       updatedAt: new Date().toISOString()
     };
+    // Remove stale helper properties that should not persist in the order data
+    delete updatedOrder.plateNumber;
+    delete updatedOrder.platePrefix;
+    delete updatedOrder._originalPlaca;
 
-    setOrdenes(prev => (prev || []).map(o => o.id === editingEntryOrder.id ? updatedOrder : o));
-    if (typeof registrarClienteYVehiculo === "function") {
-      registrarClienteYVehiculo(updatedOrder);
+    // Update this order (and propagate plate change to other orders with the same old plate)
+    setOrdenes(prev => (prev || []).map(o => {
+      if (o.id === editingEntryOrder.id) return updatedOrder;
+      // If plate changed, also update any other orders that had the old plate
+      if (placaChanged && o.placa && o.placa.toUpperCase().trim() === originalPlaca) {
+        return {
+          ...o,
+          placa: fullPlaca,
+          vehiculo: typeof o.vehiculo === "string" && o.vehiculo.includes(originalPlaca)
+            ? o.vehiculo.replace(new RegExp(originalPlaca.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), fullPlaca)
+            : `${o.marca || "Marca"} ${o.linea || "Línea"} (${fullPlaca})`,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return o;
+    }));
+
+    // Update the vehicle record: when plate changed, find by OLD plate; otherwise by new plate
+    if ((fullPlaca || updatedOrder.chasis) && typeof setVehiculos === "function") {
+      setVehiculos(prev => {
+        const safePrev = Array.isArray(prev) ? prev : [];
+        const matchIndex = safePrev.findIndex(v => {
+          if (placaChanged && originalPlaca && v.placa?.toUpperCase()?.trim() === originalPlaca) return true;
+          if (fullPlaca && v.placa?.toUpperCase()?.trim() === fullPlaca.toUpperCase().trim()) return true;
+          if (updatedOrder.chasis && v.chasis?.toUpperCase()?.trim() === updatedOrder.chasis) return true;
+          return false;
+        });
+        const vehicleData = {
+          placa: fullPlaca,
+          chasis: updatedOrder.chasis || "",
+          marca: (marcaVal || "Marca").trim(),
+          linea: (lineaVal || "Línea").trim(),
+          anio: updatedOrder.anio || "",
+          color: updatedOrder.color || "",
+          clienteTelefono: telVal || ""
+        };
+        const updated = matchIndex > -1
+          ? safePrev.map((v, idx) => idx === matchIndex ? { ...v, ...vehicleData } : v)
+          : [...safePrev, { ...vehicleData, fechaRegistro: new Date().toISOString(), _isNewOffline: true, isOfflineCreated: true }];
+        setTenantLocalStorage("vehiculos", updated, tenantId);
+        return updated;
+      });
     }
+
+    // Also register/update the client record
+    if (typeof registrarClienteYVehiculo === "function") {
+      // Only use registrarClienteYVehiculo for client registration (not vehicle — handled above)
+      const tel = updatedOrder.telefono?.trim();
+      if (tel && typeof setClientes === "function") {
+        setClientes(prevClientes => {
+          const safePrev = Array.isArray(prevClientes) ? prevClientes : [];
+          const exists = safePrev.find(c => c.telefono === tel);
+          const updatedClientes = exists ? safePrev.map(c => c.telefono === tel ? {
+            ...c,
+            nombre: clienteVal,
+            nit: updatedOrder.nit || c.nit,
+            nombreFacturacion: updatedOrder.nombreFacturacion || c.nombreFacturacion
+          } : c) : [...safePrev, {
+            telefono: tel,
+            nombre: clienteVal,
+            nit: updatedOrder.nit || "C/F",
+            nombreFacturacion: updatedOrder.nombreFacturacion || clienteVal,
+            fechaRegistro: new Date().toISOString(),
+            _isNewOffline: true,
+            isOfflineCreated: true
+          }];
+          setTenantLocalStorage("clientes", updatedClientes, tenantId);
+          return updatedClientes;
+        });
+      }
+    }
+
+    // Also update carwash records if plate changed
+    if (placaChanged && typeof setCarwash === "function") {
+      setCarwash(prev => (prev || []).map(c => {
+        if (!c || !c.placa) return c;
+        if (c.placa.toUpperCase().trim() === originalPlaca) {
+          return {
+            ...c,
+            placa: fullPlaca,
+            vehiculo: typeof c.vehiculo === "string" && c.vehiculo.includes(originalPlaca)
+              ? c.vehiculo.replace(new RegExp(originalPlaca.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), fullPlaca)
+              : c.vehiculo,
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return c;
+      }));
+    }
+
     setEditingEntryOrder(null);
     alert("¡Datos del vehículo e ingreso actualizados con éxito!");
   };
@@ -3973,6 +4069,7 @@ export default function Taller({
                                 const parsed = parsePlate(o.placa || "");
                                 setEditingEntryOrder({
                                   ...o,
+                                  _originalPlaca: o.placa || "",
                                   platePrefix: parsed.prefix,
                                   plateNumber: parsed.number,
                                   motivoIngreso: o.motivoIngreso || o.trabajo || ""
