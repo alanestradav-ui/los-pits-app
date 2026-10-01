@@ -26,6 +26,14 @@ export const getSupabaseClient = () => {
     supabaseInstance = createClient(url, key, {
       auth: {
         persistSession: false
+      },
+      realtime: {
+        params: {
+          eventsPerSecond: 10
+        },
+        heartbeatIntervalMs: 15000,
+        reconnectAfterMs: (tries) => Math.min(1000 * Math.pow(2, tries), 10000),
+        timeout: 20000
       }
     });
   } catch (error) {

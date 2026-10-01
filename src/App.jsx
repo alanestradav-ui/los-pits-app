@@ -1264,6 +1264,9 @@ export default function App() {
     globalActiveSetters.workshopBranding = setWorkshopBranding;
     globalActiveSetters.activeModules = setActiveModules;
     globalActiveSetters.cotizacionesExpress = setCotizacionesExpress;
+    globalActiveSetters.regalosPasesReferidos = setRegalosPasesReferidos;
+    globalActiveSetters.cotizacionesRepuestos = setCotizacionesRepuestos;
+    globalActiveSetters.payrollHistory = setPayrollHistory;
     globalActiveSetters.setIsInitialPullDone = setIsInitialPullDone;
     globalActiveSetters.setRealtimeStatus = setRealtimeStatus;
   });
@@ -1304,7 +1307,10 @@ export default function App() {
       citas,
       workshopBranding,
       activeModules,
-      cotizacionesExpress
+      cotizacionesExpress,
+      regalosPasesReferidos,
+      cotizacionesRepuestos,
+      payrollHistory
     };
   }, [
     usuarios,
@@ -1340,7 +1346,10 @@ export default function App() {
     citas,
     workshopBranding,
     activeModules,
-    cotizacionesExpress
+    cotizacionesExpress,
+    regalosPasesReferidos,
+    cotizacionesRepuestos,
+    payrollHistory
   ]);
 
   const globalBroadcastChannel = useRef(null);
@@ -1486,8 +1495,14 @@ export default function App() {
 
   const forcePullFromCloud = async (isUserInitiated = false) => {
     // 🛡️ Prevent overlapping full pulls — only one can run at a time
+    // Safety: auto-reset if stuck for more than 12 seconds to prevent sync deadlocks
     if (globalSyncFlags.isPullRunning && !isUserInitiated) {
-      return false;
+      if (globalSyncFlags._pullStartedAt && (Date.now() - globalSyncFlags._pullStartedAt > 12000)) {
+        console.warn('[Sync] isPullRunning was stuck for >12s — force-resetting to allow new pull');
+        globalSyncFlags.isPullRunning = false;
+      } else {
+        return false;
+      }
     }
     
     const client = getSupabaseClient();
@@ -1502,6 +1517,7 @@ export default function App() {
     }
 
     globalSyncFlags.isPullRunning = true;
+    globalSyncFlags._pullStartedAt = Date.now();
 
     try {
       const activeSetRealtimeStatus = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
@@ -1687,13 +1703,15 @@ export default function App() {
       }
     }, 60000);
 
-    // ⏰ Background polling interval: 15s for responsive cross-device sync
+    // ⏰ Background polling interval: 10s for responsive cross-device sync
     // Realtime handles instant sync via broadcast, but polling catches any missed events
+    // NOTE: No document.hidden check — sync must work even when tab is in background
+    // (PWAs and mobile browsers may not fire visibility events reliably)
     const interval = setInterval(() => {
-      if (navigator.onLine && !document.hidden && failedPullCount.current < 5) {
+      if (navigator.onLine && failedPullCount.current < 5) {
         forcePullFromCloud(false);
       }
-    }, 15000);
+    }, 10000);
 
     return () => {
       window.removeEventListener("online", handleSyncEvent);
@@ -1808,11 +1826,21 @@ export default function App() {
           activeSetRealtimeStatus('connected');
         }
         if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          activeSetRealtimeStatus('disconnected');
           setTimeout(() => {
             try {
-              if (channel) channel.subscribe();
+              if (channel) {
+                channel.subscribe((resubStatus) => {
+                  if (resubStatus === 'SUBSCRIBED') {
+                    const activeSetStatus2 = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
+                    activeSetStatus2('connected');
+                    // Catch up on any changes missed during the disconnect
+                    forcePullFromCloud(false);
+                  }
+                });
+              }
             } catch (e) {}
-          }, 3000);
+          }, 2000);
         }
       });
 
