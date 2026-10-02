@@ -144,7 +144,8 @@ export const testSupabaseConnection = async () => {
 };
 
 /**
- * Sincroniza una clave con Supabase envolviendo la petición en un timeout seguro de 8 segundos
+ * Sincroniza una clave con Supabase con timeout dinámico basado en el tamaño del payload.
+ * Fotos base64 de órdenes/carwash ya entregados se eliminan para reducir el tamaño del payload.
  */
 export const syncKeyToCloud = async (key, value) => {
   const client = getSupabaseClient();
@@ -154,6 +155,11 @@ export const syncKeyToCloud = async (key, value) => {
     addToOfflineQueue(key, cleanVal);
     return false;
   }
+
+  // Detect if this is an ordenes or carwash key (scoped or unscoped)
+  const baseKeyLower = key.replace(/^[a-z]+_/, '').toLowerCase();
+  const isOrdersKey = baseKeyLower === 'ordenes';
+  const isCarwashKey = baseKeyLower === 'carwash';
 
   const sanitizePayload = (data) => {
     const parsed = safeParseJSON(data);
@@ -167,16 +173,26 @@ export const syncKeyToCloud = async (key, value) => {
         if (typeof item !== "object" || item instanceof Date) return item;
         const newItem = { ...item };
         
+        // 🚀 OPTIMIZATION: Strip base64 photos from DELIVERED orders/carwash to reduce payload
+        // Photos are already saved in localStorage; stripping from cloud prevents timeout on large payloads
+        const isDelivered = (isOrdersKey || isCarwashKey) && 
+          (newItem.estado === "Entregado" || newItem.estado === "Cobrado");
+
         const sanitizePhotoItem = (f) => {
           if (!f) return null;
           if (typeof f === "string") {
-            // Preserve valid photo Base64 or URL strings up to 2MB characters
-            return f.length <= 2000000 ? f : f.substring(0, 500);
+            // Strip large base64 photos from delivered items entirely
+            if (isDelivered && f.length > 500 && (f.startsWith("data:image") || f.startsWith("/9j/") || f.startsWith("iVBOR"))) {
+              return null; // Remove base64 photo from delivered orders
+            }
+            // For active orders, keep photos but cap at 500KB per photo
+            return f.length <= 500000 ? f : f.substring(0, 500);
           }
           if (typeof f === "object" && f.base64) {
+            if (isDelivered) return null; // Strip from delivered
             return {
               ...f,
-              base64: typeof f.base64 === "string" && f.base64.length <= 2000000 ? f.base64 : ""
+              base64: typeof f.base64 === "string" && f.base64.length <= 500000 ? f.base64 : ""
             };
           }
           return f;
@@ -199,11 +215,16 @@ export const syncKeyToCloud = async (key, value) => {
 
   try {
     const cleanValue = sanitizePayload(value);
+    
+    // 🚀 Dynamic timeout: base 10s + 1s per 100KB of payload (max 30s)
+    const payloadSize = JSON.stringify(cleanValue).length;
+    const dynamicTimeout = Math.min(30000, 10000 + Math.floor(payloadSize / 100000) * 1000);
+    
     const upsertPromise = client
       .from('app_data')
       .upsert({ key, value: cleanValue, updated_at: new Date().toISOString() });
 
-    let { error } = await withTimeout(upsertPromise, 8000, `Timeout al sincronizar ${key}`);
+    let { error } = await withTimeout(upsertPromise, dynamicTimeout, `Timeout al sincronizar ${key}`);
     
     if (error) {
       console.warn(`[Sync] Direct sync for key "${key}" failed (${error.message}). Retrying...`);
@@ -211,7 +232,7 @@ export const syncKeyToCloud = async (key, value) => {
         .from('app_data')
         .upsert({ key, value: cleanValue, updated_at: new Date().toISOString() });
       
-      const retryResult = await withTimeout(retryPromise, 8000, `Timeout en reintento de ${key}`);
+      const retryResult = await withTimeout(retryPromise, dynamicTimeout, `Timeout en reintento de ${key}`);
       
       if (retryResult.error) {
         console.error(`[Sync] Retry sync for key "${key}" failed:`, retryResult.error.message);

@@ -1403,7 +1403,7 @@ export default function App() {
         .select('key, value')
         .eq('key', targetKey);
       
-      const { data, error } = await withTimeout(queryPromise, 4000, `Timeout en fetch de ${targetKey}`);
+      const { data, error } = await withTimeout(queryPromise, 15000, `Timeout en fetch de ${targetKey}`);
       if (error || !data || data.length === 0) return;
 
       const cloudRaw = data[0].value;
@@ -1497,8 +1497,8 @@ export default function App() {
     // 🛡️ Prevent overlapping full pulls — only one can run at a time
     // Safety: auto-reset if stuck for more than 12 seconds to prevent sync deadlocks
     if (globalSyncFlags.isPullRunning && !isUserInitiated) {
-      if (globalSyncFlags._pullStartedAt && (Date.now() - globalSyncFlags._pullStartedAt > 12000)) {
-        console.warn('[Sync] isPullRunning was stuck for >12s — force-resetting to allow new pull');
+      if (globalSyncFlags._pullStartedAt && (Date.now() - globalSyncFlags._pullStartedAt > 30000)) {
+        console.warn('[Sync] isPullRunning was stuck for >30s — force-resetting to allow new pull');
         globalSyncFlags.isPullRunning = false;
       } else {
         return false;
@@ -1542,8 +1542,9 @@ export default function App() {
           }
         });
       }
-      // Consultar llaves en paralelo en lotes de 15 con timeout generoso
-      const chunkSize = 15;
+      // Consultar llaves en paralelo en lotes de 10 con timeout generoso (20s)
+      // Large keys like ordenes/carwash can be several MB and need more time
+      const chunkSize = 10;
       const batchChunks = [];
       const promises = [];
       for (let i = 0; i < scopedQueryKeys.length; i += chunkSize) {
@@ -1553,7 +1554,7 @@ export default function App() {
           .from('app_data')
           .select('key, value')
           .in('key', chunk);
-        promises.push(withTimeout(queryPromise, 8000, `Timeout en lote`));
+        promises.push(withTimeout(queryPromise, 20000, `Timeout en lote`));
       }
 
       // 🛡️ Track which keys were in FAILED batches to prevent stale local data from overwriting cloud
