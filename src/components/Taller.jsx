@@ -17,7 +17,13 @@ import {
   AlertTriangle,
   Pencil,
   ShoppingBag,
-  Zap
+  Zap,
+  Printer,
+  TrendingUp,
+  Receipt,
+  FileSpreadsheet,
+  Calculator,
+  FileText
 } from "lucide-react";
 import { formatMoney, getLocalStorage, setLocalStorage, setTenantLocalStorage } from "../utils/storage";
 import { syncKeyToCloud } from "../utils/supabase";
@@ -372,6 +378,993 @@ export default function Taller({
     credito: ""
   });
   const [selectedPaymentMethods, setSelectedPaymentMethods] = useState([]);
+
+  // ==========================================
+  // 💵 ANTICIPOS & RECIBOS DE CAJA STATES & LOGIC
+  // ==========================================
+  const [anticipoModalOrder, setAnticipoModalOrder] = useState(null);
+  const [anticipoMonto, setAnticipoMonto] = useState("");
+  const [anticipoMetodo, setAnticipoMetodo] = useState("Efectivo");
+  const [anticipoReferencia, setAnticipoReferencia] = useState("");
+  const [anticipoNotas, setAnticipoNotas] = useState("");
+  const [anticipoFecha, setAnticipoFecha] = useState("");
+
+  const getOrderAnticiposList = (o) => {
+    if (!o) return [];
+    if (Array.isArray(o.anticipos) && o.anticipos.length > 0) return o.anticipos;
+    if (parseFloat(o.anticipo) > 0) {
+      return [{
+        id: "ANT-INICIAL",
+        monto: parseFloat(o.anticipo),
+        metodoPago: o.metodoPago || "Efectivo",
+        referencia: "Anticipo de apertura",
+        notas: "Registrado al crear orden / cotización",
+        fecha: o.fecha || new Date().toISOString(),
+        registradoPor: o.creadoPor || "Admin"
+      }];
+    }
+    return [];
+  };
+
+  const getOrderTotalAnticipos = (o) => {
+    if (!o) return 0;
+    const list = getOrderAnticiposList(o);
+    if (list.length > 0) {
+      return list.reduce((sum, a) => sum + (parseFloat(a.monto) || 0), 0);
+    }
+    return parseFloat(o.anticipo) || 0;
+  };
+
+  const abrirAnticiposModal = (orden) => {
+    setAnticipoModalOrder(orden);
+    setAnticipoMonto("");
+    setAnticipoMetodo("Efectivo");
+    setAnticipoReferencia("");
+    setAnticipoNotas("");
+    const nowLocal = new Date();
+    nowLocal.setMinutes(nowLocal.getMinutes() - nowLocal.getTimezoneOffset());
+    setAnticipoFecha(nowLocal.toISOString().slice(0, 16));
+  };
+
+  const handleRegistrarAnticipo = (shouldPrint = false) => {
+    if (!anticipoModalOrder) return;
+    const montoNum = parseFloat(anticipoMonto);
+    if (isNaN(montoNum) || montoNum <= 0) {
+      alert("Por favor ingresa un monto válido mayor a 0 para el anticipo.");
+      return;
+    }
+
+    const currentList = getOrderAnticiposList(anticipoModalOrder);
+    const newAnticipo = {
+      id: "ANT-" + Date.now(),
+      monto: montoNum,
+      metodoPago: anticipoMetodo,
+      referencia: anticipoReferencia.trim(),
+      notas: anticipoNotas.trim(),
+      fecha: anticipoFecha ? new Date(anticipoFecha).toISOString() : new Date().toISOString(),
+      registradoPor: usuarioActual?.nombre || usuarioActual?.user || usuarioActual?.name || "Admin"
+    };
+
+    const updatedAnticipos = [...currentList, newAnticipo];
+    const totalAnticipos = updatedAnticipos.reduce((sum, a) => sum + (parseFloat(a.monto) || 0), 0);
+
+    const updatedOrder = {
+      ...anticipoModalOrder,
+      anticipos: updatedAnticipos,
+      anticipo: totalAnticipos,
+      updatedAt: new Date().toISOString()
+    };
+
+    setOrdenes(prev => (prev || []).map(o => String(o.id) === String(updatedOrder.id) ? updatedOrder : o));
+    setAnticipoModalOrder(updatedOrder);
+
+    setAnticipoMonto("");
+    setAnticipoReferencia("");
+    setAnticipoNotas("");
+
+    if (shouldPrint) {
+      imprimirReciboAnticipo(updatedOrder, newAnticipo);
+    } else {
+      alert(`✅ Anticipo por ${formatMoney(montoNum)} registrado con éxito.`);
+    }
+  };
+
+  const handleEliminarAnticipo = (anticipoId) => {
+    if (!isManager) {
+      alert("Solo el personal administrativo o cajero puede anular un anticipo.");
+      return;
+    }
+    if (!window.confirm("¿Seguro que deseas eliminar este anticipo? Esta acción revertirá el saldo de la orden.")) return;
+    
+    const currentList = getOrderAnticiposList(anticipoModalOrder);
+    const updatedAnticipos = currentList.filter(a => String(a.id) !== String(anticipoId));
+    const totalAnticipos = updatedAnticipos.reduce((sum, a) => sum + (parseFloat(a.monto) || 0), 0);
+
+    const updatedOrder = {
+      ...anticipoModalOrder,
+      anticipos: updatedAnticipos,
+      anticipo: totalAnticipos,
+      updatedAt: new Date().toISOString()
+    };
+
+    setOrdenes(prev => (prev || []).map(o => String(o.id) === String(updatedOrder.id) ? updatedOrder : o));
+    setAnticipoModalOrder(updatedOrder);
+  };
+
+  const imprimirReciboAnticipo = (order, anticipo) => {
+    if (!order || !anticipo) return;
+    const printWin = window.open("", "_blank");
+    if (!printWin) {
+      alert("Por favor permite las ventanas emergentes (popups) para imprimir el recibo de caja.");
+      return;
+    }
+
+    const totalAnticipos = getOrderTotalAnticipos(order);
+    const totalOrden = parseFloat(order.total) || 0;
+    const saldoRestante = totalOrden > 0 ? Math.max(0, totalOrden - totalAnticipos) : 0;
+    const fechaObj = anticipo.fecha ? new Date(anticipo.fecha) : new Date();
+    const fechaFmt = fechaObj.toLocaleDateString("es-GT", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    const receiptCorrelative = String(anticipo.id || "").replace("ANT-", "");
+
+    printWin.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Recibo de Caja - Anticipo #${receiptCorrelative} - ${order.cliente}</title>
+          <style>
+            @page { size: auto; margin: 12mm; }
+            * { box-sizing: border-box; }
+            body {
+              font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+              color: #1f2937;
+              margin: 0;
+              padding: 15px;
+              background: #fff;
+              line-height: 1.4;
+            }
+            .receipt-box {
+              max-width: 680px;
+              margin: 0 auto;
+              border: 2px solid #1e3a8a;
+              border-radius: 12px;
+              padding: 22px;
+              position: relative;
+            }
+            .header-flex {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+              border-bottom: 2px solid #2563eb;
+              padding-bottom: 12px;
+              margin-bottom: 14px;
+            }
+            .company-name {
+              font-size: 22px;
+              font-weight: 900;
+              color: #1e3a8a;
+              margin: 0;
+              letter-spacing: -0.5px;
+            }
+            .company-sub {
+              font-size: 11px;
+              font-weight: 700;
+              color: #4b5563;
+              text-transform: uppercase;
+              margin: 3px 0 0 0;
+            }
+            .badge-correlativo {
+              background: #eff6ff;
+              border: 1px solid #bfdbfe;
+              border-radius: 8px;
+              padding: 6px 12px;
+              text-align: right;
+            }
+            .badge-title {
+              font-size: 11px;
+              font-weight: 800;
+              color: #1e40af;
+              text-transform: uppercase;
+              margin: 0;
+            }
+            .badge-num {
+              font-size: 16px;
+              font-weight: 900;
+              color: #0f172a;
+              margin: 2px 0 0 0;
+            }
+            .grid-2 {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 12px;
+              margin-bottom: 14px;
+            }
+            .card-section {
+              background: #f8fafc;
+              border: 1px solid #e2e8f0;
+              border-radius: 8px;
+              padding: 10px 12px;
+            }
+            .sec-title {
+              font-size: 11px;
+              font-weight: 800;
+              text-transform: uppercase;
+              color: #1e3a8a;
+              margin: 0 0 6px 0;
+              border-bottom: 1px solid #e2e8f0;
+              padding-bottom: 4px;
+            }
+            .row-data {
+              display: flex;
+              justify-content: space-between;
+              font-size: 12px;
+              margin-bottom: 4px;
+            }
+            .lbl {
+              color: #64748b;
+              font-weight: 600;
+            }
+            .val {
+              color: #0f172a;
+              font-weight: 700;
+              text-align: right;
+            }
+            .banner-monto {
+              background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+              color: #fff;
+              border-radius: 10px;
+              padding: 14px 18px;
+              margin: 14px 0;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+            .banner-lbl {
+              font-size: 13px;
+              text-transform: uppercase;
+              font-weight: 700;
+              letter-spacing: 0.5px;
+            }
+            .banner-val {
+              font-size: 24px;
+              font-weight: 900;
+            }
+            .table-balance {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 10px;
+              font-size: 12px;
+            }
+            .table-balance th, .table-balance td {
+              border: 1px solid #cbd5e1;
+              padding: 6px 10px;
+            }
+            .table-balance th {
+              background: #f1f5f9;
+              color: #334155;
+              text-align: left;
+            }
+            .table-balance td.num {
+              text-align: right;
+              font-weight: 800;
+            }
+            .signatures {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 40px;
+              margin-top: 45px;
+              text-align: center;
+            }
+            .sig-line {
+              border-top: 1px solid #475569;
+              padding-top: 6px;
+              font-size: 11px;
+              color: #334155;
+              font-weight: 700;
+              text-transform: uppercase;
+            }
+            .footer-notes {
+              margin-top: 18px;
+              padding-top: 8px;
+              border-top: 1px dashed #cbd5e1;
+              font-size: 10px;
+              color: #64748b;
+              text-align: center;
+            }
+            @media print {
+              body { padding: 0; }
+              .receipt-box { border: 1.5px solid #000; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="receipt-box">
+            <div class="header-flex">
+              <div>
+                <h1 class="company-name">🏁 LOS PITS AUTO CENTER</h1>
+                <p class="company-sub">Taller Mecánico Especializado & Carwash</p>
+                <p style="font-size: 11px; color: #64748b; margin: 2px 0 0 0;">Comprobante Oficial de Caja - Anticipo a Cuenta</p>
+              </div>
+              <div class="badge-correlativo">
+                <p class="badge-title">Recibo de Caja</p>
+                <p class="badge-num">#REC-${receiptCorrelative.slice(-6) || "0001"}</p>
+                <small style="color: #64748b; font-size: 10px;">Orden #${order.id}</small>
+              </div>
+            </div>
+
+            <!-- Datos Cliente & Vehículo -->
+            <div class="grid-2">
+              <div class="card-section">
+                <div class="sec-title">👤 Datos del Cliente</div>
+                <div class="row-data"><span class="lbl">Cliente:</span><span class="val">${order.cliente}</span></div>
+                <div class="row-data"><span class="lbl">Teléfono:</span><span class="val">${order.telefono || "N/A"}</span></div>
+                <div class="row-data"><span class="lbl">NIT:</span><span class="val">${order.nit || "C/F"}</span></div>
+                <div class="row-data"><span class="lbl">Facturación:</span><span class="val">${order.nombreFacturacion || order.cliente}</span></div>
+              </div>
+
+              <div class="card-section">
+                <div class="sec-title">🚗 Datos del Vehículo</div>
+                <div class="row-data"><span class="lbl">Placa:</span><span class="val" style="color: #1e40af;">${order.placa || "N/A"}</span></div>
+                <div class="row-data"><span class="lbl">Vehículo:</span><span class="val">${[order.marca, order.linea].filter(Boolean).join(" ") || formatVehicleText(order.vehiculo)}</span></div>
+                <div class="row-data"><span class="lbl">Color / Año:</span><span class="val">${[order.color, order.anio].filter(Boolean).join(" • ") || "N/A"}</span></div>
+                <div class="row-data"><span class="lbl">Kilometraje:</span><span class="val">${order.kilometraje ? parseInt(order.kilometraje).toLocaleString() + " Km" : "N/A"}</span></div>
+                ${order.chasis ? `<div class="row-data"><span class="lbl">Chasis:</span><span class="val">${order.chasis}</span></div>` : ""}
+              </div>
+            </div>
+
+            <!-- Banner Monto -->
+            <div class="banner-monto">
+              <div>
+                <div class="banner-lbl">Monto Aportado (Anticipo)</div>
+                <div style="font-size: 12px; opacity: 0.9; margin-top: 2px;">Método de Pago: <strong>${(anticipo.metodoPago || "Efectivo").toUpperCase()}</strong></div>
+              </div>
+              <div class="banner-val">Q${parseFloat(anticipo.monto).toFixed(2)}</div>
+            </div>
+
+            <!-- Detalle del Anticipo -->
+            <div class="card-section" style="margin-bottom: 14px;">
+              <div class="sec-title">📋 Información de la Transacción</div>
+              <div class="row-data"><span class="lbl">Fecha y Hora de Recepción:</span><span class="val">${fechaFmt}</span></div>
+              <div class="row-data"><span class="lbl">No. Referencia / Autorización / Boleta:</span><span class="val">${anticipo.referencia || "No especificada"}</span></div>
+              <div class="row-data"><span class="lbl">Concepto / Motivo:</span><span class="val">${anticipo.notas || "Anticipo para repuestos y/o mano de obra de orden de taller"}</span></div>
+              <div class="row-data"><span class="lbl">Trabajo / Motivo de Ingreso:</span><span class="val">${order.motivoIngreso || order.trabajo || "Servicio General"}</span></div>
+              <div class="row-data"><span class="lbl">Recibido en Caja Por:</span><span class="val">${anticipo.registradoPor || "Caja Los Pits"}</span></div>
+            </div>
+
+            <!-- Estado de Cuenta de la Orden -->
+            <div class="card-section">
+              <div class="sec-title">💰 Estado de Cuenta de la Orden de Taller</div>
+              <table class="table-balance">
+                <thead>
+                  <tr>
+                    <th>Concepto Contable</th>
+                    <th style="text-align: right;">Monto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Total Trabajo Presupuestado</td>
+                    <td class="num">${totalOrden > 0 ? "Q" + totalOrden.toFixed(2) : "Pendiente de Presupuesto"}</td>
+                  </tr>
+                  <tr>
+                    <td>Total Anticipos Acumulados a la Fecha</td>
+                    <td class="num" style="color: #16a34a;">- Q${totalAnticipos.toFixed(2)}</td>
+                  </tr>
+                  <tr style="background: #f8fafc; font-weight: 800;">
+                    <td>Saldo Pendiente por Liquidar</td>
+                    <td class="num" style="color: ${saldoRestante > 0 ? '#dc2626' : '#16a34a'}; font-size: 13px;">
+                      ${totalOrden > 0 ? "Q" + saldoRestante.toFixed(2) : "Se calculará al autorizar presupuesto"}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Firmas -->
+            <div class="signatures">
+              <div>
+                <div class="sig-line">Firma del Cliente<br/><small style="font-weight: normal; color: #64748b;">${order.cliente}</small></div>
+              </div>
+              <div>
+                <div class="sig-line">Recibido en Caja (Sello y Firma)<br/><small style="font-weight: normal; color: #64748b;">${anticipo.registradoPor || "Caja Los Pits"}</small></div>
+              </div>
+            </div>
+
+            <div class="footer-notes">
+              Este comprobante ampara legalmente el anticipo indicado. El valor aportado será deducido íntegramente de la liquidación final al momento de la entrega del vehículo. Conserve este comprobante.
+            </div>
+          </div>
+          <script>
+            window.onload = function() {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWin.document.close();
+  };
+
+  // ==========================================
+  // 📊 COSTOS, GANANCIAS Y ESTADO DE RESULTADOS (P&L)
+  // ==========================================
+  const [costosModalOrder, setCostosModalOrder] = useState(null);
+  const [costosBudgetDraft, setCostosBudgetDraft] = useState(null);
+  const [costosSavedAlert, setCostosSavedAlert] = useState(false);
+
+  const getOrderFinancialBreakdown = (order, customBudget = null) => {
+    if (!order) return {
+      items: [],
+      ventasLabor: 0,
+      costoLabor: 0,
+      utilidadLabor: 0,
+      ventasParts: 0,
+      costoParts: 0,
+      utilidadParts: 0,
+      ventasInsumos: 0,
+      costoInsumos: 0,
+      utilidadInsumos: 0,
+      ventasServices: 0,
+      costoServices: 0,
+      utilidadServices: 0,
+      ventasTools: 0,
+      costoTools: 0,
+      utilidadTools: 0,
+      subtotalVentas: 0,
+      descuento: 0,
+      ventasNetas: 0,
+      costosTotales: 0,
+      utilidadBruta: 0,
+      margenBrutoPct: 0
+    };
+
+    const b = customBudget || order.presupuesto || { labor: [], parts: [], insumos: [], tools: [], services: [], discount: 0 };
+    const items = [];
+
+    // 1. Labor
+    let ventasLabor = 0;
+    let costoLabor = 0;
+    const mechName = order.mecanico;
+    const mechUser = (usuarios || []).find(u => u && String(u.user || "").toLowerCase().trim() === String(mechName || "").toLowerCase().trim());
+    const pctLabor = mechUser ? (mechUser.comisionTaller !== undefined ? Number(mechUser.comisionTaller) / 100 : comisionMecanico) : comisionMecanico;
+
+    (b.labor || []).forEach((item, idx) => {
+      const vUnit = parseFloat(item.price) || 0;
+      const cUnit = item.cost !== undefined && item.cost !== "" ? (parseFloat(item.cost) || 0) : (vUnit * pctLabor);
+      const profit = vUnit - cUnit;
+      const margin = vUnit > 0 ? (profit / vUnit) * 100 : 0;
+      ventasLabor += vUnit;
+      costoLabor += cUnit;
+      items.push({
+        id: `labor_${idx}`,
+        category: "labor",
+        categoryLabel: "🛠️ Mano de Obra",
+        desc: item.desc || "Mano de obra",
+        qty: 1,
+        costUnit: cUnit,
+        costTotal: cUnit,
+        saleUnit: vUnit,
+        saleTotal: vUnit,
+        profit,
+        margin,
+        typeKey: "labor",
+        typeIndex: idx,
+        isCustomCost: item.cost !== undefined
+      });
+    });
+
+    if ((b.labor || []).length === 0 && order.total > 0 && (!b.parts || b.parts.length === 0)) {
+      const vUnit = parseFloat(order.total) || 0;
+      const cUnit = parseFloat(order.comision) || (vUnit * pctLabor);
+      const profit = vUnit - cUnit;
+      const margin = vUnit > 0 ? (profit / vUnit) * 100 : 0;
+      ventasLabor += vUnit;
+      costoLabor += cUnit;
+      items.push({
+        id: "labor_generic",
+        category: "labor",
+        categoryLabel: "🛠️ Mano de Obra",
+        desc: order.motivoIngreso || order.trabajo || "Trabajo de Reparación General",
+        qty: 1,
+        costUnit: cUnit,
+        costTotal: cUnit,
+        saleUnit: vUnit,
+        saleTotal: vUnit,
+        profit,
+        margin,
+        typeKey: "labor_generic",
+        typeIndex: -1,
+        isCustomCost: false
+      });
+    }
+
+    // 2. Parts
+    let ventasParts = 0;
+    let costoParts = 0;
+    (b.parts || []).forEach((part, idx) => {
+      const qty = parseFloat(part.qty) || 1;
+      const cUnit = parseFloat(part.purchasePrice ?? part.unitCost ?? part.cost ?? 0) || 0;
+      const vUnit = parseFloat(part.salePrice ?? part.price ?? 0) || 0;
+      const cTot = qty * cUnit;
+      const vTot = qty * vUnit;
+      const profit = vTot - cTot;
+      const margin = vTot > 0 ? (profit / vTot) * 100 : 0;
+      ventasParts += vTot;
+      costoParts += cTot;
+      items.push({
+        id: `part_${idx}`,
+        category: "part",
+        categoryLabel: "📦 Repuesto",
+        desc: `${part.desc || "Repuesto"} ${part.brand ? `(${part.brand})` : ""}${part.code ? ` [${part.code}]` : ""}`.trim(),
+        qty,
+        costUnit: cUnit,
+        costTotal: cTot,
+        saleUnit: vUnit,
+        saleTotal: vTot,
+        profit,
+        margin,
+        typeKey: "parts",
+        typeIndex: idx
+      });
+    });
+
+    // 3. Insumos
+    let ventasInsumos = 0;
+    let costoInsumos = 0;
+    (b.insumos || []).forEach((insumo, idx) => {
+      const qty = parseFloat(insumo.qty) || 1;
+      const cUnit = parseFloat(insumo.purchasePrice ?? insumo.cost ?? 0) || 0;
+      const vUnit = parseFloat(insumo.salePrice ?? insumo.price ?? 0) || 0;
+      const cTot = qty * cUnit;
+      const vTot = qty * vUnit;
+      const profit = vTot - cTot;
+      const margin = vTot > 0 ? (profit / vTot) * 100 : 0;
+      ventasInsumos += vTot;
+      costoInsumos += cTot;
+      items.push({
+        id: `insumo_${idx}`,
+        category: "insumo",
+        categoryLabel: "🧪 Insumo",
+        desc: insumo.desc || "Insumo de taller",
+        qty,
+        costUnit: cUnit,
+        costTotal: cTot,
+        saleUnit: vUnit,
+        saleTotal: vTot,
+        profit,
+        margin,
+        typeKey: "insumos",
+        typeIndex: idx
+      });
+    });
+
+    // 4. Tools
+    let ventasTools = 0;
+    let costoTools = 0;
+    (b.tools || []).forEach((tool, idx) => {
+      const qty = parseFloat(tool.qty) || 1;
+      const cUnit = parseFloat(tool.price ?? tool.purchasePrice ?? 0) || 0;
+      const vUnit = parseFloat(tool.salePrice ?? tool.price ?? 0) || 0;
+      const cTot = qty * cUnit;
+      const vTot = qty * vUnit;
+      const profit = vTot - cTot;
+      const margin = vTot > 0 ? (profit / vTot) * 100 : 0;
+      ventasTools += vTot;
+      costoTools += cTot;
+      items.push({
+        id: `tool_${idx}`,
+        category: "tool",
+        categoryLabel: "🧰 Herramienta Especial",
+        desc: tool.desc || "Uso de herramienta / torno",
+        qty,
+        costUnit: cUnit,
+        costTotal: cTot,
+        saleUnit: vUnit,
+        saleTotal: vTot,
+        profit,
+        margin,
+        typeKey: "tools",
+        typeIndex: idx
+      });
+    });
+
+    // 5. External Services
+    let ventasServices = 0;
+    let costoServices = 0;
+    (b.services || []).forEach((service, idx) => {
+      const cUnit = parseFloat(service.purchasePrice ?? service.cost ?? 0) || 0;
+      const vUnit = parseFloat(service.price ?? service.salePrice ?? 0) || 0;
+      const profit = vUnit - cUnit;
+      const margin = vUnit > 0 ? (profit / vUnit) * 100 : 0;
+      ventasServices += vUnit;
+      costoServices += cUnit;
+      items.push({
+        id: `service_${idx}`,
+        category: "service",
+        categoryLabel: "💼 Servicio Externo",
+        desc: service.desc || "Servicio tercerizado",
+        qty: 1,
+        costUnit: cUnit,
+        costTotal: cUnit,
+        saleUnit: vUnit,
+        saleTotal: vUnit,
+        profit,
+        margin,
+        typeKey: "services",
+        typeIndex: idx
+      });
+    });
+
+    const subtotalVentas = ventasLabor + ventasParts + ventasInsumos + ventasTools + ventasServices;
+    let descuento = 0;
+    if (b.discountType === "fixed" && b.discountFixed !== undefined) {
+      descuento = Math.min(subtotalVentas, parseFloat(b.discountFixed) || 0);
+    } else {
+      const discountPct = parseFloat(b.discount) || 0;
+      descuento = subtotalVentas * (discountPct / 100);
+    }
+
+    const ventasNetas = Math.max(0, subtotalVentas - descuento);
+    const costosTotales = costoLabor + costoParts + costoInsumos + costoTools + costoServices;
+    const utilidadBruta = ventasNetas - costosTotales;
+    const margenBrutoPct = ventasNetas > 0 ? (utilidadBruta / ventasNetas) * 100 : 0;
+
+    return {
+      items,
+      ventasLabor,
+      costoLabor,
+      utilidadLabor: ventasLabor - costoLabor,
+      ventasParts,
+      costoParts,
+      utilidadParts: ventasParts - costoParts,
+      ventasInsumos,
+      costoInsumos,
+      utilidadInsumos: ventasInsumos - costoInsumos,
+      ventasServices,
+      costoServices,
+      utilidadServices: ventasServices - costoServices,
+      ventasTools,
+      costoTools,
+      utilidadTools: ventasTools - costoTools,
+      subtotalVentas,
+      descuento,
+      ventasNetas,
+      costosTotales,
+      utilidadBruta,
+      margenBrutoPct
+    };
+  };
+
+  const abrirCostosGananciasModal = (orden) => {
+    setCostosModalOrder(orden);
+    const clone = JSON.parse(JSON.stringify(orden.presupuesto || { labor: [], parts: [], insumos: [], tools: [], services: [], discount: 0 }));
+    setCostosBudgetDraft(clone);
+    setCostosSavedAlert(false);
+  };
+
+  const guardarAjustesCostos = () => {
+    if (!costosModalOrder || !costosBudgetDraft) return;
+
+    const breakdown = getOrderFinancialBreakdown(costosModalOrder, costosBudgetDraft);
+    const granTotal = breakdown.ventasNetas;
+
+    const updatedOrder = {
+      ...costosModalOrder,
+      presupuesto: costosBudgetDraft,
+      total: granTotal > 0 ? granTotal : costosModalOrder.total,
+      comision: calculateOrderCommission({ ...costosModalOrder, presupuesto: costosBudgetDraft, total: granTotal }),
+      updatedAt: new Date().toISOString()
+    };
+
+    setOrdenes(prev => (prev || []).map(o => String(o.id) === String(updatedOrder.id) ? updatedOrder : o));
+    setCostosModalOrder(updatedOrder);
+    setCostosSavedAlert(true);
+    setTimeout(() => setCostosSavedAlert(false), 3000);
+  };
+
+  const imprimirEstadoResultadosOrden = (order) => {
+    if (!order) return;
+    const printWin = window.open("", "_blank");
+    if (!printWin) {
+      alert("Por favor permite las ventanas emergentes (popups) para imprimir el Estado de Resultados.");
+      return;
+    }
+
+    const b = costosBudgetDraft || order.presupuesto;
+    const fin = getOrderFinancialBreakdown(order, b);
+    const totalAnticipos = getOrderTotalAnticipos(order);
+    const saldoRestante = fin.ventasNetas > 0 ? Math.max(0, fin.ventasNetas - totalAnticipos) : 0;
+    const fechaEmision = new Date().toLocaleDateString("es-GT", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+    printWin.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Estado de Resultados - Orden #${order.id} - ${order.cliente}</title>
+          <style>
+            @page { size: auto; margin: 12mm; }
+            * { box-sizing: border-box; }
+            body {
+              font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+              color: #1f2937;
+              margin: 0;
+              padding: 15px;
+              background: #fff;
+              line-height: 1.4;
+            }
+            .pnl-container {
+              max-width: 800px;
+              margin: 0 auto;
+              border: 2px solid #1e3a8a;
+              border-radius: 12px;
+              padding: 22px;
+            }
+            .header-flex {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+              border-bottom: 2px solid #3b82f6;
+              padding-bottom: 12px;
+              margin-bottom: 16px;
+            }
+            .brand-name {
+              font-size: 22px;
+              font-weight: 900;
+              color: #1e3a8a;
+              margin: 0;
+            }
+            .brand-sub {
+              font-size: 11px;
+              font-weight: 700;
+              color: #4b5563;
+              text-transform: uppercase;
+              margin: 2px 0 0 0;
+            }
+            .badge-pnl {
+              background: #f0fdf4;
+              border: 1px solid #86efac;
+              border-radius: 8px;
+              padding: 6px 14px;
+              text-align: right;
+            }
+            .kpi-grid {
+              display: grid;
+              grid-template-columns: repeat(4, 1fr);
+              gap: 10px;
+              margin-bottom: 16px;
+            }
+            .kpi-card {
+              background: #f8fafc;
+              border: 1px solid #e2e8f0;
+              border-radius: 8px;
+              padding: 10px;
+              text-align: center;
+            }
+            .kpi-lbl {
+              font-size: 10px;
+              font-weight: 800;
+              color: #64748b;
+              text-transform: uppercase;
+            }
+            .kpi-val {
+              font-size: 16px;
+              font-weight: 900;
+              margin-top: 3px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              font-size: 11px;
+              margin-bottom: 16px;
+            }
+            th, td {
+              border: 1px solid #cbd5e1;
+              padding: 6px 8px;
+            }
+            th {
+              background: #f1f5f9;
+              font-weight: 700;
+              color: #334155;
+            }
+            td.num {
+              text-align: right;
+              font-weight: 600;
+            }
+            .sec-header {
+              background: #1e3a8a;
+              color: #fff;
+              font-weight: 800;
+              padding: 6px 10px;
+              font-size: 11px;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+            }
+            .statement-box {
+              background: #f8fafc;
+              border: 1.5px solid #cbd5e1;
+              border-radius: 8px;
+              padding: 14px;
+              margin-top: 14px;
+            }
+            .statement-row {
+              display: flex;
+              justify-content: space-between;
+              padding: 4px 0;
+              font-size: 12px;
+            }
+            .statement-total {
+              font-size: 14px;
+              font-weight: 900;
+              border-top: 2px solid #1e3a8a;
+              border-bottom: 2px solid #1e3a8a;
+              padding: 6px 0;
+              margin: 6px 0;
+            }
+            .signatures {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 40px;
+              margin-top: 40px;
+              text-align: center;
+            }
+            .sig-line {
+              border-top: 1px solid #475569;
+              padding-top: 6px;
+              font-size: 11px;
+              color: #334155;
+              font-weight: 700;
+              text-transform: uppercase;
+            }
+            @media print {
+              body { padding: 0; }
+              .pnl-container { border: 1px solid #000; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="pnl-container">
+            <div class="header-flex">
+              <div>
+                <h1 class="brand-name">🏁 LOS PITS AUTO CENTER</h1>
+                <p class="brand-sub">Estado de Resultados y Rentabilidad por Orden</p>
+                <p style="font-size: 11px; color: #64748b; margin: 4px 0 0 0;">
+                  Orden #${order.id} • Cliente: <strong>${order.cliente}</strong> • Vehículo: <strong>${formatVehicleText(order.vehiculo)}</strong> (${order.placa || "Sin placa"})
+                </p>
+                <p style="font-size: 10px; color: #64748b; margin: 2px 0 0 0;">
+                  Mecánico: ${order.mecanico || "Sin asignar"} • Estado: ${order.estado} • Fecha: ${fechaEmision}
+                </p>
+              </div>
+              <div class="badge-pnl">
+                <div style="font-size: 10px; font-weight: 800; color: #16a34a; text-transform: uppercase;">Margen Operativo</div>
+                <div style="font-size: 20px; font-weight: 900; color: ${fin.utilidadBruta >= 0 ? '#16a34a' : '#dc2626'};">
+                  ${fin.margenBrutoPct.toFixed(1)}%
+                </div>
+                <small style="color: #64748b; font-size: 10px;">${fin.utilidadBruta >= 0 ? '🟢 Rentable' : '🔴 Déficit'}</small>
+              </div>
+            </div>
+
+            <!-- KPI Cards -->
+            <div class="kpi-grid">
+              <div class="kpi-card">
+                <div class="kpi-lbl">Ventas Totales Netas</div>
+                <div class="kpi-val" style="color: #1e40af;">Q${fin.ventasNetas.toFixed(2)}</div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-lbl">Costos Directos Totales</div>
+                <div class="kpi-val" style="color: #b91c1c;">Q${fin.costosTotales.toFixed(2)}</div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-lbl">Utilidad Bruta (Ganancia)</div>
+                <div class="kpi-val" style="color: ${fin.utilidadBruta >= 0 ? '#16a34a' : '#dc2626'};">
+                  Q${fin.utilidadBruta.toFixed(2)}
+                </div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-lbl">Anticipos Recibidos</div>
+                <div class="kpi-val" style="color: #0f172a;">Q${totalAnticipos.toFixed(2)}</div>
+              </div>
+            </div>
+
+            <!-- Desglose de Items -->
+            <div class="sec-header">📋 Desglose Detallado de Items (Costos vs. Precios de Venta)</div>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 15%;">Tipo</th>
+                  <th style="width: 35%;">Descripción del Item</th>
+                  <th style="text-align: center; width: 6%;">Cant.</th>
+                  <th style="text-align: right; width: 11%;">Costo Unit.</th>
+                  <th style="text-align: right; width: 11%;">Total Costo</th>
+                  <th style="text-align: right; width: 11%;">Venta Unit.</th>
+                  <th style="text-align: right; width: 11%;">Total Venta</th>
+                  <th style="text-align: right; width: 12%;">Ganancia</th>
+                  <th style="text-align: right; width: 8%;">Margen</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${fin.items.map(item => `
+                  <tr>
+                    <td>${item.categoryLabel}</td>
+                    <td><strong>${item.desc}</strong></td>
+                    <td style="text-align: center;">${item.qty}</td>
+                    <td class="num">Q${item.costUnit.toFixed(2)}</td>
+                    <td class="num" style="color: #b91c1c;">Q${item.costTotal.toFixed(2)}</td>
+                    <td class="num">Q${item.saleUnit.toFixed(2)}</td>
+                    <td class="num" style="color: #1e40af;">Q${item.saleTotal.toFixed(2)}</td>
+                    <td class="num" style="color: ${item.profit >= 0 ? '#16a34a' : '#dc2626'}; font-weight: 800;">Q${item.profit.toFixed(2)}</td>
+                    <td class="num">${item.margin.toFixed(1)}%</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+
+            <!-- Estado de Resultados (P&L Formal) -->
+            <div class="statement-box">
+              <h3 style="margin: 0 0 10px 0; font-size: 13px; color: #1e3a8a; text-transform: uppercase;">
+                📊 Estado de Resultados Específico de la Orden
+              </h3>
+
+              <div style="font-weight: 800; color: #1e40af; font-size: 11px; margin-bottom: 4px;">I. INGRESOS POR VENTAS (RECAUDACIÓN)</div>
+              <div class="statement-row"><span>• Mano de Obra Facturada:</span><span>Q${fin.ventasLabor.toFixed(2)}</span></div>
+              <div class="statement-row"><span>• Repuestos y Materiales:</span><span>Q${fin.ventasParts.toFixed(2)}</span></div>
+              <div class="statement-row"><span>• Insumos de Taller:</span><span>Q${fin.ventasInsumos.toFixed(2)}</span></div>
+              <div class="statement-row"><span>• Servicios Externos / Terceros:</span><span>Q${fin.ventasServices.toFixed(2)}</span></div>
+              ${fin.ventasTools > 0 ? `<div class="statement-row"><span>• Herramienta Especial / Torno:</span><span>Q${fin.ventasTools.toFixed(2)}</span></div>` : ""}
+              <div class="statement-row" style="font-weight: 700; border-top: 1px solid #e2e8f0; padding-top: 4px;">
+                <span>Subtotal Ventas Brutas:</span><span>Q${fin.subtotalVentas.toFixed(2)}</span>
+              </div>
+              ${fin.descuento > 0 ? `<div class="statement-row" style="color: #dc2626;"><span>(-) Descuento Otorgado:</span><span>- Q${fin.descuento.toFixed(2)}</span></div>` : ""}
+              <div class="statement-row" style="font-weight: 800; color: #1e40af; border-top: 1px solid #cbd5e1; padding-top: 4px;">
+                <span>(=) TOTAL VENTAS NETAS:</span><span>Q${fin.ventasNetas.toFixed(2)}</span>
+              </div>
+
+              <div style="font-weight: 800; color: #b91c1c; font-size: 11px; margin: 12px 0 4px 0;">II. COSTOS DIRECTOS DE OPERACIÓN (COGS)</div>
+              <div class="statement-row"><span>• Costo de Repuestos Adquiridos:</span><span style="color: #b91c1c;">- Q${fin.costoParts.toFixed(2)}</span></div>
+              <div class="statement-row"><span>• Costo de Insumos:</span><span style="color: #b91c1c;">- Q${fin.costoInsumos.toFixed(2)}</span></div>
+              <div class="statement-row"><span>• Costo de Servicios Externos / Terceros:</span><span style="color: #b91c1c;">- Q${fin.costoServices.toFixed(2)}</span></div>
+              <div class="statement-row"><span>• Costo Mano de Obra (Comisión Técnico / Mecánico):</span><span style="color: #b91c1c;">- Q${fin.costoLabor.toFixed(2)}</span></div>
+              ${fin.costoTools > 0 ? `<div class="statement-row"><span>• Costo de Herramientas / Torno:</span><span style="color: #b91c1c;">- Q${fin.costoTools.toFixed(2)}</span></div>` : ""}
+              <div class="statement-row" style="font-weight: 800; color: #b91c1c; border-top: 1px solid #cbd5e1; padding-top: 4px;">
+                <span>(=) TOTAL COSTOS DIRECTOS:</span><span>- Q${fin.costosTotales.toFixed(2)}</span>
+              </div>
+
+              <div class="statement-row statement-total" style="color: ${fin.utilidadBruta >= 0 ? '#16a34a' : '#dc2626'};">
+                <span>(=) UTILIDAD BRUTA OPERATIVA DE LA ORDEN:</span>
+                <span>Q${fin.utilidadBruta.toFixed(2)} (${fin.margenBrutoPct.toFixed(1)}%)</span>
+              </div>
+
+              <div style="font-weight: 800; color: #0f172a; font-size: 11px; margin: 10px 0 4px 0;">III. ESTADO DE COBRO Y SALDOS</div>
+              <div class="statement-row"><span>Total Facturación Neta:</span><span>Q${fin.ventasNetas.toFixed(2)}</span></div>
+              <div class="statement-row" style="color: #16a34a;"><span>(-) Anticipos Cobrados a la Fecha:</span><span>- Q${totalAnticipos.toFixed(2)}</span></div>
+              <div class="statement-row" style="font-weight: 800; color: ${saldoRestante > 0 ? '#dc2626' : '#16a34a'}; border-top: 1px dashed #cbd5e1; padding-top: 4px;">
+                <span>(=) SALDO PENDIENTE POR COBRAR:</span><span>Q${saldoRestante.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <!-- Signatures -->
+            <div class="signatures">
+              <div>
+                <div class="sig-line">Preparado Por (Asesor / Técnico)<br/><small style="font-weight: normal; color: #64748b;">${order.mecanico || "Taller Los Pits"}</small></div>
+              </div>
+              <div>
+                <div class="sig-line">Revisado y Autorizado (Gerencia)<br/><small style="font-weight: normal; color: #64748b;">Administración Los Pits</small></div>
+              </div>
+            </div>
+          </div>
+          <script>
+            window.onload = function() {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWin.document.close();
+  };
+
 
   // Revisión Antes de Entrega (Pre-Delivery Inspection Checklist) states
   const [revisionModalOrder, setRevisionModalOrder] = useState(null);
@@ -1389,41 +2382,48 @@ export default function Taller({
     e.preventDefault();
     if (!checkoutOrder) return;
     
-    // Validate split payments
+    // Calculate remaining balance after anticipos
+    const orderAnticiposTotal = getOrderTotalAnticipos(checkoutOrder);
+    const amountToCollect = Math.max(0, (checkoutOrder.total || 0) - orderAnticiposTotal);
+
     let totalPaid = 0;
     const paymentMethodsSelected = selectedPaymentMethods;
-    
-    if (paymentMethodsSelected.length === 0) {
-      alert("Por favor selecciona al menos un método de pago.");
-      return;
-    }
-    
-    const breakdown = { efectivo: 0, transferencia: 0, cheque: 0, tarjeta: 0, credito: 0 };
-    
-    if (paymentMethodsSelected.length === 1) {
-      // Takes 100% of total
-      const method = paymentMethodsSelected[0];
-      breakdown[method] = checkoutOrder.total;
-      totalPaid = checkoutOrder.total;
-    } else {
-      // Sum amounts
-      let invalidAmount = false;
-      paymentMethodsSelected.forEach(method => {
-        const amt = parseFloat(checkoutPayments[method] || 0);
-        if (isNaN(amt) || amt < 0) {
-          invalidAmount = true;
+    const breakdown = { efectivo: 0, transferencia: 0, cheque: 0, tarjeta: 0, credito: 0, anticiposPrevios: orderAnticiposTotal };
+
+    if (amountToCollect > 0) {
+      if (paymentMethodsSelected.length === 0) {
+        alert("Por favor selecciona al menos un método de pago para liquidar el saldo pendiente.");
+        return;
+      }
+      
+      if (paymentMethodsSelected.length === 1) {
+        // Takes 100% of remaining balance
+        const method = paymentMethodsSelected[0];
+        breakdown[method] = amountToCollect;
+        totalPaid = amountToCollect;
+      } else {
+        // Sum amounts
+        let invalidAmount = false;
+        paymentMethodsSelected.forEach(method => {
+          const amt = parseFloat(checkoutPayments[method] || 0);
+          if (isNaN(amt) || amt < 0) {
+            invalidAmount = true;
+          }
+          breakdown[method] = amt;
+          totalPaid += amt;
+        });
+        if (invalidAmount) {
+          alert("Ingresa montos válidos mayores a 0 en los métodos seleccionados.");
+          return;
         }
-        breakdown[method] = amt;
-        totalPaid += amt;
-      });
-      if (invalidAmount) {
-        alert("Ingresa montos válidos mayores a 0 en los métodos seleccionados.");
-        return;
+        if (Math.abs(totalPaid - amountToCollect) > 0.01) {
+          alert(`La suma de los pagos (${formatMoney(totalPaid)}) debe ser igual al saldo a cobrar (${formatMoney(amountToCollect)}).`);
+          return;
+        }
       }
-      if (Math.abs(totalPaid - checkoutOrder.total) > 0.01) {
-        alert(`La suma de los pagos (${formatMoney(totalPaid)}) debe ser igual al total a cobrar (${formatMoney(checkoutOrder.total)}).`);
-        return;
-      }
+    } else {
+      // 100% covered by anticipos
+      totalPaid = 0;
     }
     
     // Register Account Receivable if credit > 0
@@ -1530,7 +2530,13 @@ export default function Taller({
           nit: checkoutNit.trim() || "C/F",
           nombreFacturacion: checkoutNombreFacturacion.trim() || o.cliente,
           formaPago: breakdown,
-          formaPagoDesc: paymentMethodsSelected.map(m => `${m.toUpperCase()} (Q${breakdown[m].toFixed(2)})`).join(", "),
+          formaPagoDesc: (() => {
+            const parts = paymentMethodsSelected.map(m => `${m.toUpperCase()} (Q${(breakdown[m] || 0).toFixed(2)})`);
+            if (orderAnticiposTotal > 0) {
+              parts.unshift(`ANTICIPOS PREVIOS (Q${orderAnticiposTotal.toFixed(2)})`);
+            }
+            return parts.length > 0 ? parts.join(", ") : "PAGADO CON ANTICIPOS";
+          })(),
           comision,
           total: checkoutOrder.total,
           cajero: usuarioActual.user,
@@ -4246,6 +5252,30 @@ export default function Taller({
                         );
                       })()}
 
+                      {/* Anticipos badge si la orden ya tiene anticipos registrados */}
+                      {getOrderTotalAnticipos(o) > 0 && (
+                        <div style={{
+                          ...styles.infoRow,
+                          backgroundColor: "rgba(16, 185, 129, 0.08)",
+                          border: "1px solid rgba(16, 185, 129, 0.25)",
+                          padding: "6px 10px",
+                          borderRadius: "8px",
+                          margin: "6px 0"
+                        }}>
+                          <span style={{ ...styles.infoLabel, color: "var(--color-success)", fontWeight: "bold" }}>💵 Anticipos:</span>
+                          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                            <span style={{ fontSize: "0.85rem", fontWeight: "800", color: "#fff" }}>
+                              {formatMoney(getOrderTotalAnticipos(o))}
+                            </span>
+                            {o.total > 0 && (
+                              <span style={{ fontSize: "0.72rem", color: "var(--color-warning)", fontWeight: "700" }}>
+                                Saldo: {formatMoney(Math.max(0, o.total - getOrderTotalAnticipos(o)))}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
                       <div style={styles.infoRow}>
                         <span style={styles.infoLabel}>💰 Total Trabajo:</span>
                         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
@@ -4364,6 +5394,46 @@ export default function Taller({
                           >
                             {o.revisionPreEntrega?.completado ? `✅ Check-list Pre-Entrega (${o.revisionPreEntrega.realizadoPor})` : "📋 Revisión Antes de Entrega"}
                           </button>
+
+                          {/* Botón para Cargar/Ver Anticipos y Recibo */}
+                          <button
+                            type="button"
+                            onClick={() => abrirAnticiposModal(o)}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              color: "var(--color-success)",
+                              fontSize: "0.75rem",
+                              cursor: "pointer",
+                              padding: "2px 0 0 0",
+                              textDecoration: "underline",
+                              fontWeight: "bold",
+                              marginTop: "3px"
+                            }}
+                          >
+                            💵 Recibo de Anticipo / Caja {getOrderTotalAnticipos(o) > 0 ? `(${formatMoney(getOrderTotalAnticipos(o))})` : ''}
+                          </button>
+
+                          {/* Botón para Ver Relación de Costos y Ganancias */}
+                          {isManager && (
+                            <button
+                              type="button"
+                              onClick={() => abrirCostosGananciasModal(o)}
+                              style={{
+                                background: "none",
+                                border: "none",
+                                color: "#c084fc",
+                                fontSize: "0.75rem",
+                                cursor: "pointer",
+                                padding: "2px 0 0 0",
+                                textDecoration: "underline",
+                                fontWeight: "bold",
+                                marginTop: "3px"
+                              }}
+                            >
+                              📊 Relación Costos y Ganancias (P&L)
+                            </button>
+                          )}
                         </div>
                       </div>
                       <div style={styles.infoRow}>
@@ -4579,8 +5649,8 @@ export default function Taller({
                             </button>
                           )}
                         </div>
-                        {o.estado !== "Entregado" && (
-                          <div style={{ display: "flex", gap: "8px", width: "100%" }}>
+                        {o.estado !== "Entregado" ? (
+                          <div style={{ display: "flex", gap: "6px", width: "100%", flexWrap: "wrap", marginTop: "2px" }}>
                             <button
                               type="button"
                               onClick={() => {
@@ -4595,13 +5665,13 @@ export default function Taller({
                               }}
                               className="btn btn-ghost"
                               style={{ 
-                                flex: 1, 
+                                flex: "1 1 140px", 
                                 height: "34px", 
-                                fontSize: "0.8rem", 
+                                fontSize: "0.78rem", 
                                 display: "flex", 
                                 alignItems: "center", 
                                 justifyContent: "center", 
-                                gap: "6px",
+                                gap: "5px",
                                 border: "1px solid var(--color-primary)",
                                 color: "var(--color-primary)",
                                 borderRadius: "8px",
@@ -4609,10 +5679,109 @@ export default function Taller({
                                 transition: "all 0.2s"
                               }}
                             >
-                              <Plus size={14} />
-                              <span>⚙️ Cargar Repuesto / Insumo / Servicio</span>
+                              <Plus size={13} />
+                              <span>⚙️ Cargar Item</span>
                             </button>
+
+                            <button
+                              type="button"
+                              onClick={() => abrirAnticiposModal(o)}
+                              className="btn btn-ghost"
+                              style={{ 
+                                flex: "1 1 125px", 
+                                height: "34px", 
+                                fontSize: "0.78rem", 
+                                display: "flex", 
+                                alignItems: "center", 
+                                justifyContent: "center", 
+                                gap: "5px",
+                                border: "1px solid rgba(16, 185, 129, 0.4)",
+                                backgroundColor: "rgba(16, 185, 129, 0.08)",
+                                color: "var(--color-success)",
+                                borderRadius: "8px",
+                                cursor: "pointer",
+                                fontWeight: "700",
+                                transition: "all 0.2s"
+                              }}
+                              title="Cargar anticipos e imprimir recibo de caja"
+                            >
+                              <Receipt size={13} />
+                              <span>💵 Anticipo {getOrderTotalAnticipos(o) > 0 ? `(${formatMoney(getOrderTotalAnticipos(o))})` : ''}</span>
+                            </button>
+
+                            {isManager && (
+                              <button
+                                type="button"
+                                onClick={() => abrirCostosGananciasModal(o)}
+                                className="btn btn-ghost"
+                                style={{ 
+                                  flex: "1 1 120px", 
+                                  height: "34px", 
+                                  fontSize: "0.78rem", 
+                                  display: "flex", 
+                                  alignItems: "center", 
+                                  justifyContent: "center", 
+                                  gap: "5px",
+                                  border: "1px solid rgba(139, 92, 246, 0.4)",
+                                  backgroundColor: "rgba(139, 92, 246, 0.08)",
+                                  color: "#c084fc",
+                                  borderRadius: "8px",
+                                  cursor: "pointer",
+                                  fontWeight: "700",
+                                  transition: "all 0.2s"
+                                }}
+                                title="Ver relación de costos, precios y estado de resultados"
+                              >
+                                <TrendingUp size={13} />
+                                <span>📊 Costos & P&L</span>
+                              </button>
+                            )}
                           </div>
+                        ) : (
+                          isManager && (
+                            <div style={{ display: "flex", gap: "6px", width: "100%", marginTop: "2px" }}>
+                              <button
+                                type="button"
+                                onClick={() => abrirAnticiposModal(o)}
+                                className="btn btn-ghost"
+                                style={{
+                                  flex: 1,
+                                  height: "30px",
+                                  fontSize: "0.74rem",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  gap: "4px",
+                                  border: "1px solid rgba(16, 185, 129, 0.3)",
+                                  color: "var(--color-success)",
+                                  borderRadius: "6px"
+                                }}
+                              >
+                                <Receipt size={12} />
+                                <span>Recibos Anticipo ({getOrderAnticiposList(o).length})</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => abrirCostosGananciasModal(o)}
+                                className="btn btn-ghost"
+                                style={{
+                                  flex: 1,
+                                  height: "30px",
+                                  fontSize: "0.74rem",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  gap: "4px",
+                                  border: "1px solid rgba(139, 92, 246, 0.3)",
+                                  color: "#c084fc",
+                                  borderRadius: "6px"
+                                }}
+                              >
+                                <TrendingUp size={12} />
+                                <span>P&L / Costos</span>
+                              </button>
+                            </div>
+                          )
                         )}
                       </div>
                     </div>
@@ -6411,94 +7580,154 @@ export default function Taller({
                 </div>
               </div>
 
-              <div style={{
-                backgroundColor: "rgba(255, 255, 255, 0.02)",
-                padding: "15px",
-                borderRadius: "10px",
-                border: "1px solid rgba(255, 255, 255, 0.05)",
-                margin: "10px 0"
-              }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
-                  <span style={{ color: "var(--text-muted)", fontSize: "0.9rem", fontWeight: "600" }}>Total a Cobrar:</span>
-                  <span style={{ color: "var(--color-primary)", fontSize: "1.2rem", fontWeight: "900" }}>{formatMoney(checkoutOrder.total)}</span>
-                </div>
-                
-                <label style={{ ...styles.label, marginBottom: "8px" }}>Seleccionar Método(s) de Pago:</label>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
-                  {["efectivo", "transferencia", "cheque", "tarjeta", "credito"].map((method) => {
-                    const isChecked = selectedPaymentMethods.includes(method);
-                    return (
-                      <label key={method} style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "6px",
-                        cursor: "pointer",
-                        fontSize: "0.82rem",
-                        color: isChecked ? "#fff" : "var(--text-muted)",
-                        fontWeight: isChecked ? "bold" : "normal",
-                        backgroundColor: isChecked ? "rgba(59, 130, 246, 0.1)" : "rgba(255,255,255,0.02)",
-                        padding: "8px",
-                        borderRadius: "6px",
-                        border: `1px solid ${isChecked ? "var(--color-primary)" : "rgba(255,255,255,0.05)"}`
-                      }}>
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => {
-                            if (isChecked) {
-                              setSelectedPaymentMethods(selectedPaymentMethods.filter(m => m !== method));
-                              setCheckoutPayments({ ...checkoutPayments, [method]: "" });
-                            } else {
-                              setSelectedPaymentMethods([...selectedPaymentMethods, method]);
-                            }
-                          }}
-                          style={{ cursor: "pointer" }}
-                        />
-                        {method.toUpperCase()}
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
+              {(() => {
+                const orderAnticiposTotal = getOrderTotalAnticipos(checkoutOrder);
+                const amountDue = Math.max(0, (checkoutOrder.total || 0) - orderAnticiposTotal);
 
-              {selectedPaymentMethods.length > 1 && (
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Desglose de Montos:</label>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                    {selectedPaymentMethods.map((method) => (
-                      <div key={method} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                        <span style={{ width: "110px", fontSize: "0.82rem", fontWeight: "bold", textTransform: "uppercase" }}>{method}:</span>
-                        <input
-                          type="number"
-                          placeholder="Monto Q"
-                          className="input-field"
-                          value={checkoutPayments[method] || ""}
-                          onChange={(e) => setCheckoutPayments({ ...checkoutPayments, [method]: e.target.value })}
-                          min="0"
-                          step="any"
-                          required
-                          style={{ flex: 1 }}
-                        />
+                return (
+                  <div style={{
+                    backgroundColor: "rgba(255, 255, 255, 0.02)",
+                    padding: "15px",
+                    borderRadius: "10px",
+                    border: "1px solid rgba(255, 255, 255, 0.05)",
+                    margin: "10px 0"
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+                      <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Total Presupuestado:</span>
+                      <span style={{ color: "#fff", fontSize: "1rem", fontWeight: "700" }}>{formatMoney(checkoutOrder.total)}</span>
+                    </div>
+
+                    {orderAnticiposTotal > 0 && (
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+                        <span style={{ color: "var(--color-success)", fontSize: "0.85rem", fontWeight: "600" }}>(-) Anticipos Ya Recibidos:</span>
+                        <span style={{ color: "var(--color-success)", fontSize: "1rem", fontWeight: "800" }}>- {formatMoney(orderAnticiposTotal)}</span>
                       </div>
-                    ))}
+                    )}
+
+                    <div style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      borderTop: orderAnticiposTotal > 0 ? "1px dashed rgba(255,255,255,0.15)" : "none",
+                      paddingTop: orderAnticiposTotal > 0 ? "8px" : 0,
+                      marginTop: orderAnticiposTotal > 0 ? "6px" : 0,
+                      marginBottom: "12px"
+                    }}>
+                      <span style={{ color: orderAnticiposTotal > 0 ? "var(--color-warning)" : "var(--text-muted)", fontSize: "0.95rem", fontWeight: "800" }}>
+                        {orderAnticiposTotal > 0 ? "Saldo Restante a Cobrar:" : "Total a Cobrar:"}
+                      </span>
+                      <span style={{ color: orderAnticiposTotal > 0 ? "var(--color-warning)" : "var(--color-primary)", fontSize: "1.25rem", fontWeight: "900" }}>
+                        {formatMoney(amountDue)}
+                      </span>
+                    </div>
+
+                    {amountDue === 0 ? (
+                      <div style={{
+                        padding: "10px 14px",
+                        borderRadius: "8px",
+                        backgroundColor: "rgba(16, 185, 129, 0.12)",
+                        border: "1px solid rgba(16, 185, 129, 0.3)",
+                        color: "var(--color-success)",
+                        fontSize: "0.85rem",
+                        fontWeight: "700",
+                        textAlign: "center"
+                      }}>
+                        ✅ Esta orden está 100% pagada mediante anticipos previos. No hay saldo pendiente por cobrar.
+                      </div>
+                    ) : (
+                      <>
+                        <label style={{ ...styles.label, marginBottom: "8px" }}>Seleccionar Método(s) de Pago para Saldo:</label>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
+                          {["efectivo", "transferencia", "cheque", "tarjeta", "credito"].map((method) => {
+                            const isChecked = selectedPaymentMethods.includes(method);
+                            return (
+                              <label key={method} style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "6px",
+                                cursor: "pointer",
+                                fontSize: "0.82rem",
+                                color: isChecked ? "#fff" : "var(--text-muted)",
+                                fontWeight: isChecked ? "bold" : "normal",
+                                backgroundColor: isChecked ? "rgba(59, 130, 246, 0.1)" : "rgba(255,255,255,0.02)",
+                                padding: "8px",
+                                borderRadius: "6px",
+                                border: `1px solid ${isChecked ? "var(--color-primary)" : "rgba(255,255,255,0.05)"}`
+                              }}>
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    if (isChecked) {
+                                      setSelectedPaymentMethods(selectedPaymentMethods.filter(m => m !== method));
+                                      setCheckoutPayments({ ...checkoutPayments, [method]: "" });
+                                    } else {
+                                      setSelectedPaymentMethods([...selectedPaymentMethods, method]);
+                                    }
+                                  }}
+                                  style={{ cursor: "pointer" }}
+                                />
+                                {method.toUpperCase()}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {(() => {
+                const orderAnticiposTotal = getOrderTotalAnticipos(checkoutOrder);
+                const amountDue = Math.max(0, (checkoutOrder.total || 0) - orderAnticiposTotal);
+
+                if (amountDue === 0 || selectedPaymentMethods.length <= 1) return null;
+
+                return (
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Desglose de Montos para Saldo:</label>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                      {selectedPaymentMethods.map((method) => (
+                        <div key={method} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                          <span style={{ width: "110px", fontSize: "0.82rem", fontWeight: "bold", textTransform: "uppercase" }}>{method}:</span>
+                          <input
+                            type="number"
+                            placeholder="Monto Q"
+                            className="input-field"
+                            value={checkoutPayments[method] || ""}
+                            onChange={(e) => setCheckoutPayments({ ...checkoutPayments, [method]: e.target.value })}
+                            min="0"
+                            step="any"
+                            required
+                            style={{ flex: 1 }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                const orderAnticiposTotal = getOrderTotalAnticipos(checkoutOrder);
+                const amountDue = Math.max(0, (checkoutOrder.total || 0) - orderAnticiposTotal);
+
+                if (amountDue === 0) return null;
+
                 let sumPaid = 0;
                 if (selectedPaymentMethods.length === 1) {
-                  sumPaid = checkoutOrder.total;
+                  sumPaid = amountDue;
                 } else {
                   selectedPaymentMethods.forEach(method => {
                     sumPaid += parseFloat(checkoutPayments[method] || 0);
                   });
                 }
-                const diff = checkoutOrder.total - sumPaid;
+                const diff = amountDue - sumPaid;
                 const isMatch = Math.abs(diff) < 0.01;
                 return (
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "10px", fontSize: "0.85rem" }}>
-                    <span style={{ color: "var(--text-muted)" }}>Monto asignado:</span>
+                    <span style={{ color: "var(--text-muted)" }}>Monto asignado al saldo:</span>
                     <strong style={{ color: isMatch ? "var(--color-success)" : "var(--color-danger)" }}>
                       {formatMoney(sumPaid)} ({isMatch ? "Coincide" : `Falta ${formatMoney(diff)}`})
                     </strong>
@@ -6516,15 +7745,18 @@ export default function Taller({
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={
                   (() => {
+                    const orderAnticiposTotal = getOrderTotalAnticipos(checkoutOrder);
+                    const amountDue = Math.max(0, (checkoutOrder.total || 0) - orderAnticiposTotal);
+                    if (amountDue === 0) return false;
                     let sumPaid = 0;
                     if (selectedPaymentMethods.length === 1) {
-                      sumPaid = checkoutOrder.total;
+                      sumPaid = amountDue;
                     } else {
                       selectedPaymentMethods.forEach(method => {
                         sumPaid += parseFloat(checkoutPayments[method] || 0);
                       });
                     }
-                    return Math.abs(sumPaid - checkoutOrder.total) > 0.01;
+                    return Math.abs(sumPaid - amountDue) > 0.01;
                   })()
                 }>
                   Confirmar Cobro
@@ -7096,6 +8328,608 @@ export default function Taller({
                 🚀 Guardar y Avanzar a "Listo para Entrega"
               </button>
             </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* 💵 MODAL GESTIÓN DE ANTICIPOS Y RECIBOS DE CAJA */}
+      {anticipoModalOrder && createPortal(
+        <div style={styles.modalOverlay} className="modal-overlay-centered">
+          <div className="glass-panel" style={{ ...styles.modalContent, maxWidth: "820px", maxHeight: "92vh", display: "flex", flexDirection: "column" }}>
+            {/* Header */}
+            <div style={{ ...styles.modalHeader, display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "16px 20px" }}>
+              <div>
+                <h3 style={{ ...styles.modalTitle, display: "flex", alignItems: "center", gap: "8px", color: "var(--color-primary)" }}>
+                  💵 Anticipos y Recibos de Caja
+                </h3>
+                <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "4px" }}>
+                  Orden #{anticipoModalOrder.orderNumber || anticipoModalOrder.id} • {anticipoModalOrder.marca || anticipoModalOrder.vehicleMake || ""} {anticipoModalOrder.linea || anticipoModalOrder.vehicleModel || ""} ({anticipoModalOrder.placa || anticipoModalOrder.vehiclePlate || "S/P"}) — Cliente: {anticipoModalOrder.cliente || anticipoModalOrder.clientName || "Cliente"}
+                </p>
+              </div>
+              <button onClick={() => setAnticipoModalOrder(null)} style={styles.closeBtn}>
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Metrics bar */}
+            {(() => {
+              const totalOrden = parseFloat(anticipoModalOrder.total) || 0;
+              const totalAnticipos = getOrderTotalAnticipos(anticipoModalOrder);
+              const saldoPendiente = Math.max(0, totalOrden - totalAnticipos);
+              return (
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                  gap: "12px",
+                  padding: "12px 20px",
+                  backgroundColor: "rgba(15, 23, 42, 0.6)",
+                  borderBottom: "1px solid rgba(255, 255, 255, 0.08)"
+                }}>
+                  <div style={{ backgroundColor: "rgba(255,255,255,0.03)", padding: "10px 14px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", fontWeight: "700" }}>Total Presupuesto</div>
+                    <div style={{ fontSize: "1.2rem", fontWeight: "800", color: "#fff", marginTop: "2px" }}>{formatMoney(totalOrden)}</div>
+                  </div>
+                  <div style={{ backgroundColor: "rgba(16, 185, 129, 0.08)", padding: "10px 14px", borderRadius: "8px", border: "1px solid rgba(16, 185, 129, 0.25)" }}>
+                    <div style={{ fontSize: "0.75rem", color: "var(--color-success)", textTransform: "uppercase", fontWeight: "700" }}>Anticipos Abonados</div>
+                    <div style={{ fontSize: "1.2rem", fontWeight: "800", color: "var(--color-success)", marginTop: "2px" }}>{formatMoney(totalAnticipos)}</div>
+                  </div>
+                  <div style={{ backgroundColor: saldoPendiente > 0 ? "rgba(245, 158, 11, 0.08)" : "rgba(59, 130, 246, 0.08)", padding: "10px 14px", borderRadius: "8px", border: `1px solid ${saldoPendiente > 0 ? "rgba(245, 158, 11, 0.3)" : "rgba(59, 130, 246, 0.25)"}` }}>
+                    <div style={{ fontSize: "0.75rem", color: saldoPendiente > 0 ? "var(--color-warning)" : "var(--color-primary)", textTransform: "uppercase", fontWeight: "700" }}>Saldo Restante</div>
+                    <div style={{ fontSize: "1.2rem", fontWeight: "800", color: saldoPendiente > 0 ? "var(--color-warning)" : "var(--color-primary)", marginTop: "2px" }}>{formatMoney(saldoPendiente)}</div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Modal Body */}
+            <div style={{ ...styles.modalBody, flex: 1, overflowY: "auto", padding: "20px", display: "flex", flexDirection: "column", gap: "20px" }}>
+              {/* Form Card: Registrar Anticipo */}
+              <div style={{
+                backgroundColor: "rgba(255, 255, 255, 0.02)",
+                border: "1px solid rgba(255, 255, 255, 0.08)",
+                borderRadius: "12px",
+                padding: "16px"
+              }}>
+                <h4 style={{ margin: "0 0 14px 0", fontSize: "0.95rem", color: "#fff", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <Plus size={16} color="var(--color-primary)" /> Registrar Nuevo Anticipo
+                </h4>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px" }}>
+                  <div>
+                    <label style={styles.label}>Monto del Anticipo (Q) *</label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0.01"
+                      className="input-field"
+                      placeholder="Ej. 500.00"
+                      value={anticipoMonto}
+                      onChange={(e) => setAnticipoMonto(e.target.value)}
+                      style={{ width: "100%", fontSize: "1rem", fontWeight: "bold" }}
+                    />
+                  </div>
+                  <div>
+                    <label style={styles.label}>Método de Pago *</label>
+                    <select
+                      className="input-field"
+                      value={anticipoMetodo}
+                      onChange={(e) => setAnticipoMetodo(e.target.value)}
+                      style={{ width: "100%" }}
+                    >
+                      <option value="Efectivo">💵 Efectivo</option>
+                      <option value="Transferencia">📲 Transferencia Bancaria</option>
+                      <option value="Tarjeta">💳 Tarjeta de Débito / Crédito</option>
+                      <option value="Cheque">📑 Cheque</option>
+                      <option value="Depósito">🏦 Depósito Bancario</option>
+                      <option value="Otro">Otro</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={styles.label}>Fecha y Hora</label>
+                    <input
+                      type="datetime-local"
+                      className="input-field"
+                      value={anticipoFecha}
+                      onChange={(e) => setAnticipoFecha(e.target.value)}
+                      style={{ width: "100%" }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px", marginTop: "12px" }}>
+                  <div>
+                    <label style={styles.label}>No. Referencia / Boleta / Voucher</label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder="Ej. Trx #123456 / Boleta 789"
+                      value={anticipoReferencia}
+                      onChange={(e) => setAnticipoReferencia(e.target.value)}
+                      style={{ width: "100%" }}
+                    />
+                  </div>
+                  <div>
+                    <label style={styles.label}>Concepto / Notas</label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder="Ej. Anticipo para compra de repuestos..."
+                      value={anticipoNotas}
+                      onChange={(e) => setAnticipoNotas(e.target.value)}
+                      style={{ width: "100%" }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "16px", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => handleRegistrarAnticipo(false)}
+                    style={{ display: "flex", alignItems: "center", gap: "6px" }}
+                  >
+                    💾 Guardar Anticipo
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => handleRegistrarAnticipo(true)}
+                    style={{ display: "flex", alignItems: "center", gap: "6px", backgroundColor: "var(--color-success)", borderColor: "var(--color-success)", fontWeight: "bold" }}
+                  >
+                    <Printer size={16} /> Registrar e Imprimir Recibo
+                  </button>
+                </div>
+              </div>
+
+              {/* History Card: Historial de Anticipos */}
+              <div style={{
+                backgroundColor: "rgba(255, 255, 255, 0.02)",
+                border: "1px solid rgba(255, 255, 255, 0.08)",
+                borderRadius: "12px",
+                padding: "16px"
+              }}>
+                <h4 style={{ margin: "0 0 14px 0", fontSize: "0.95rem", color: "#fff", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <Receipt size={16} color="var(--color-success)" /> Historial de Anticipos Recibidos ({getOrderAnticiposList(anticipoModalOrder).length})
+                </h4>
+
+                {getOrderAnticiposList(anticipoModalOrder).length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "24px 10px", color: "var(--text-muted)", fontSize: "0.88rem" }}>
+                    No hay anticipos registrados para esta orden aún.
+                  </div>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.84rem", textAlign: "left" }}>
+                      <thead>
+                        <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.1)", color: "var(--text-muted)" }}>
+                          <th style={{ padding: "8px 10px" }}>Fecha</th>
+                          <th style={{ padding: "8px 10px" }}>Monto</th>
+                          <th style={{ padding: "8px 10px" }}>Método</th>
+                          <th style={{ padding: "8px 10px" }}>Referencia / Notas</th>
+                          <th style={{ padding: "8px 10px" }}>Registrado Por</th>
+                          <th style={{ padding: "8px 10px", textAlign: "center" }}>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {getOrderAnticiposList(anticipoModalOrder).map((ant, idx) => (
+                          <tr key={ant.id || idx} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                            <td style={{ padding: "10px", whiteSpace: "nowrap" }}>
+                              {ant.fecha ? new Date(ant.fecha).toLocaleDateString("es-GT", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "N/D"}
+                            </td>
+                            <td style={{ padding: "10px", fontWeight: "800", color: "var(--color-success)" }}>
+                              {formatMoney(ant.monto || 0)}
+                            </td>
+                            <td style={{ padding: "10px" }}>
+                              <span style={{
+                                padding: "3px 8px",
+                                borderRadius: "4px",
+                                backgroundColor: "rgba(59, 130, 246, 0.15)",
+                                border: "1px solid rgba(59, 130, 246, 0.3)",
+                                color: "var(--color-primary)",
+                                fontSize: "0.76rem",
+                                fontWeight: "600"
+                              }}>
+                                {ant.metodoPago || "Efectivo"}
+                              </span>
+                            </td>
+                            <td style={{ padding: "10px", color: "var(--text-muted)", maxWidth: "220px" }}>
+                              {ant.referencia && <div style={{ color: "#e2e8f0", fontWeight: "500" }}>Ref: {ant.referencia}</div>}
+                              {ant.notas && <div style={{ fontSize: "0.78rem" }}>{ant.notas}</div>}
+                              {!ant.referencia && !ant.notas && <span>-</span>}
+                            </td>
+                            <td style={{ padding: "10px", color: "var(--text-muted)", fontSize: "0.78rem" }}>
+                              {ant.registradoPor || "Admin"}
+                            </td>
+                            <td style={{ padding: "10px", textAlign: "center" }}>
+                              <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
+                                <button
+                                  type="button"
+                                  onClick={() => imprimirReciboAnticipo(anticipoModalOrder, ant)}
+                                  className="btn btn-ghost"
+                                  title="Imprimir Recibo de Caja"
+                                  style={{ padding: "4px 8px", fontSize: "0.78rem", color: "var(--color-primary)", border: "1px solid rgba(59,130,246,0.3)" }}
+                                >
+                                  <Printer size={13} style={{ marginRight: "4px" }} /> Recibo
+                                </button>
+                                {isManager && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEliminarAnticipo(ant.id)}
+                                    className="btn btn-ghost"
+                                    title="Eliminar Anticipo"
+                                    style={{ padding: "4px 8px", fontSize: "0.78rem", color: "var(--color-danger)", border: "1px solid rgba(239,68,68,0.3)" }}
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div style={{ display: "flex", justifyContent: "flex-end", padding: "14px 20px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setAnticipoModalOrder(null)}
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* 📊 MODAL RELACIÓN DE COSTOS, GANANCIAS Y ESTADO DE RESULTADOS (P&L) */}
+      {costosModalOrder && costosBudgetDraft && createPortal(
+        <div style={styles.modalOverlay} className="modal-overlay-centered">
+          <div className="glass-panel" style={{ ...styles.modalContent, maxWidth: "1020px", maxHeight: "94vh", display: "flex", flexDirection: "column" }}>
+            {/* Header */}
+            <div style={{ ...styles.modalHeader, display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "16px 20px" }}>
+              <div>
+                <h3 style={{ ...styles.modalTitle, display: "flex", alignItems: "center", gap: "8px", color: "var(--color-warning)" }}>
+                  <TrendingUp size={20} /> Relación de Costos, Ganancias y Estado de Resultados
+                </h3>
+                <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "4px" }}>
+                  Orden #{costosModalOrder.orderNumber || costosModalOrder.id} • {costosModalOrder.marca || costosModalOrder.vehicleMake || ""} {costosModalOrder.linea || costosModalOrder.vehicleModel || ""} ({costosModalOrder.placa || costosModalOrder.vehiclePlate || "S/P"}) — Cliente: {costosModalOrder.cliente || costosModalOrder.clientName || "Cliente"}
+                </p>
+              </div>
+              <button onClick={() => setCostosModalOrder(null)} style={styles.closeBtn}>
+                <X size={20} />
+              </button>
+            </div>
+
+            {(() => {
+              const breakdown = getOrderFinancialBreakdown(costosModalOrder, costosBudgetDraft);
+              const isProfitPositive = breakdown.utilidadBruta >= 0;
+
+              return (
+                <>
+                  {/* Top KPI Cards */}
+                  <div style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                    gap: "12px",
+                    padding: "14px 20px",
+                    backgroundColor: "rgba(15, 23, 42, 0.6)",
+                    borderBottom: "1px solid rgba(255, 255, 255, 0.08)"
+                  }}>
+                    <div style={{ backgroundColor: "rgba(255,255,255,0.03)", padding: "10px 14px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", fontWeight: "700" }}>Venta Total Neta</div>
+                      <div style={{ fontSize: "1.25rem", fontWeight: "800", color: "#fff", marginTop: "2px" }}>{formatMoney(breakdown.ventasNetas)}</div>
+                      <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>Ingresos cotizados/facturados</div>
+                    </div>
+
+                    <div style={{ backgroundColor: "rgba(239, 68, 68, 0.06)", padding: "10px 14px", borderRadius: "8px", border: "1px solid rgba(239, 68, 68, 0.2)" }}>
+                      <div style={{ fontSize: "0.75rem", color: "var(--color-danger)", textTransform: "uppercase", fontWeight: "700" }}>Costo Total Operativo</div>
+                      <div style={{ fontSize: "1.25rem", fontWeight: "800", color: "var(--color-danger)", marginTop: "2px" }}>{formatMoney(breakdown.costosTotales)}</div>
+                      <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>Repuestos + Mano Obra + Insumos</div>
+                    </div>
+
+                    <div style={{ backgroundColor: isProfitPositive ? "rgba(16, 185, 129, 0.08)" : "rgba(239, 68, 68, 0.12)", padding: "10px 14px", borderRadius: "8px", border: `1px solid ${isProfitPositive ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)"}` }}>
+                      <div style={{ fontSize: "0.75rem", color: isProfitPositive ? "var(--color-success)" : "var(--color-danger)", textTransform: "uppercase", fontWeight: "700" }}>Utilidad Bruta</div>
+                      <div style={{ fontSize: "1.25rem", fontWeight: "900", color: isProfitPositive ? "var(--color-success)" : "var(--color-danger)", marginTop: "2px" }}>
+                        {formatMoney(breakdown.utilidadBruta)}
+                      </div>
+                      <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>Ganancia neta del taller</div>
+                    </div>
+
+                    <div style={{ backgroundColor: "rgba(59, 130, 246, 0.08)", padding: "10px 14px", borderRadius: "8px", border: "1px solid rgba(59, 130, 246, 0.25)" }}>
+                      <div style={{ fontSize: "0.75rem", color: "var(--color-primary)", textTransform: "uppercase", fontWeight: "700" }}>Margen sobre Ventas</div>
+                      <div style={{ fontSize: "1.25rem", fontWeight: "900", color: "var(--color-primary)", marginTop: "2px" }}>
+                        {breakdown.margenBrutoPct.toFixed(1)}%
+                      </div>
+                      <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>Rentabilidad porcentual</div>
+                    </div>
+                  </div>
+
+                  {/* Body with Breakdown & P&L */}
+                  <div style={{ ...styles.modalBody, flex: 1, overflowY: "auto", padding: "20px", display: "flex", flexDirection: "column", gap: "22px" }}>
+                    {costosSavedAlert && (
+                      <div style={{
+                        padding: "10px 16px",
+                        borderRadius: "8px",
+                        backgroundColor: "rgba(16, 185, 129, 0.15)",
+                        border: "1px solid rgba(16, 185, 129, 0.35)",
+                        color: "var(--color-success)",
+                        fontWeight: "700",
+                        fontSize: "0.85rem",
+                        textAlign: "center"
+                      }}>
+                        ✅ Costos y márgenes actualizados y guardados exitosamente en la orden.
+                      </div>
+                    )}
+
+                    {/* Section 1: Item-by-item breakdown */}
+                    <div style={{
+                      backgroundColor: "rgba(255, 255, 255, 0.02)",
+                      border: "1px solid rgba(255, 255, 255, 0.08)",
+                      borderRadius: "12px",
+                      padding: "16px"
+                    }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
+                        <h4 style={{ margin: 0, fontSize: "0.95rem", color: "#fff", display: "flex", alignItems: "center", gap: "8px" }}>
+                          <Calculator size={16} color="var(--color-primary)" /> Desglose Ítem por Ítem (Costos vs Venta)
+                        </h4>
+                        <span style={{ fontSize: "0.76rem", color: "var(--text-muted)", fontStyle: "italic" }}>
+                          💡 Puedes calibrar el costo unitario directamente en la casilla de cada ítem.
+                        </span>
+                      </div>
+
+                      {breakdown.items.length === 0 ? (
+                        <div style={{ textAlign: "center", padding: "20px", color: "var(--text-muted)" }}>
+                          No hay ítems registrados en el presupuesto de esta orden.
+                        </div>
+                      ) : (
+                        <div style={{ overflowX: "auto" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem", textAlign: "left" }}>
+                            <thead>
+                              <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.1)", color: "var(--text-muted)" }}>
+                                <th style={{ padding: "8px 10px" }}>Categoría</th>
+                                <th style={{ padding: "8px 10px" }}>Descripción / Ítem</th>
+                                <th style={{ padding: "8px 10px", textAlign: "center" }}>Cant.</th>
+                                <th style={{ padding: "8px 10px", textAlign: "right" }}>Costo Unit. (Q)</th>
+                                <th style={{ padding: "8px 10px", textAlign: "right" }}>Costo Total (Q)</th>
+                                <th style={{ padding: "8px 10px", textAlign: "right" }}>P. Venta Unit. (Q)</th>
+                                <th style={{ padding: "8px 10px", textAlign: "right" }}>Venta Total (Q)</th>
+                                <th style={{ padding: "8px 10px", textAlign: "right" }}>Ganancia (Q)</th>
+                                <th style={{ padding: "8px 10px", textAlign: "right" }}>Margen</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {breakdown.items.map((it) => {
+                                const isPos = it.profit >= 0;
+                                return (
+                                  <tr key={it.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                                    <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>
+                                      <span style={{
+                                        padding: "2px 6px",
+                                        borderRadius: "4px",
+                                        backgroundColor: "rgba(255,255,255,0.05)",
+                                        fontSize: "0.74rem",
+                                        fontWeight: "600",
+                                        color: "#cbd5e1"
+                                      }}>
+                                        {it.categoryLabel}
+                                      </span>
+                                    </td>
+                                    <td style={{ padding: "8px 10px", fontWeight: "500", color: "#f1f5f9" }}>
+                                      {it.desc}
+                                    </td>
+                                    <td style={{ padding: "8px 10px", textAlign: "center", color: "var(--text-muted)" }}>
+                                      {it.qty}
+                                    </td>
+                                    {/* Costo Unitario Editable */}
+                                    <td style={{ padding: "6px 8px", textAlign: "right" }}>
+                                      <input
+                                        type="number"
+                                        step="any"
+                                        min="0"
+                                        className="input-field"
+                                        value={it.costUnit === 0 ? "0" : it.costUnit}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          const newDraft = { ...costosBudgetDraft };
+                                          const arr = [...(newDraft[it.typeKey] || [])];
+                                          if (arr[it.typeIndex]) {
+                                            const numVal = val === "" ? 0 : parseFloat(val) || 0;
+                                            arr[it.typeIndex] = {
+                                              ...arr[it.typeIndex],
+                                              cost: val === "" ? "" : numVal,
+                                              ...(it.typeKey === "parts" ? { purchasePrice: val === "" ? "" : numVal } : {})
+                                            };
+                                            newDraft[it.typeKey] = arr;
+                                            setCostosBudgetDraft(newDraft);
+                                          }
+                                        }}
+                                        style={{
+                                          width: "85px",
+                                          textAlign: "right",
+                                          padding: "3px 6px",
+                                          fontSize: "0.82rem",
+                                          backgroundColor: "rgba(239, 68, 68, 0.08)",
+                                          borderColor: "rgba(239, 68, 68, 0.25)",
+                                          color: "#fca5a5",
+                                          fontWeight: "bold"
+                                        }}
+                                      />
+                                    </td>
+                                    <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--color-danger)", fontWeight: "600" }}>
+                                      {formatMoney(it.costTotal)}
+                                    </td>
+                                    <td style={{ padding: "8px 10px", textAlign: "right", color: "#cbd5e1" }}>
+                                      {formatMoney(it.saleUnit)}
+                                    </td>
+                                    <td style={{ padding: "8px 10px", textAlign: "right", color: "#fff", fontWeight: "700" }}>
+                                      {formatMoney(it.saleTotal)}
+                                    </td>
+                                    <td style={{ padding: "8px 10px", textAlign: "right", color: isPos ? "var(--color-success)" : "var(--color-danger)", fontWeight: "800" }}>
+                                      {formatMoney(it.profit)}
+                                    </td>
+                                    <td style={{ padding: "8px 10px", textAlign: "right" }}>
+                                      <span style={{
+                                        color: isPos ? "var(--color-success)" : "var(--color-danger)",
+                                        fontWeight: "700",
+                                        fontSize: "0.78rem"
+                                      }}>
+                                        {it.margin.toFixed(1)}%
+                                      </span>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                            <tfoot>
+                              <tr style={{ borderTop: "2px solid rgba(255,255,255,0.15)", fontWeight: "bold", fontSize: "0.86rem" }}>
+                                <td colSpan={4} style={{ padding: "10px", color: "var(--text-muted)" }}>TOTALES ACUMULADOS:</td>
+                                <td style={{ padding: "10px", textAlign: "right", color: "var(--color-danger)" }}>{formatMoney(breakdown.costosTotales)}</td>
+                                <td></td>
+                                <td style={{ padding: "10px", textAlign: "right", color: "#fff" }}>{formatMoney(breakdown.subtotalVentas)}</td>
+                                <td style={{ padding: "10px", textAlign: "right", color: isProfitPositive ? "var(--color-success)" : "var(--color-danger)" }}>{formatMoney(breakdown.utilidadBruta)}</td>
+                                <td style={{ padding: "10px", textAlign: "right", color: isProfitPositive ? "var(--color-success)" : "var(--color-danger)" }}>{breakdown.margenBrutoPct.toFixed(1)}%</td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Section 2: Estado de Resultados Formal (P&L Card) */}
+                    <div style={{
+                      backgroundColor: "rgba(15, 23, 42, 0.4)",
+                      border: "1px solid rgba(255, 255, 255, 0.08)",
+                      borderRadius: "12px",
+                      padding: "18px"
+                    }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+                        <h4 style={{ margin: 0, fontSize: "0.95rem", color: "#fff", display: "flex", alignItems: "center", gap: "8px" }}>
+                          <FileSpreadsheet size={16} color="var(--color-warning)" /> Estado de Resultados Específico de la Orden (P&L)
+                        </h4>
+                        <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                          Moneda: Quetzales (GTQ)
+                        </span>
+                      </div>
+
+                      <div style={{ display: "flex", flexDirection: "column", gap: "14px", fontSize: "0.86rem" }}>
+                        {/* 1. Ingresos Operacionales */}
+                        <div style={{ backgroundColor: "rgba(255,255,255,0.02)", borderRadius: "8px", padding: "12px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                          <div style={{ fontWeight: "700", color: "#93c5fd", marginBottom: "8px", textTransform: "uppercase", fontSize: "0.78rem", letterSpacing: "0.5px" }}>
+                            (+) Ingresos Operacionales
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", color: "var(--text-muted)" }}>
+                            <span>Ingresos por Mano de Obra:</span>
+                            <span style={{ color: "#fff", fontWeight: "600" }}>{formatMoney(breakdown.ventasLabor)}</span>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", color: "var(--text-muted)" }}>
+                            <span>Ingresos por Repuestos y Materiales:</span>
+                            <span style={{ color: "#fff", fontWeight: "600" }}>{formatMoney(breakdown.ventasParts)}</span>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", color: "var(--text-muted)" }}>
+                            <span>Ingresos por Insumos, Fluidos y Servicios Externos:</span>
+                            <span style={{ color: "#fff", fontWeight: "600" }}>{formatMoney(breakdown.ventasInsumos + breakdown.ventasServices + breakdown.ventasTools)}</span>
+                          </div>
+                          {breakdown.descuento > 0 && (
+                            <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", color: "var(--color-danger)" }}>
+                              <span>(-) Descuento Comercial Concedido:</span>
+                              <span style={{ fontWeight: "600" }}>- {formatMoney(breakdown.descuento)}</span>
+                            </div>
+                          )}
+                          <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0 2px 0", borderTop: "1px dashed rgba(255,255,255,0.1)", marginTop: "4px", fontWeight: "bold" }}>
+                            <span style={{ color: "#fff" }}>Total Ingresos Netos:</span>
+                            <span style={{ color: "var(--color-primary)", fontSize: "0.95rem" }}>{formatMoney(breakdown.ventasNetas)}</span>
+                          </div>
+                        </div>
+
+                        {/* 2. Costos Operacionales */}
+                        <div style={{ backgroundColor: "rgba(255,255,255,0.02)", borderRadius: "8px", padding: "12px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                          <div style={{ fontWeight: "700", color: "#fca5a5", marginBottom: "8px", textTransform: "uppercase", fontSize: "0.78rem", letterSpacing: "0.5px" }}>
+                            (-) Costos de Venta y Operación
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", color: "var(--text-muted)" }}>
+                            <span>Costo de Mano de Obra (Comisiones de Técnicos):</span>
+                            <span style={{ color: "var(--color-danger)", fontWeight: "600" }}>- {formatMoney(breakdown.costoLabor)}</span>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", color: "var(--text-muted)" }}>
+                            <span>Costo de Compra de Repuestos:</span>
+                            <span style={{ color: "var(--color-danger)", fontWeight: "600" }}>- {formatMoney(breakdown.costoParts)}</span>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", color: "var(--text-muted)" }}>
+                            <span>Costo de Insumos, Fluidos y Terceros:</span>
+                            <span style={{ color: "var(--color-danger)", fontWeight: "600" }}>- {formatMoney(breakdown.costoInsumos + breakdown.costoServices + breakdown.costoTools)}</span>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0 2px 0", borderTop: "1px dashed rgba(255,255,255,0.1)", marginTop: "4px", fontWeight: "bold" }}>
+                            <span style={{ color: "#fff" }}>Total Costos de Operación:</span>
+                            <span style={{ color: "var(--color-danger)", fontSize: "0.95rem" }}>- {formatMoney(breakdown.costosTotales)}</span>
+                          </div>
+                        </div>
+
+                        {/* 3. Utilidad Neta / Margen Final */}
+                        <div style={{
+                          backgroundColor: isProfitPositive ? "rgba(16, 185, 129, 0.12)" : "rgba(239, 68, 68, 0.15)",
+                          borderRadius: "10px",
+                          padding: "14px 18px",
+                          border: `1px solid ${isProfitPositive ? "rgba(16, 185, 129, 0.35)" : "rgba(239, 68, 68, 0.35)"}`,
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          gap: "10px"
+                        }}>
+                          <div>
+                            <div style={{ fontSize: "0.8rem", textTransform: "uppercase", fontWeight: "800", color: isProfitPositive ? "var(--color-success)" : "var(--color-danger)" }}>
+                              (=) Utilidad Bruta Operacional de la Orden
+                            </div>
+                            <div style={{ fontSize: "0.76rem", color: "var(--text-muted)", marginTop: "2px" }}>
+                              Margen de ganancia: {breakdown.margenBrutoPct.toFixed(2)}% sobre ventas netas
+                            </div>
+                          </div>
+                          <div style={{ fontSize: "1.5rem", fontWeight: "900", color: isProfitPositive ? "var(--color-success)" : "var(--color-danger)" }}>
+                            {formatMoney(breakdown.utilidadBruta)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Footer */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 20px", borderTop: "1px solid rgba(255,255,255,0.08)", flexWrap: "wrap", gap: "10px" }}>
+                    <div style={{ display: "flex", gap: "10px" }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => guardarAjustesCostos()}
+                        style={{ display: "flex", alignItems: "center", gap: "6px" }}
+                      >
+                        💾 Guardar Ajustes de Costos
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => imprimirEstadoResultadosOrden(costosModalOrder)}
+                        style={{ display: "flex", alignItems: "center", gap: "6px", backgroundColor: "var(--color-warning)", borderColor: "var(--color-warning)", color: "#000", fontWeight: "bold" }}
+                      >
+                        <Printer size={16} /> Imprimir Estado de Resultados
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => setCostosModalOrder(null)}
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>,
         document.body
