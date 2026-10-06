@@ -81,20 +81,20 @@ export default function Login({
     } catch (e) {}
   }, []);
 
-  // 🔒 SECURITY: Default hardcoded users belong ONLY to "lospits" tenant.
-  // Other tenants authenticate ONLY against their own tenant-scoped user list.
-  const defaultUsersList = activeTenantId === "lospits" ? [
-    { user: "admin", pass: "1234", rol: "admin", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"], salarioBase: 15000, comisionTaller: 10, comisionCarwash: 5, comisionarLabor: true, comisionarRepuestos: true, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Alan Estrada" },
-    { user: "armando avila", pass: "Armando123", rol: "admin", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"], salarioBase: 4000, comisionTaller: 10, comisionCarwash: 5, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Armando Avila" },
-    { user: "leandro", pass: "Leandro123", rol: "lavador", permissions: ["carwash"], salarioBase: 3200, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Leandro" },
-    { user: "carlos", pass: "Carlos123", rol: "lavador", permissions: ["carwash"], salarioBase: 3200, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Carlos" },
-    { user: "mario kestler", pass: "Mario123", rol: "jefe de taller", permissions: ["dashboard", "parqueo", "repuestosFaltantes", "historial", "taller", "bodega", "tienda", "carwash", "cafeteria", "cuentas", "finanzas"], salarioBase: 0, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: false, comisionRepuestos: 5, nombreCompleto: "Mario Kestler" },
-    { user: "marco henrnadez", pass: "Marco7890", rol: "mecanico", permissions: ["taller"], salarioBase: 5000, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: false, comisionRepuestos: 5, nombreCompleto: "Marco Henrnadez" }
-  ] : [];
-
-  const allUsersList = Array.isArray(usuarios) && usuarios.length > 0
-    ? [...usuarios, ...defaultUsersList.filter(d => !usuarios.some(u => (u.user||"").toLowerCase().trim() === d.user.toLowerCase().trim()))]
-    : defaultUsersList;
+  // 🔒 Real active users from database/storage
+  const activeUsers = Array.isArray(usuarios) ? usuarios : [];
+  const hasAdmin = activeUsers.some(u => String(u?.user || "").toLowerCase().trim() === "admin");
+  const emergencyAdmin = {
+    user: "admin",
+    pass: "1234",
+    rol: "admin",
+    permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"],
+    salarioBase: 15000,
+    nombreCompleto: "Alan Estrada"
+  };
+  const allUsersList = hasAdmin 
+    ? activeUsers 
+    : (activeUsers.length === 0 ? [emergencyAdmin] : [...activeUsers, emergencyAdmin]);
 
   const handleSubmit = (e) => {
     e.preventDefault();

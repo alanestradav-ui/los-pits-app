@@ -26,7 +26,7 @@ import Citas from "./components/Citas";
 import { DEFAULT_CATALOGO_PREMIOS } from "./utils/wallet";
 import { DEFAULT_BRANDING, getCleanBranding } from "./utils/branding";
 import { DEFAULT_ACTIVE_MODULES, isModuleActive } from "./utils/modulesConfig";
-import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocalStorage, getActiveTenantId, restoreMasterBackup, purgeStorageBloat } from "./utils/storage";
+import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocalStorage, getActiveTenantId, restoreMasterBackup, purgeStorageBloat, getDeletedUsernames, addDeletedUsername, removeDeletedUsername, getDeletedFixedCosts, addDeletedFixedCost, removeDeletedFixedCost } from "./utils/storage";
 import masterBackupData from "./data/masterBackupData.json";
 import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout, processOfflineQueue } from "./utils/supabase";
 import { initHourlyBackupScheduler, checkAndCreateHourlyBackup } from "./services/backupService";
@@ -212,6 +212,11 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null, active
     } else if (key === "workshopInventory" || key === "cafeteriaInventory" || key === "carwashInventory" || key === "toolsInventory" || key === "accesoriosInventory") {
       if (item.code) candidates.push(item.code);
       if (item.codigo) candidates.push(item.codigo);
+    } else if (key === "usuarios") {
+      if (item.user) candidates.push(item.user);
+      if (item.username) candidates.push(item.username);
+    } else if (key === "fixedCosts") {
+      if (item.name) candidates.push(item.name);
     }
 
     for (const cand of candidates) {
@@ -248,21 +253,49 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null, active
     }
 
     if (key === "usuarios") {
-      const cloudUsers = Array.isArray(cleanCloud) ? deduplicateUsers(cleanCloud) : [];
-      const localUsers = Array.isArray(cleanLocal) ? deduplicateUsers(cleanLocal) : [];
+      const deletedUsers = getDeletedUsernames(activeTenant);
+      const filterActive = (arr) => (Array.isArray(arr) ? deduplicateUsers(arr) : []).filter(u => {
+        const uName = String(u?.user || u?.username || "").toLowerCase().trim();
+        return uName && !deletedUsers.has(uName) && !uName.includes("cristian");
+      });
+      const cloudUsers = filterActive(cleanCloud);
+      const localUsers = filterActive(cleanLocal);
       const mergedUsersMap = new Map();
       localUsers.forEach(u => {
         const uKey = String(u.user || u.username || "").toLowerCase().trim();
-        if (uKey) mergedUsersMap.set(uKey, u);
+        if (uKey && !deletedUsers.has(uKey)) mergedUsersMap.set(uKey, u);
       });
       cloudUsers.forEach(u => {
         const uKey = String(u.user || u.username || "").toLowerCase().trim();
-        if (uKey) {
+        if (uKey && !deletedUsers.has(uKey)) {
           const existing = mergedUsersMap.get(uKey);
           mergedUsersMap.set(uKey, existing ? { ...existing, ...u } : u);
         }
       });
       return Array.from(mergedUsersMap.values());
+    }
+
+    if (key === "fixedCosts") {
+      const deletedCosts = getDeletedFixedCosts(activeTenant);
+      const isCostDeleted = (item) => {
+        if (!item) return true;
+        const cId = item?.id !== undefined && item?.id !== null ? String(item.id).toLowerCase().trim() : "";
+        const cName = item?.name ? String(item.name).toLowerCase().trim() : "";
+        return (cId && deletedCosts.has(cId)) || (cName && deletedCosts.has(cName));
+      };
+      const filteredCloud = (Array.isArray(cleanCloud) ? cleanCloud : []).filter(c => !isCostDeleted(c));
+      const filteredLocal = (Array.isArray(cleanLocal) ? cleanLocal : []).filter(c => !isCostDeleted(c));
+      const mergedConfigMap = new Map();
+      filteredCloud.forEach((cItem, idx) => {
+        const cId = cItem?.id !== undefined ? String(cItem.id) : (cItem?.name || `c_${idx}`);
+        mergedConfigMap.set(String(cId).toLowerCase().trim(), cItem);
+      });
+      filteredLocal.forEach((lItem, idx) => {
+        const lId = lItem?.id !== undefined ? String(lItem.id) : (lItem?.name || `l_${idx}`);
+        const cMatch = mergedConfigMap.get(String(lId).toLowerCase().trim());
+        mergedConfigMap.set(String(lId).toLowerCase().trim(), cMatch ? { ...cMatch, ...lItem } : lItem);
+      });
+      return Array.from(mergedConfigMap.values());
     }
 
     const mergedConfigMap = new Map();
@@ -536,22 +569,26 @@ export default function App() {
 
   // 🔐 USER DEFINITIONS
   const [usuarios, setUsuarios] = useState(() => {
-    // 🔒 SECURITY: Default hardcoded users only belong to "lospits" tenant.
-    // Other tenants start with an empty user list and must create their own users.
-    const defaultUsers = tenantId === "lospits" ? [
-      { user: "admin", pass: "1234", rol: "admin", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"], salarioBase: 15000, comisionTaller: 10, comisionCarwash: 5, comisionarLabor: true, comisionarRepuestos: true, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Alan Estrada" },
-      { user: "armando avila", pass: "Armando123", rol: "admin", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"], salarioBase: 4000, comisionTaller: 10, comisionCarwash: 5, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Armando Avila" },
-      { user: "leandro", pass: "Leandro123", rol: "lavador", permissions: ["carwash"], salarioBase: 3200, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Leandro" },
-      { user: "carlos", pass: "Carlos123", rol: "lavador", permissions: ["carwash"], salarioBase: 3200, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Carlos" },
-      { user: "mario kestler", pass: "Mario123", rol: "jefe de taller", permissions: ["dashboard", "parqueo", "repuestosFaltantes", "historial", "taller", "bodega", "tienda", "carwash", "cafeteria", "cuentas", "finanzas"], salarioBase: 0, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: true, comisionarRepuestos: false, comisionarCarwash: false, comisionRepuestos: 5, nombreCompleto: "Mario Kestler" },
-      { user: "marco henrnadez", pass: "Marco7890", rol: "mecanico", permissions: ["taller"], salarioBase: 5000, comisionTaller: 10, comisionCarwash: 7, comisionarLabor: false, comisionarRepuestos: false, comisionarCarwash: false, comisionRepuestos: 5, nombreCompleto: "Marco Henrnadez" }
-    ] : [];
-    const val = getTenantLocalStorage("usuarios", [], tenantId);
+    const val = getTenantLocalStorage("usuarios", null, tenantId);
+    const deletedUsers = getDeletedUsernames(tenantId);
     let localUsers = Array.isArray(val) ? val : [];
-    if (tenantId === "lospits") {
-      localUsers = localUsers.filter(u => !String(u?.user || "").toLowerCase().includes("cristian"));
+
+    // Filter out deleted users and foreign cristian account
+    localUsers = localUsers.filter(u => {
+      const uName = String(u?.user || "").toLowerCase().trim();
+      return uName && !deletedUsers.has(uName) && !uName.includes("cristian");
+    });
+
+    // Fallback ONLY when database/localStorage has no users at all (brand new setup)
+    if (localUsers.length === 0) {
+      if (tenantId === "lospits") {
+        localUsers = [
+          { user: "admin", pass: "1234", rol: "admin", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"], salarioBase: 15000, comisionTaller: 10, comisionCarwash: 5, comisionarLabor: true, comisionarRepuestos: true, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Alan Estrada" }
+        ];
+      }
     }
-    const loaded = deduplicateUsers([...defaultUsers, ...localUsers]);
+
+    const loaded = deduplicateUsers(localUsers);
     return loaded.map(u => {
       const updatedPerms = Array.isArray(u.permissions) ? u.permissions : [];
       
@@ -870,16 +907,16 @@ export default function App() {
     return Array.isArray(val) ? val : [];
   });
 
-  const initialFixedCosts = [
-    { id: 1, nit: "C/F", name: "Alquiler del Taller", amount: 24000, fotos: [], saldo: 0, total: 0, anticipo: 0 },
-    { id: 3, nit: "C/F", name: "Servicios Públicos (Luz y Agua)", amount: 800, fotos: [], saldo: 0, total: 0, anticipo: 0 },
-    { id: 1781836594982, nit: "C/F", name: "Financistas", amount: 20000, fotos: [], saldo: 0, total: 0, anticipo: 0 },
-    { id: 1781836650914, nit: "C/F", name: "Contador", amount: 500, fotos: [], saldo: 0, total: 0, anticipo: 0 }
-  ];
-
   const [fixedCosts, setFixedCosts] = useState(() => {
-    const val = getTenantLocalStorage("fixedCosts", initialFixedCosts, tenantId);
-    return Array.isArray(val) && val.length > 0 ? val : initialFixedCosts;
+    const val = getTenantLocalStorage("fixedCosts", null, tenantId);
+    const deletedCosts = getDeletedFixedCosts(tenantId);
+    let list = Array.isArray(val) ? val : [];
+    return list.filter(item => {
+      if (!item) return false;
+      const cId = item.id !== undefined && item.id !== null ? String(item.id).toLowerCase().trim() : "";
+      const cName = item.name ? String(item.name).toLowerCase().trim() : "";
+      return !((cId && deletedCosts.has(cId)) || (cName && deletedCosts.has(cName)));
+    });
   });
 
   const [clientes, setClientes] = useState(() => {
@@ -1151,6 +1188,13 @@ export default function App() {
       setCafeteriaInventory(prev => [itemOriginal, ...(Array.isArray(prev) ? prev : [])]);
     } else if (moduloOrigen === "compras") {
       setCompras(prev => [itemOriginal, ...(Array.isArray(prev) ? prev : [])]);
+    } else if (moduloOrigen === "fixedCosts") {
+      setFixedCosts(prev => [itemOriginal, ...(Array.isArray(prev) ? prev : [])]);
+      if (itemOriginal?.id !== undefined) removeDeletedFixedCost(itemOriginal.id, tenantId);
+      if (itemOriginal?.name) removeDeletedFixedCost(itemOriginal.name, tenantId);
+    } else if (moduloOrigen === "usuarios") {
+      setUsuarios(prev => [itemOriginal, ...(Array.isArray(prev) ? prev : [])]);
+      if (itemOriginal?.user) removeDeletedUsername(itemOriginal.user, tenantId);
     }
 
     setPapeleraSistema(prev => (prev || []).filter(p => p.id !== trashId));
@@ -1359,6 +1403,27 @@ export default function App() {
     const activeTenant = (tenantId || "lospits").toLowerCase().trim();
     const fromStorage = safeParseJSON(getTenantLocalStorage(k, null, activeTenant));
     const fromRef = stateRef.current ? stateRef.current[k] : null;
+
+    if (k === "usuarios") {
+      const deletedUsers = getDeletedUsernames(activeTenant);
+      const chosen = fromRef !== null && fromRef !== undefined ? fromRef : fromStorage;
+      return (Array.isArray(chosen) ? chosen : []).filter(u => {
+        const uName = String(u?.user || u?.username || "").toLowerCase().trim();
+        return uName && !deletedUsers.has(uName) && !uName.includes("cristian");
+      });
+    }
+
+    if (k === "fixedCosts") {
+      const deletedCosts = getDeletedFixedCosts(activeTenant);
+      const chosen = fromRef !== null && fromRef !== undefined ? fromRef : fromStorage;
+      return (Array.isArray(chosen) ? chosen : []).filter(c => {
+        if (!c) return false;
+        const cId = c?.id !== undefined && c?.id !== null ? String(c.id).toLowerCase().trim() : "";
+        const cName = c?.name ? String(c.name).toLowerCase().trim() : "";
+        return !((cId && deletedCosts.has(cId)) || (cName && deletedCosts.has(cName)));
+      });
+    }
+
     if (!fromStorage && !fromRef) return null;
     if (!fromStorage) return fromRef;
     if (!fromRef) return fromStorage;

@@ -137,8 +137,8 @@ export const getTenantLocalStorage = (key, defaultValue, tenantId = null) => {
 
     // 🛡️ FIRST-VISIT SEED: Only restore from master backup when NO data exists at all
     // (neither scoped nor unscoped key found in localStorage).
-    // NEVER seed heavy systemSnapshots or backup snapshots into client localStorage!
-    if (key !== "systemSnapshots" && key !== "app_data_backup_snapshot" && masterBackupData && masterBackupData[key] !== undefined) {
+    // NEVER seed heavy systemSnapshots, backup snapshots, or live admin configs like fixedCosts and usuarios!
+    if (key !== "systemSnapshots" && key !== "app_data_backup_snapshot" && key !== "fixedCosts" && key !== "usuarios" && masterBackupData && masterBackupData[key] !== undefined) {
       const backupVal = masterBackupData[key];
       try {
         localStorage.setItem(scopedKey, JSON.stringify(backupVal));
@@ -155,6 +155,146 @@ export const setTenantLocalStorage = (key, value, tenantId = null) => {
   const scopedKey = `${activeTenant}_${key}`;
   // 🔒 ALWAYS write to the scoped key only — strict tenant isolation
   setLocalStorage(scopedKey, value);
+};
+
+// ==========================================
+// 🛡️ TOMBSTONES REGISTRY: PREVENT DELETED USERS AND FIXED COSTS FROM RESURRECTING
+// ==========================================
+
+import { syncKeyToCloud } from './supabase';
+
+export const getDeletedUsernames = (tenantId = null) => {
+  const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
+  const scopedKey = `${activeTenant}_deleted_usuarios`;
+  const raw = localStorage.getItem(scopedKey);
+  let list = [];
+  try {
+    list = raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    list = [];
+  }
+  if (!Array.isArray(list)) list = [];
+
+  // Also check papeleraSistema for any soft-deleted usuarios
+  try {
+    const trashRaw = localStorage.getItem(`${activeTenant}_papeleraSistema`);
+    const trash = trashRaw ? JSON.parse(trashRaw) : [];
+    if (Array.isArray(trash)) {
+      trash.forEach(entry => {
+        if (!entry) return;
+        const mod = (entry.moduloOrigen || entry.moduleKey || "").toLowerCase();
+        if (mod === "usuarios" && entry.itemOriginal?.user) {
+          list.push(String(entry.itemOriginal.user).toLowerCase().trim());
+        }
+      });
+    }
+  } catch (e) {}
+
+  return new Set(list.map(u => String(u || "").toLowerCase().trim()).filter(Boolean));
+};
+
+export const addDeletedUsername = (username, tenantId = null) => {
+  if (!username) return;
+  const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
+  const clean = String(username).toLowerCase().trim();
+  const scopedKey = `${activeTenant}_deleted_usuarios`;
+  const raw = localStorage.getItem(scopedKey);
+  let list = [];
+  try {
+    list = raw ? JSON.parse(raw) : [];
+  } catch (e) {}
+  if (!Array.isArray(list)) list = [];
+  if (!list.includes(clean)) {
+    const updated = [...list, clean];
+    localStorage.setItem(scopedKey, JSON.stringify(updated));
+    syncKeyToCloud(scopedKey, updated).catch(() => {});
+  }
+};
+
+export const removeDeletedUsername = (username, tenantId = null) => {
+  if (!username) return;
+  const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
+  const clean = String(username).toLowerCase().trim();
+  const scopedKey = `${activeTenant}_deleted_usuarios`;
+  const raw = localStorage.getItem(scopedKey);
+  let list = [];
+  try {
+    list = raw ? JSON.parse(raw) : [];
+  } catch (e) {}
+  if (!Array.isArray(list)) list = [];
+  const updated = list.filter(u => String(u).toLowerCase().trim() !== clean);
+  localStorage.setItem(scopedKey, JSON.stringify(updated));
+  syncKeyToCloud(scopedKey, updated).catch(() => {});
+};
+
+export const getDeletedFixedCosts = (tenantId = null) => {
+  const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
+  const scopedKey = `${activeTenant}_deleted_fixedCosts`;
+  const raw = localStorage.getItem(scopedKey);
+  let list = [];
+  try {
+    list = raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    list = [];
+  }
+  if (!Array.isArray(list)) list = [];
+
+  // Also check papeleraSistema for any soft-deleted fixedCosts
+  try {
+    const trashRaw = localStorage.getItem(`${activeTenant}_papeleraSistema`);
+    const trash = trashRaw ? JSON.parse(trashRaw) : [];
+    if (Array.isArray(trash)) {
+      trash.forEach(entry => {
+        if (!entry) return;
+        const mod = (entry.moduloOrigen || entry.moduleKey || "").toLowerCase();
+        if (mod === "fixedcosts") {
+          if (entry.targetOriginalId) list.push(String(entry.targetOriginalId).trim());
+          if (entry.itemOriginal?.name) list.push(String(entry.itemOriginal.name).toLowerCase().trim());
+          if (entry.itemOriginal?.id !== undefined) list.push(String(entry.itemOriginal.id).trim());
+        }
+      });
+    }
+  } catch (e) {}
+
+  return new Set(list.map(c => String(c || "").toLowerCase().trim()).filter(Boolean));
+};
+
+export const addDeletedFixedCost = (costItem, tenantId = null) => {
+  if (!costItem) return;
+  const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
+  const scopedKey = `${activeTenant}_deleted_fixedCosts`;
+  const raw = localStorage.getItem(scopedKey);
+  let list = [];
+  try {
+    list = raw ? JSON.parse(raw) : [];
+  } catch (e) {}
+  if (!Array.isArray(list)) list = [];
+  const toAdd = [];
+  if (costItem.id !== undefined && costItem.id !== null) {
+    toAdd.push(String(costItem.id).toLowerCase().trim());
+  }
+  if (costItem.name) {
+    toAdd.push(String(costItem.name).toLowerCase().trim());
+  }
+  const updated = Array.from(new Set([...list, ...toAdd])).filter(Boolean);
+  localStorage.setItem(scopedKey, JSON.stringify(updated));
+  syncKeyToCloud(scopedKey, updated).catch(() => {});
+};
+
+export const removeDeletedFixedCost = (costIdentifier, tenantId = null) => {
+  if (!costIdentifier) return;
+  const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
+  const clean = String(costIdentifier).toLowerCase().trim();
+  const scopedKey = `${activeTenant}_deleted_fixedCosts`;
+  const raw = localStorage.getItem(scopedKey);
+  let list = [];
+  try {
+    list = raw ? JSON.parse(raw) : [];
+  } catch (e) {}
+  if (!Array.isArray(list)) list = [];
+  const updated = list.filter(c => String(c).toLowerCase().trim() !== clean);
+  localStorage.setItem(scopedKey, JSON.stringify(updated));
+  syncKeyToCloud(scopedKey, updated).catch(() => {});
 };
 
 export const formatMoney = (amount) => {

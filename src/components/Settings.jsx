@@ -53,6 +53,7 @@ import { getSupabaseClient, resetSupabaseClient, syncKeyToCloud, testSupabaseCon
 import PapeleraModal from "./PapeleraModal";
 import { createBackup, exportBackupToFile, restoreFromBackup, getBackupsList } from "../services/backupService";
 import { getTrashItems, softDelete as trashSoftDelete } from "../services/trashService";
+import { addDeletedUsername, removeDeletedUsername, addDeletedFixedCost, removeDeletedFixedCost, setTenantLocalStorage } from "../utils/storage";
 
 export default function SettingsComponent({
   comisionMecanico,
@@ -652,6 +653,7 @@ export default function SettingsComponent({
       alert("Costo fijo actualizado.");
     } else {
       // Add
+      removeDeletedFixedCost(fcName.trim(), tenantId);
       const nuevo = {
         id: Date.now(),
         name: fcName.trim(),
@@ -678,8 +680,16 @@ export default function SettingsComponent({
   };
 
   const handleRemoveFixedCost = (id) => {
-    if (window.confirm("¿Seguro que deseas eliminar este costo fijo?")) {
-      setFixedCosts(fixedCosts.filter(item => item.id !== id));
+    const targetCost = (fixedCosts || []).find(item => item.id === id);
+    if (!targetCost) return;
+    if (window.confirm(`¿Seguro que deseas eliminar el costo fijo "${targetCost.name}"?`)) {
+      addDeletedFixedCost(targetCost, tenantId);
+      if (softDelete) {
+        softDelete("fixedCosts", targetCost, usuarioActual?.user || "admin");
+      }
+      const updated = (fixedCosts || []).filter(item => item.id !== id);
+      setFixedCosts(updated);
+      setTenantLocalStorage("fixedCosts", updated, tenantId);
       if (editingFixedCostId === id) {
         cancelarEdicionFixedCost();
       }
@@ -743,6 +753,7 @@ export default function SettingsComponent({
       fechaNacimiento: uFechaNacimiento
     };
 
+    removeDeletedUsername(uUser.trim(), tenantId);
     setUsuarios([...usuarios, nuevoUsuario]);
     setUUser("");
     setUPass("");
@@ -867,18 +878,25 @@ export default function SettingsComponent({
       return;
     }
 
+    const targetUserObj = (usuarios || []).find(u => String(u.user || "").toLowerCase().trim() === cleanTarget);
+
     const isCurrent = cleanTarget === String(usuarioActual?.user || "").toLowerCase().trim();
     const confirmMsg = isCurrent 
       ? `⚠️ ATENCIÓN: Estás a punto de eliminar al usuario "${username}" con el que tienes la sesión iniciada actualmente.\n\nAl eliminarlo, se cerrará tu sesión de inmediato.\n\n¿Deseas continuar y eliminar este usuario?`
       : `¿Seguro que deseas eliminar al usuario "${username}"?`;
 
     if (window.confirm(confirmMsg)) {
+      addDeletedUsername(cleanTarget, tenantId);
+      if (softDelete && targetUserObj) {
+        softDelete("usuarios", targetUserObj, usuarioActual?.user || "admin");
+      }
       const updated = usuarios.filter(u => String(u.user || "").toLowerCase().trim() !== cleanTarget);
       setUsuarios(updated);
+      setTenantLocalStorage("usuarios", updated, tenantId);
       if (isCurrent) {
         try {
           localStorage.removeItem("usuarioActual");
-          localStorage.removeItem("lospits_usuarioActual");
+          localStorage.removeItem(`${tenantId}_usuarioActual`);
         } catch (e) {}
         window.location.reload();
       }
@@ -2950,8 +2968,24 @@ export default function SettingsComponent({
                             <td style={{ ...styles.td, color: "var(--color-secondary)", fontWeight: "bold" }}>
                               {formatMoney(totalSalaries)}
                             </td>
-                            <td style={{ ...styles.td, textAlign: "right", fontSize: "0.8rem", color: "var(--text-muted)", fontStyle: "italic" }}>
-                              Automático
+                            <td style={{ ...styles.td, textAlign: "right", fontSize: "0.8rem" }}>
+                              <button
+                                type="button"
+                                onClick={() => setActiveTab("usuarios")}
+                                className="btn btn-ghost"
+                                style={{
+                                  padding: "4px 10px",
+                                  fontSize: "0.78rem",
+                                  color: "var(--color-secondary)",
+                                  border: "1px solid rgba(168, 85, 247, 0.3)",
+                                  borderRadius: "6px",
+                                  cursor: "pointer",
+                                  fontWeight: "bold"
+                                }}
+                                title="Ir a la pestaña de Usuarios para ver, editar salarios o eliminar colaboradores"
+                              >
+                                👥 Gestionar Colaboradores
+                              </button>
                             </td>
                           </tr>
                         )}
