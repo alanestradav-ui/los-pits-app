@@ -13,6 +13,7 @@ import {
   Building
 } from "lucide-react";
 import { formatMoney, formatDate } from "../utils/storage";
+import { getExternalJobs } from "../utils/workshopCalc";
 
 export default function Cuentas({
   cuentasPorCobrar = [],
@@ -21,9 +22,28 @@ export default function Cuentas({
   setCuentasPorPagar,
   usuarioActual,
   clientes = [],
-  setClientes
+  setClientes,
+  softDelete,
+  ordenes = [],
+  setOrdenes,
+  setCompras
 }) {
-  const [activeSubTab, setActiveSubTab] = useState("cobrar"); // 'cobrar' or 'pagar'
+  const [activeSubTab, setActiveSubTab] = useState("cobrar"); // 'cobrar', 'pagar' or 'externos'
+  const isAdmin = String(usuarioActual?.rol || usuarioActual?.role || "").toLowerCase().includes("admin");
+
+  // 🗑️ Eliminación (solo admin) con tratamiento contable
+  const [deleteTarget, setDeleteTarget] = useState(null); // { tipo: 'cobrar'|'pagar', cuenta }
+  const [deleteTratamiento, setDeleteTratamiento] = useState("sin_efecto");
+
+  // 🛠️ Pagos / anticipos a proveedores de trabajos externos
+  const [extPayTarget, setExtPayTarget] = useState(null); // job from getExternalJobs
+  const [extPayMonto, setExtPayMonto] = useState("");
+  const [extPayMetodo, setExtPayMetodo] = useState("efectivo");
+  const [extPayTipo, setExtPayTipo] = useState("anticipo");
+  const [extPayNota, setExtPayNota] = useState("");
+  const [extSoloSaldo, setExtSoloSaldo] = useState(true);
+  const [extSearch, setExtSearch] = useState("");
+  const [extHistoryJob, setExtHistoryJob] = useState(null);
   
   // Modal for registering payments/abonos
   const [selectedCuenta, setSelectedCuenta] = useState(null); // account object
@@ -190,6 +210,132 @@ export default function Cuentas({
 
   const activePagarCount = cuentasPorPagar.filter(p => p.estado === "Pendiente").length;
 
+  // --- ELIMINAR CUENTA (solo administrador) ---
+  const openDeleteModal = (tipo, cuenta) => {
+    if (!isAdmin) {
+      alert("Solo un administrador puede eliminar cuentas.");
+      return;
+    }
+    setDeleteTarget({ tipo, cuenta });
+    setDeleteTratamiento("sin_efecto");
+  };
+
+  const handleConfirmDelete = () => {
+    if (!deleteTarget || !isAdmin) return;
+    const { tipo, cuenta } = deleteTarget;
+    const saldo = parseFloat(cuenta.saldo) || 0;
+    const nombre = tipo === "cobrar" ? cuenta.cliente : cuenta.proveedor;
+
+    // Registrar efecto contable (si aplica) como movimiento en Compras/Gastos
+    if (saldo > 0 && deleteTratamiento !== "sin_efecto" && typeof setCompras === "function") {
+      const hoy = new Date();
+      const fechaLocal = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-${String(hoy.getDate()).padStart(2, "0")}`;
+      const esPerdida = deleteTratamiento === "perdida";
+      const ajuste = {
+        id: Date.now(),
+        fecha: fechaLocal,
+        fotos: [],
+        total: esPerdida ? saldo : -saldo,
+        modulo: "general",
+        concepto: esPerdida
+          ? `Cuenta incobrable eliminada: ${nombre} — ${cuenta.concepto || ""}`
+          : `Deuda condonada / ganancia: ${nombre} — ${cuenta.concepto || ""}`,
+        formaPago: "ajuste",
+        proveedor: nombre || "",
+        tipoGasto: "gasto",
+        categoria: esPerdida ? "Cuentas incobrables" : "Ganancia por condonación de deuda",
+        ajusteContable: true,
+        registradoPor: usuarioActual?.user || "admin",
+        cargarInventario: false,
+        detallesInventario: null
+      };
+      setCompras(prev => [ajuste, ...(Array.isArray(prev) ? prev : [])]);
+    }
+
+    const modulo = tipo === "cobrar" ? "cuentasPorCobrar" : "cuentasPorPagar";
+    if (typeof softDelete === "function") {
+      softDelete(modulo, { ...cuenta, tratamientoEliminacion: deleteTratamiento }, usuarioActual?.user);
+    }
+    if (tipo === "cobrar") {
+      setCuentasPorCobrar(prev => (Array.isArray(prev) ? prev : []).filter(c => String(c.id) !== String(cuenta.id)));
+    } else {
+      setCuentasPorPagar(prev => (Array.isArray(prev) ? prev : []).filter(c => String(c.id) !== String(cuenta.id)));
+    }
+    setDeleteTarget(null);
+  };
+
+  // --- TRABAJOS EXTERNOS: proveedores ---
+  const externalJobs = getExternalJobs(ordenes).filter(j =>
+    j.costo > 0 || j.pagado > 0 || String(j.service?.proveedor || "").trim()
+  );
+  const extQuery = extSearch.toLowerCase().trim();
+  const visibleExternalJobs = externalJobs.filter(j => {
+    if (extSoloSaldo && !(j.saldo > 0.009 || (j.costo === 0 && j.pagado === 0))) return false;
+    if (!extQuery) return true;
+    return [j.proveedor, j.service?.desc, j.order?.placa, j.order?.cliente].some(v => String(v || "").toLowerCase().includes(extQuery));
+  });
+  const extGroups = visibleExternalJobs.reduce((acc, j) => {
+    (acc[j.proveedor] = acc[j.proveedor] || []).push(j);
+    return acc;
+  }, {});
+  const extTotalCosto = externalJobs.reduce((s, j) => s + j.costo, 0);
+  const extTotalPagado = externalJobs.reduce((s, j) => s + j.pagado, 0);
+  const extTotalSaldo = externalJobs.reduce((s, j) => s + Math.max(0, j.saldo), 0);
+
+  const openExtPay = (job) => {
+    setExtPayTarget(job);
+    setExtPayMonto("");
+    setExtPayMetodo("efectivo");
+    setExtPayTipo(job.costo > 0 && job.pagado === 0 ? "anticipo" : (job.saldo > 0 ? "pago" : "anticipo"));
+    setExtPayNota("");
+  };
+
+  const handleExtPaySubmit = (e) => {
+    e.preventDefault();
+    if (!extPayTarget || typeof setOrdenes !== "function") return;
+    const monto = parseFloat(extPayMonto);
+    if (isNaN(monto) || monto <= 0) {
+      alert("Ingresa un monto válido mayor a 0.");
+      return;
+    }
+    if (extPayTarget.costo > 0 && monto > extPayTarget.saldo + 0.009) {
+      if (!window.confirm(`El monto (${formatMoney(monto)}) supera el saldo pendiente con el proveedor (${formatMoney(Math.max(0, extPayTarget.saldo))}). ¿Registrarlo de todas formas?`)) return;
+    }
+    const pago = {
+      id: `pext_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      tipo: extPayTipo,
+      monto,
+      metodo: extPayMetodo,
+      nota: extPayNota.trim(),
+      fecha: new Date().toISOString(),
+      registradoPor: usuarioActual?.user || ""
+    };
+    const orderId = extPayTarget.order.id;
+    const idx = extPayTarget.idx;
+    setOrdenes(prev => (Array.isArray(prev) ? prev : []).map(o => {
+      if (String(o.id) !== String(orderId) || !o.presupuesto) return o;
+      const services = [...(o.presupuesto.services || [])];
+      if (!services[idx]) return o;
+      services[idx] = { ...services[idx], pagos: [...(Array.isArray(services[idx].pagos) ? services[idx].pagos : []), pago] };
+      return { ...o, presupuesto: { ...o.presupuesto, services }, updatedAt: new Date().toISOString() };
+    }));
+    setExtPayTarget(null);
+    alert(`${extPayTipo === "anticipo" ? "Anticipo" : "Pago"} a ${extPayTarget.proveedor} registrado.`);
+  };
+
+  const removeExtPayment = (job, pagoId) => {
+    if (!isAdmin) return;
+    if (!window.confirm("¿Eliminar este pago/anticipo al proveedor?")) return;
+    setOrdenes(prev => (Array.isArray(prev) ? prev : []).map(o => {
+      if (String(o.id) !== String(job.order.id) || !o.presupuesto) return o;
+      const services = [...(o.presupuesto.services || [])];
+      if (!services[job.idx]) return o;
+      services[job.idx] = { ...services[job.idx], pagos: (services[job.idx].pagos || []).filter(p => p.id !== pagoId) };
+      return { ...o, presupuesto: { ...o.presupuesto, services }, updatedAt: new Date().toISOString() };
+    }));
+    setExtHistoryJob(null);
+  };
+
   return (
     <div style={styles.container} className="animate-fade-in">
       {/* Header */}
@@ -213,6 +359,13 @@ export default function Cuentas({
           style={{ ...styles.subTabBtn, ...(activeSubTab === "pagar" ? styles.subTabActive : {}) }}
         >
           <ArrowUpRight size={16} color="var(--color-danger)" /> Cuentas por Pagar (Proveedores)
+        </button>
+        <button 
+          onClick={() => { setActiveSubTab("externos"); setSelectedCuenta(null); }}
+          style={{ ...styles.subTabBtn, ...(activeSubTab === "externos" ? styles.subTabActive : {}) }}
+        >
+          <Building size={16} color="#f59e0b" /> Proveedores Trabajos Externos
+          {extTotalSaldo > 0 && <span className="notif-pin" style={{ marginLeft: "4px" }}>{Object.keys(externalJobs.filter(j => j.saldo > 0.009).reduce((a, j) => { a[j.proveedor] = 1; return a; }, {})).length}</span>}
         </button>
       </div>
 
@@ -433,6 +586,16 @@ export default function Cuentas({
                                   Historial ({c.pagos.length})
                                 </button>
                               )}
+                              {isAdmin && (
+                                <button
+                                  onClick={() => openDeleteModal("cobrar", c)}
+                                  className="btn btn-ghost"
+                                  title="Eliminar cuenta (solo administrador)"
+                                  style={{ padding: "6px 10px", fontSize: "0.78rem", color: "#f87171", borderColor: "rgba(239,68,68,0.35)" }}
+                                >
+                                  🗑️
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -607,6 +770,16 @@ export default function Cuentas({
                                   Historial ({p.pagos.length})
                                 </button>
                               )}
+                              {isAdmin && (
+                                <button
+                                  onClick={() => openDeleteModal("pagar", p)}
+                                  className="btn btn-ghost"
+                                  title="Eliminar cuenta (solo administrador)"
+                                  style={{ padding: "6px 10px", fontSize: "0.78rem", color: "#f87171", borderColor: "rgba(239,68,68,0.35)" }}
+                                >
+                                  🗑️
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -615,6 +788,247 @@ export default function Cuentas({
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🛠️ PROVEEDORES DE TRABAJOS EXTERNOS TAB */}
+      {activeSubTab === "externos" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+          <div style={styles.metricsRow}>
+            <div className="glass-panel" style={styles.metricCard}>
+              <div style={{ ...styles.iconBg, backgroundColor: "rgba(245,158,11,0.15)" }}>
+                <Building size={20} color="#f59e0b" />
+              </div>
+              <div style={styles.metricInfo}>
+                <span style={styles.metricLabel}>Costo Trabajos Externos</span>
+                <span style={{ ...styles.metricValue, fontFamily: "var(--font-display)" }}>{formatMoney(extTotalCosto)}</span>
+              </div>
+            </div>
+            <div className="glass-panel" style={styles.metricCard}>
+              <div style={{ ...styles.iconBg, backgroundColor: "var(--color-secondary-glow)" }}>
+                <CheckCircle2 size={20} color="var(--color-secondary)" />
+              </div>
+              <div style={styles.metricInfo}>
+                <span style={styles.metricLabel}>Pagado / Anticipado</span>
+                <span style={{ ...styles.metricValue, color: "var(--color-secondary)", fontFamily: "var(--font-display)" }}>{formatMoney(extTotalPagado)}</span>
+              </div>
+            </div>
+            <div className="glass-panel" style={styles.metricCard}>
+              <div style={{ ...styles.iconBg, backgroundColor: "var(--color-danger-glow)" }}>
+                <Coins size={20} color="var(--color-danger)" />
+              </div>
+              <div style={styles.metricInfo}>
+                <span style={styles.metricLabel}>Saldo Pendiente a Proveedores</span>
+                <span style={{ ...styles.metricValue, color: "var(--color-danger)", fontFamily: "var(--font-display)" }}>{formatMoney(extTotalSaldo)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="glass-panel" style={{ padding: "20px", display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+            <input
+              className="input-field"
+              placeholder="Buscar proveedor, trabajo, placa o cliente..."
+              value={extSearch}
+              onChange={(e) => setExtSearch(e.target.value)}
+              style={{ flex: 1, minWidth: "220px" }}
+            />
+            <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.85rem", color: "var(--text-muted)", cursor: "pointer" }}>
+              <input type="checkbox" checked={extSoloSaldo} onChange={(e) => setExtSoloSaldo(e.target.checked)} />
+              Solo con saldo pendiente
+            </label>
+            <span style={{ fontSize: "0.78rem", color: "var(--text-muted)", width: "100%" }}>
+              ℹ️ El costo del trabajo externo ya se refleja como costo de la orden en Finanzas; los anticipos y pagos aquí registrados controlan lo que se le debe a cada proveedor.
+            </span>
+          </div>
+
+          {Object.keys(extGroups).length === 0 ? (
+            <div className="glass-panel" style={{ padding: "40px", textAlign: "center", color: "var(--text-muted)" }}>
+              No hay trabajos externos {extSoloSaldo ? "con saldo pendiente" : "registrados"}. Asigna el proveedor y costo en el presupuesto de la orden.
+            </div>
+          ) : (
+            Object.entries(extGroups).sort((a, b) => a[0].localeCompare(b[0])).map(([prov, jobs]) => {
+              const gCosto = jobs.reduce((s, j) => s + j.costo, 0);
+              const gPagado = jobs.reduce((s, j) => s + j.pagado, 0);
+              const gSaldo = jobs.reduce((s, j) => s + Math.max(0, j.saldo), 0);
+              return (
+                <div key={prov} className="glass-panel" style={{ padding: "20px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "12px" }}>
+                    <h3 style={{ fontSize: "1.1rem", fontWeight: "800", color: "#fff", display: "flex", alignItems: "center", gap: "8px", margin: 0 }}>
+                      <Building size={18} color="#f59e0b" /> {prov}
+                    </h3>
+                    <div style={{ display: "flex", gap: "14px", fontSize: "0.85rem", flexWrap: "wrap" }}>
+                      <span style={{ color: "var(--text-muted)" }}>Costo: <strong style={{ color: "#fff" }}>{formatMoney(gCosto)}</strong></span>
+                      <span style={{ color: "var(--text-muted)" }}>Pagado: <strong style={{ color: "var(--color-secondary)" }}>{formatMoney(gPagado)}</strong></span>
+                      <span style={{ color: "var(--text-muted)" }}>Saldo: <strong style={{ color: gSaldo > 0 ? "var(--color-danger)" : "var(--color-success)" }}>{formatMoney(gSaldo)}</strong></span>
+                    </div>
+                  </div>
+                  <div style={styles.tableResponsive}>
+                    <table style={styles.table}>
+                      <thead>
+                        <tr>
+                          <th style={styles.th}>Orden</th>
+                          <th style={styles.th}>Trabajo</th>
+                          <th style={styles.th}>Costo</th>
+                          <th style={styles.th}>Pagado</th>
+                          <th style={styles.th}>Saldo</th>
+                          <th style={{ ...styles.th, textAlign: "right" }}>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {jobs.map((j) => (
+                          <tr key={`${j.order.id}_${j.idx}`} style={styles.tr}>
+                            <td style={styles.td}>
+                              <div style={{ fontWeight: "700", color: "#fff" }}>{j.order.placa || "S/P"}</div>
+                              <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{j.order.cliente} · {formatDate(j.order.fecha)}</div>
+                              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>{j.order.estado}</div>
+                            </td>
+                            <td style={styles.td}>{j.service.desc}</td>
+                            <td style={styles.td}>{j.costo > 0 ? formatMoney(j.costo) : <span style={{ color: "#f87171", fontSize: "0.78rem", fontWeight: 700 }}>Sin costo registrado</span>}</td>
+                            <td style={{ ...styles.td, color: "var(--color-secondary)", fontWeight: 600 }}>{formatMoney(j.pagado)}</td>
+                            <td style={{ ...styles.td, fontWeight: 700, color: j.saldo > 0 ? "var(--color-danger)" : (j.saldo < 0 ? "#fbbf24" : "var(--color-success)") }}>
+                              {j.saldo < 0 ? `A favor ${formatMoney(Math.abs(j.saldo))}` : formatMoney(j.saldo)}
+                            </td>
+                            <td style={styles.td}>
+                              <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
+                                <button onClick={() => openExtPay(j)} className="btn btn-primary" style={{ padding: "6px 12px", fontSize: "0.78rem" }}>
+                                  Anticipo / Pago
+                                </button>
+                                {j.pagos.length > 0 && (
+                                  <button onClick={() => setExtHistoryJob(j)} className="btn btn-ghost" style={{ padding: "6px 12px", fontSize: "0.78rem" }}>
+                                    Historial ({j.pagos.length})
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* 💸 MODAL: Registrar anticipo/pago a proveedor externo */}
+      {extPayTarget && (
+        <div style={styles.modalOverlay}>
+          <div className="glass-panel" style={styles.modalContent}>
+            <div style={styles.modalHeader}>
+              <h2 style={{ fontSize: "1.3rem", fontWeight: "800", color: "#fff", display: "flex", alignItems: "center", gap: "8px" }}>
+                <Building size={22} color="#f59e0b" /> Pago a Proveedor Externo
+              </h2>
+              <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "3px" }}>
+                {extPayTarget.proveedor} · {extPayTarget.service.desc} · Placa {extPayTarget.order.placa}
+                <br />
+                Costo: {formatMoney(extPayTarget.costo)} | Pagado: {formatMoney(extPayTarget.pagado)} | Saldo: {formatMoney(Math.max(0, extPayTarget.saldo))}
+              </p>
+            </div>
+            <form onSubmit={handleExtPaySubmit} style={styles.form}>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Tipo *</label>
+                <select className="select-field" value={extPayTipo} onChange={(e) => setExtPayTipo(e.target.value)}>
+                  <option value="anticipo">Anticipo</option>
+                  <option value="pago">Pago / Abono</option>
+                </select>
+              </div>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Monto (Q) *</label>
+                <input type="number" required min="0.01" step="any" className="input-field" value={extPayMonto} onChange={(e) => setExtPayMonto(e.target.value)} placeholder="Q 0.00" />
+              </div>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Método de Pago *</label>
+                <select className="select-field" value={extPayMetodo} onChange={(e) => setExtPayMetodo(e.target.value)}>
+                  <option value="efectivo">Efectivo</option>
+                  <option value="transferencia">Transferencia Bancaria</option>
+                  <option value="cheque">Cheque</option>
+                  <option value="tarjeta">Tarjeta</option>
+                </select>
+              </div>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Nota (Opcional)</label>
+                <input className="input-field" value={extPayNota} onChange={(e) => setExtPayNota(e.target.value)} placeholder="Ej. Recibo #123" />
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px" }}>
+                <button type="button" onClick={() => setExtPayTarget(null)} className="btn btn-ghost">Cancelar</button>
+                <button type="submit" className="btn btn-primary">Registrar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 📜 MODAL: Historial de pagos a proveedor externo */}
+      {extHistoryJob && (
+        <div style={styles.modalOverlay}>
+          <div className="glass-panel" style={styles.modalContent}>
+            <div style={styles.modalHeader}>
+              <h2 style={{ fontSize: "1.2rem", fontWeight: "800", color: "#fff" }}>Historial · {extHistoryJob.proveedor}</h2>
+              <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginTop: "3px" }}>{extHistoryJob.service.desc} · Placa {extHistoryJob.order.placa}</p>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "10px" }}>
+              {extHistoryJob.pagos.map((p) => (
+                <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", borderRadius: "8px", background: "rgba(255,255,255,0.04)" }}>
+                  <div>
+                    <div style={{ color: "#fff", fontWeight: 700 }}>{p.tipo === "anticipo" ? "Anticipo" : "Pago"} · {formatMoney(p.monto)}</div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{formatDate(p.fecha)} · {String(p.metodo || "").toUpperCase()} {p.nota ? `· ${p.nota}` : ""} {p.registradoPor ? `· por ${p.registradoPor}` : ""}</div>
+                  </div>
+                  {isAdmin && (
+                    <button onClick={() => removeExtPayment(extHistoryJob, p.id)} className="btn btn-ghost" style={{ padding: "4px 8px", color: "#f87171" }} title="Eliminar">🗑️</button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "14px" }}>
+              <button onClick={() => setExtHistoryJob(null)} className="btn btn-ghost">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🗑️ MODAL: Eliminar cuenta con tratamiento contable (solo admin) */}
+      {deleteTarget && (
+        <div style={styles.modalOverlay}>
+          <div className="glass-panel" style={styles.modalContent}>
+            <div style={styles.modalHeader}>
+              <h2 style={{ fontSize: "1.3rem", fontWeight: "800", color: "#fff" }}>🗑️ Eliminar Cuenta</h2>
+              <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "3px" }}>
+                {deleteTarget.tipo === "cobrar" ? `Cliente: ${deleteTarget.cuenta.cliente}` : `Proveedor: ${deleteTarget.cuenta.proveedor}`}
+                {" · "}Total {formatMoney(deleteTarget.cuenta.total)} · Saldo {formatMoney(deleteTarget.cuenta.saldo)}
+              </p>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "10px" }}>
+              <span style={{ fontSize: "0.88rem", color: "#fff", fontWeight: 700 }}>¿Cómo se debe tratar contablemente el saldo pendiente?</span>
+              {[
+                { val: "sin_efecto", label: "Sin efecto contable", desc: "Error de registro / cuenta duplicada. No afecta resultados." },
+                deleteTarget.tipo === "cobrar"
+                  ? { val: "perdida", label: "Registrar como pérdida", desc: `Cuenta incobrable: se registra un gasto de ${formatMoney(deleteTarget.cuenta.saldo)}.` }
+                  : { val: "ganancia", label: "Registrar como ganancia", desc: `Deuda condonada: se registra un ingreso (gasto negativo) de ${formatMoney(deleteTarget.cuenta.saldo)}.` }
+              ].map(opt => (
+                <label key={opt.val} style={{ display: "flex", gap: "10px", alignItems: "flex-start", padding: "10px 12px", borderRadius: "10px", cursor: "pointer", border: `1px solid ${deleteTratamiento === opt.val ? "var(--color-primary)" : "rgba(255,255,255,0.1)"}`, background: deleteTratamiento === opt.val ? "rgba(59,130,246,0.1)" : "transparent", opacity: (opt.val !== "sin_efecto" && !(parseFloat(deleteTarget.cuenta.saldo) > 0)) ? 0.5 : 1 }}>
+                  <input
+                    type="radio"
+                    name="tratamiento"
+                    disabled={opt.val !== "sin_efecto" && !(parseFloat(deleteTarget.cuenta.saldo) > 0)}
+                    checked={deleteTratamiento === opt.val}
+                    onChange={() => setDeleteTratamiento(opt.val)}
+                    style={{ marginTop: "3px" }}
+                  />
+                  <div>
+                    <div style={{ color: "#fff", fontWeight: 700, fontSize: "0.88rem" }}>{opt.label}</div>
+                    <div style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>{opt.desc}</div>
+                  </div>
+                </label>
+              ))}
+              <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>La cuenta se moverá a la Papelera (recuperable por 30 días).</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "14px" }}>
+              <button type="button" onClick={() => setDeleteTarget(null)} className="btn btn-ghost">Cancelar</button>
+              <button type="button" onClick={handleConfirmDelete} className="btn btn-danger">Confirmar eliminación</button>
             </div>
           </div>
         </div>

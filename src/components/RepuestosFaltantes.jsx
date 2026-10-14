@@ -9,6 +9,7 @@ import {
   FileText
 } from "lucide-react";
 import { formatMoney } from "../utils/storage";
+import { calcOrderCommission } from "../utils/workshopCalc";
 
 export default function RepuestosFaltantes({ 
   ordenes = [], 
@@ -36,11 +37,17 @@ export default function RepuestosFaltantes({
     "Listo para entrega"
   ];
 
-  // 1. Filter active authorized orders (budget authorized and not delivered)
-  const activeAuthorizedOrders = (ordenes || []).filter(o => 
-    o && (o.diagnosticoAutorizado || AUTHORIZED_STATUSES.includes(o.estado)) && 
-    o.estado !== "Entregado"
-  );
+  const isOrderAuthorized = (o) => !!(o && (o.diagnosticoAutorizado || AUTHORIZED_STATUSES.includes(o.estado)));
+
+  // 1. Filter active orders with budget: first authorized ones (they reserve stock first),
+  // then budgets still pending authorization (flagged in the UI).
+  const activeAuthorizedOrders = [
+    ...(ordenes || []).filter(o => o && isOrderAuthorized(o) && o.estado !== "Entregado"),
+    ...(ordenes || []).filter(o =>
+      o && !isOrderAuthorized(o) && o.estado !== "Entregado" && o.presupuesto &&
+      (((o.presupuesto.parts || []).length > 0) || ((o.presupuesto.insumos || []).length > 0))
+    )
+  ];
 
   // Helper to validate real unique codes (excluding generic placeholders)
   const isValidCode = (codeStr) => {
@@ -94,6 +101,7 @@ export default function RepuestosFaltantes({
       o.presupuesto.parts.forEach(part => {
         if (!part) return;
         
+        if (part.comprado) return;
         // If the part already has a purchasePrice > 0 in the budget, it means
         // it was already purchased and assigned to this order — skip it from missing list
         const partPurchasePrice = part.purchasePrice !== undefined && part.purchasePrice !== null && part.purchasePrice !== "" 
@@ -159,10 +167,12 @@ export default function RepuestosFaltantes({
       o.presupuesto.insumos.forEach(insumo => {
         if (!insumo) return;
         
+        // Insumos always carry an estimated cost when added to the budget, so the cost
+        // can't be used as "already purchased". Only the explicit `comprado` flag hides them.
+        if (insumo.comprado) return;
         const insumoPurchasePrice = insumo.purchasePrice !== undefined && insumo.purchasePrice !== null && insumo.purchasePrice !== "" 
           ? Number(insumo.purchasePrice) 
           : 0;
-        if (insumoPurchasePrice > 0) return;
 
         const insumoDescStr = String(insumo.desc || "");
 
@@ -181,7 +191,7 @@ export default function RepuestosFaltantes({
         
         if (requerido > stockDisponible) {
           const faltanteQty = requerido - stockDisponible;
-          const purchasePriceEst = (invItem ? Number(invItem.purchasePrice || 0) : 0);
+          const purchasePriceEst = insumoPurchasePrice > 0 ? insumoPurchasePrice : (invItem ? Number(invItem.purchasePrice || 0) : 0);
           const salePriceEst = (insumo.salePrice !== undefined && insumo.salePrice !== null && insumo.salePrice > 0)
             ? Number(insumo.salePrice)
             : (invItem ? Number(invItem.salePrice || 0) : 0);
@@ -189,6 +199,8 @@ export default function RepuestosFaltantes({
           missingPartsForThisVehicle.push({
             partCode: (invItem && isValidCode(invItem.code)) ? invItem.code : "S/C",
             partName: `${insumoDescStr} (Insumo)`,
+            rawName: insumoDescStr,
+            isInsumo: true,
             partBrand: invItem ? invItem.brand : "",
             partPresentation: invItem ? invItem.presentation : "",
             requerido: requerido,
@@ -211,6 +223,7 @@ export default function RepuestosFaltantes({
     if (missingPartsForThisVehicle.length > 0) {
       vehiclesWithMissingParts.push({
         id: o.id,
+        sinAutorizar: !isOrderAuthorized(o),
         cliente: o.cliente,
         telefono: o.telefono || "",
         placa: o.placa || (o.vehiculo && typeof o.vehiculo === "string" && o.vehiculo.match(/\(([^)]+)\)/)?.[1]) || "N/A",
@@ -245,43 +258,8 @@ export default function RepuestosFaltantes({
     );
   });
 
-  const calculateOrderCommission = (orderObj) => {
-    if (!orderObj) return 0;
-    const mechName = orderObj.mecanico;
-    if (!mechName) return 0;
-    
-    const mechUser = (usuarios || []).find(u => u && String(u.user || "").toLowerCase().trim() === String(mechName || "").toLowerCase().trim());
-    
-    const comisionarLabor = mechUser ? (mechUser.comisionarLabor !== undefined ? mechUser.comisionarLabor : true) : true;
-    const comisionarRepuestos = mechUser ? (mechUser.comisionarRepuestos !== undefined ? mechUser.comisionarRepuestos : false) : false;
-    
-    const pctLabor = mechUser ? (mechUser.comisionTaller !== undefined ? Number(mechUser.comisionTaller) / 100 : comisionMecanico) : comisionMecanico;
-    const pctRepuestos = mechUser ? (mechUser.comisionRepuestos !== undefined ? Number(mechUser.comisionRepuestos) / 100 : 0) : 0;
-    
-    let laborComm = 0;
-    let repuestosComm = 0;
-    
-    if (orderObj.presupuesto) {
-      const totalLabor = orderObj.presupuesto.labor?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
-      if (comisionarLabor) {
-        laborComm = totalLabor * pctLabor;
-      }
-      
-      if (comisionarRepuestos) {
-        const totalPartsUtility = orderObj.presupuesto.parts?.reduce((sum, part) => {
-          const utility = Math.max(0, (Number(part.salePrice || 0) - Number(part.purchasePrice || 0)) * Number(part.qty || 0));
-          return sum + utility;
-        }, 0) || 0;
-        repuestosComm = totalPartsUtility * pctRepuestos;
-      }
-    } else {
-      if (comisionarLabor) {
-        laborComm = Number(orderObj.total || 0) * pctLabor;
-      }
-    }
-    
-    return laborComm + repuestosComm;
-  };
+  // Comisión compartida (respeta casilla de comisión por línea de mano de obra)
+  const calculateOrderCommission = (orderObj) => calcOrderCommission(orderObj, usuarios, comisionMecanico);
 
   const handleConfirmPurchase = (e) => {
     e.preventDefault();
@@ -311,7 +289,7 @@ export default function RepuestosFaltantes({
     const partCodeUpper = isValidCode(selectedPartToBuy.partCode) 
       ? String(selectedPartToBuy.partCode).toUpperCase().trim() 
       : "";
-    const partNameClean = String(selectedPartToBuy.partName || "").trim();
+    const partNameClean = String(selectedPartToBuy.isInsumo ? (selectedPartToBuy.rawName || selectedPartToBuy.partName) : (selectedPartToBuy.partName || "")).trim();
 
     let codeToAssign = partCodeUpper;
 
@@ -371,9 +349,11 @@ export default function RepuestosFaltantes({
         return (prevOrdenes || []).map(o => {
           if (!o) return o;
           if (o.id === selectedPartToBuy.vehicleId) {
-            if (o.presupuesto && o.presupuesto.parts) {
-              const updatedParts = o.presupuesto.parts.map(p => {
-                if (!p) return p;
+            if (o.presupuesto) {
+              const isInsumoBuy = !!selectedPartToBuy.isInsumo;
+              let insumoMarked = false;
+              const updatedParts = (o.presupuesto.parts || []).map(p => {
+                if (!p || isInsumoBuy) return p;
                 const isMatch = (partCodeUpper && isValidCode(p.code) && String(p.code).toUpperCase().trim() === partCodeUpper) ||
                                 (normalizeName(p.desc) === normalizeName(partNameClean));
                 if (isMatch) {
@@ -382,15 +362,24 @@ export default function RepuestosFaltantes({
                     code: codeToAssign || p.code || "S/C",
                     purchasePrice: purchasePrice,
                     salePrice: salePrice,
-                    price: salePrice // retrocompatibility
+                    price: salePrice, // retrocompatibility
+                    comprado: true
                   };
                 }
                 return p;
               });
+              const updatedInsumos = (o.presupuesto.insumos || []).map(ins => {
+                if (!ins || !isInsumoBuy || insumoMarked) return ins;
+                if (normalizeName(ins.desc) === normalizeName(partNameClean) && !ins.comprado) {
+                  insumoMarked = true;
+                  return { ...ins, purchasePrice: purchasePrice, salePrice: salePrice || ins.salePrice, comprado: true };
+                }
+                return ins;
+              });
 
               const totalLabor = o.presupuesto.labor?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
               const totalParts = updatedParts.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.salePrice || 0)), 0);
-              const totalInsumos = o.presupuesto.insumos?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.salePrice || 0)), 0) || 0;
+              const totalInsumos = updatedInsumos.reduce((sum, item) => sum + (Number(item?.qty || 0) * Number(item?.salePrice || 0)), 0);
               const totalTools = o.presupuesto.tools?.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.price || 0)), 0) || 0;
               const totalServices = o.presupuesto.services?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
               const subTotal = Number(totalLabor) + Number(totalParts) + Number(totalInsumos) + Number(totalTools) + Number(totalServices);
@@ -410,7 +399,8 @@ export default function RepuestosFaltantes({
 
               const updatedBudget = {
                 ...o.presupuesto,
-                parts: updatedParts
+                parts: updatedParts,
+                insumos: updatedInsumos
               };
 
               const newCommission = calculateOrderCommission({
@@ -459,7 +449,7 @@ export default function RepuestosFaltantes({
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>Repuestos Faltantes por Adquirir</h1>
-          <p>Listado de vehículos con repuestos faltantes en presupuestos ya autorizados.</p>
+          <p>Repuestos e insumos faltantes de presupuestos activos (los no autorizados se marcan como "Sin autorizar").</p>
         </div>
       </div>
 
@@ -562,6 +552,11 @@ export default function RepuestosFaltantes({
                           <span style={{ fontSize: "0.85rem", backgroundColor: "rgba(59, 130, 246, 0.1)", color: "var(--color-primary)", padding: "3px 8px", borderRadius: "6px", fontWeight: "700" }}>
                             {item.totalItemsCount} ítems
                           </span>
+                          {item.sinAutorizar && (
+                            <span title="El presupuesto aún no ha sido autorizado por el cliente" style={{ display: "inline-block", marginLeft: "6px", fontSize: "0.7rem", backgroundColor: "rgba(245, 158, 11, 0.15)", color: "#fbbf24", padding: "3px 8px", borderRadius: "6px", fontWeight: "700", whiteSpace: "nowrap" }}>
+                              ⏳ Sin autorizar
+                            </span>
+                          )}
                         </td>
                         <td style={{ ...styles.td, color: "#fff", fontWeight: "600" }}>
                           {item.totalFaltantesQty} uds

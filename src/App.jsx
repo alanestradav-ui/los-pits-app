@@ -29,6 +29,7 @@ import { DEFAULT_ACTIVE_MODULES, isModuleActive } from "./utils/modulesConfig";
 import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocalStorage, getActiveTenantId, restoreMasterBackup, purgeStorageBloat, getDeletedUsernames, addDeletedUsername, removeDeletedUsername, getDeletedFixedCosts, addDeletedFixedCost, removeDeletedFixedCost, getTombMap, saveTombMap, mergeTombMaps, normalizeTombMap } from "./utils/storage";
 import masterBackupData from "./data/masterBackupData.json";
 import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout, processOfflineQueue, cloudKeyVersions } from "./utils/supabase";
+import { getMissingExternalCosts } from "./utils/workshopCalc";
 import { initHourlyBackupScheduler, checkAndCreateHourlyBackup } from "./services/backupService";
 import { autoPurgeTrash } from "./services/trashService";
 
@@ -1122,6 +1123,11 @@ export default function App() {
   const setCitasUI = useMemo(() => makeStampedSetter(setCitas), []);
   const setPayrollHistoryUI = useMemo(() => makeStampedSetter(setPayrollHistory), []);
   const setNominaMovimientosUI = useMemo(() => makeStampedSetter(setNominaMovimientos), []);
+
+  // 🔔 Órdenes con trabajos externos sin costo registrado (pin de notificación)
+  const missingExternalCostCount = useMemo(() => {
+    try { return getMissingExternalCosts(ordenes).length; } catch (e) { return 0; }
+  }, [ordenes]);
 
   // Note: Master backup seeding for first-visit is handled by getTenantLocalStorage.
   // User data in localStorage is ALWAYS trusted once it exists — never overwritten by static backup.
@@ -2585,6 +2591,7 @@ export default function App() {
         activeTenantId={tenantId}
         onTenantChange={handleSwitchTenant}
         activeModules={activeModules}
+        badges={{ taller: missingExternalCostCount }}
       />
 
       {/* Floating Menu Button for mobile */}
@@ -2594,6 +2601,9 @@ export default function App() {
         title="Menú"
       >
         ☰
+        {missingExternalCostCount > 0 && (
+          <span className="notif-pin notif-pin-floating">{missingExternalCostCount}</span>
+        )}
       </button>
 
       {/* 2. DYNAMIC CONTENT AREA */}
@@ -2801,6 +2811,10 @@ export default function App() {
             usuarioActual={usuarioActivo}
             clientes={clientes}
             setClientes={setClientes}
+            softDelete={softDelete}
+            ordenes={ordenes}
+            setOrdenes={setOrdenesUI}
+            setCompras={setComprasUI}
           />
         )}
 
@@ -2899,6 +2913,8 @@ export default function App() {
             setCompras={setComprasUI}
             payrollHistory={payrollHistory}
             setPayrollHistory={setPayrollHistoryUI}
+            nominaMovimientos={nominaMovimientos}
+            setNominaMovimientos={setNominaMovimientosUI}
             carwashPresets={carwashPresets}
             dashboardPeriod={dashboardPeriod}
             setDashboardPeriod={setDashboardPeriod}

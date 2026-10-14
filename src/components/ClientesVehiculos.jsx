@@ -267,7 +267,7 @@ export default function ClientesVehiculos({
         telefono: telClean,
         nombre: nombreClean,
         nit: cNit.trim() || "C/F",
-        nombreFacturacion: cNombreFacturacion.trim() || nombreClean,
+        nombreFacturacion: cNombreFacturacion.trim(),
         email: cEmail.trim(),
         direccion: cDireccion.trim()
       } : c);
@@ -303,7 +303,7 @@ export default function ClientesVehiculos({
         telefono: telClean,
         nombre: nombreClean,
         nit: cNit.trim() || "C/F",
-        nombreFacturacion: cNombreFacturacion.trim() || nombreClean,
+        nombreFacturacion: cNombreFacturacion.trim(),
         email: cEmail.trim(),
         direccion: cDireccion.trim(),
         fechaRegistro: new Date().toISOString()

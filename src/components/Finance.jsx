@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { formatMoney, formatDate } from "../utils/storage";
 import { jsPDF } from "jspdf";
+import { calcOrderCommission, getCommissionableLabor, getWarrantyPenalty, parseLocalDate } from "../utils/workshopCalc";
 
 export default function Finance({ 
   usuarioActual,
@@ -42,6 +43,8 @@ export default function Finance({
   setCompras,
   payrollHistory = [],
   setPayrollHistory,
+  nominaMovimientos = [],
+  setNominaMovimientos,
   carwashPresets = [],
   dashboardPeriod,
   setDashboardPeriod,
@@ -57,7 +60,11 @@ export default function Finance({
   const [payrollPeriodMode, setPayrollPeriodMode] = useState("q1"); // 'q1', 'q2', 'mes', 'custom'
   const [payrollYear, setPayrollYear] = useState(new Date().getFullYear());
   const [payrollMonth, setPayrollMonth] = useState(new Date().getMonth());
-  const [commSubTab, setCommSubTab] = useState("planilla"); // 'planilla' or 'historial'
+  const [commSubTab, setCommSubTab] = useState("planilla"); // 'planilla', 'movimientos' or 'historial'
+  const todayLocalStr = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
+  const EMPTY_MOV_FORM = { colaborador: "", tipo: "prestamo", nombre: "", monto: "", fecha: todayLocalStr, fechaInicioPago: todayLocalStr, numCuotas: "1", recurrente: false, registrarEgreso: true, nota: "" };
+  const [movForm, setMovForm] = useState(EMPTY_MOV_FORM);
+  const [movShowInactive, setMovShowInactive] = useState(false);
   const [selectedPayrollUser, setSelectedPayrollUser] = useState(null);
   const [customSueldoBaseInput, setCustomSueldoBaseInput] = useState("");
   const [selectedCommKeys, setSelectedCommKeys] = useState([]);
@@ -142,6 +149,74 @@ export default function Finance({
     alert("¡Lavado facturado actualizado con éxito en Finanzas!");
   };
 
+  // 💵 PRÉSTAMOS / ANTICIPOS / BONOS DE COLABORADORES
+  const handleAddMovimiento = (e) => {
+    e.preventDefault();
+    const monto = parseFloat(movForm.monto);
+    if (!movForm.colaborador) { alert("Selecciona el colaborador."); return; }
+    if (isNaN(monto) || monto <= 0) { alert("Ingresa un monto válido mayor a 0."); return; }
+    const esBono = movForm.tipo === "bono";
+    const numCuotas = esBono ? 1 : Math.max(1, parseInt(movForm.numCuotas) || 1);
+    const nombre = movForm.nombre.trim() || (esBono ? "Bono" : (movForm.tipo === "prestamo" ? "Préstamo" : "Anticipo de salario"));
+    const mov = {
+      id: `mov_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      colaborador: movForm.colaborador,
+      tipo: movForm.tipo,
+      nombre,
+      monto,
+      fecha: movForm.fecha || todayLocalStr,
+      fechaInicioPago: esBono ? null : (movForm.fechaInicioPago || movForm.fecha || todayLocalStr),
+      numCuotas,
+      cuotaMonto: esBono ? monto : Math.round((monto / numCuotas) * 100) / 100,
+      recurrente: esBono ? !!movForm.recurrente : false,
+      nota: movForm.nota.trim(),
+      pagos: [],
+      activo: true,
+      registradoPor: usuarioActual?.user || "Gerencia",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    if (typeof setNominaMovimientos === "function") {
+      setNominaMovimientos(prev => [mov, ...(Array.isArray(prev) ? prev : [])]);
+    }
+    // El préstamo/anticipo es una salida de efectivo: se registra como egreso para que la caja cuadre.
+    if (!esBono && movForm.registrarEgreso && typeof setCompras === "function") {
+      setCompras(prev => [{
+        id: Date.now(),
+        fecha: mov.fecha,
+        fotos: [],
+        total: monto,
+        modulo: "general",
+        concepto: `${movForm.tipo === "prestamo" ? "Préstamo" : "Anticipo"} a colaborador: ${mov.colaborador} — ${nombre}`,
+        formaPago: "efectivo",
+        proveedor: `Nómina - ${mov.colaborador}`,
+        tipoGasto: "gasto",
+        categoria: "Préstamos / Anticipos a colaboradores",
+        nominaMovimientoId: mov.id,
+        registradoPor: usuarioActual?.user || "Gerencia",
+        cargarInventario: false,
+        detallesInventario: null
+      }, ...(Array.isArray(prev) ? prev : [])]);
+    }
+    setMovForm({ ...EMPTY_MOV_FORM, colaborador: movForm.colaborador });
+    alert(esBono ? "Bono registrado. Se sumará en la próxima liquidación de nómina." : `Registrado. Se descontará ${formatMoney(mov.cuotaMonto)} por planilla en ${numCuotas} cuota(s).`);
+  };
+
+  const toggleMovimientoActivo = (id) => {
+    if (typeof setNominaMovimientos !== "function") return;
+    setNominaMovimientos(prev => (prev || []).map(m => m.id === id ? { ...m, activo: m.activo === false } : m));
+  };
+
+  const deleteMovimiento = (m) => {
+    if (!isAdmin) { alert("Solo un administrador puede eliminar movimientos."); return; }
+    if ((m.pagos || []).length > 0) {
+      alert("Este movimiento ya tiene cuotas/pagos aplicados en planilla. Desactívalo en lugar de eliminarlo.");
+      return;
+    }
+    if (!window.confirm(`¿Eliminar "${m.nombre}" de ${m.colaborador}?`)) return;
+    setNominaMovimientos(prev => (prev || []).map(x => x.id === m.id ? { ...x, eliminado: true, activo: false } : x));
+  };
+
   const openPayrollModal = (u) => {
     const salarioMensual = parseFloat(u.salarioBase) || 0;
     const sueldoPeriodo = payrollPeriodMode === "mes" ? salarioMensual : (salarioMensual / 2);
@@ -216,11 +291,8 @@ export default function Finance({
 
   const getItemDate = (item, dateField) => {
     if (!item || !item[dateField]) return null;
-    const val = item[dateField];
-    if (typeof val === "number") return new Date(val);
-    const parsed = new Date(val);
-    if (!isNaN(parsed.getTime())) return parsed;
-    return null;
+    // parseLocalDate: "YYYY-MM-DD" -> fecha local (evita que se corra un día por zona horaria)
+    return parseLocalDate(item[dateField]);
   };
 
   const monthNamesEs = [
@@ -465,7 +537,7 @@ export default function Finance({
     if (!o.cajero || !o.cajeroComisionApplies) return sum;
     const cashierUser = (usuarios || []).find(u => u.user.toLowerCase() === o.cajero.toLowerCase());
     const pct = cashierUser ? (cashierUser.comisionTaller / 100) : 0.10;
-    const totalLabor = o.presupuesto?.labor?.reduce((lSum, item) => lSum + (parseFloat(item.price) || 0), 0) || o.total || 0;
+    const totalLabor = ((o.presupuesto?.labor || []).length > 0 ? getCommissionableLabor(o.presupuesto) : (parseFloat(o.total) || 0));
     return sum + (totalLabor * pct);
   }, 0);
 
@@ -715,7 +787,7 @@ export default function Finance({
     (ordenes || [])
       .filter(o => o.estado === "Entregado" && o.cajero && o.cajero.toLowerCase().trim() === name.toLowerCase().trim() && o.cajeroComisionApplies === true && isWithinCommDates(o.fecha, o.id))
       .forEach(o => {
-        const totalLabor = o.presupuesto?.labor?.reduce((lSum, item) => lSum + (parseFloat(item.price) || 0), 0) || o.total || 0;
+        const totalLabor = ((o.presupuesto?.labor || []).length > 0 ? getCommissionableLabor(o.presupuesto) : (parseFloat(o.total) || 0));
         const commAmt = totalLabor * pctTaller;
         if (o.cajeroComisionPagada === true) {
           cobradas += commAmt;
@@ -757,71 +829,148 @@ export default function Finance({
     return { cobradas, pendientes, total: cobradas + pendientes };
   };
 
+  // Normaliza el rol (acepta mayúsculas, acentos y variantes como "Jefe de Taller", "Mecánico")
+  const normRol = (r) => String(r || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+  // Préstamos / anticipos / bonos aplicables a un colaborador en el período de nómina
+  const getMovimientosNomina = (userName, endDate) => {
+    const lower = (userName || "").toLowerCase().trim();
+    const items = [];
+    (nominaMovimientos || []).forEach(m => {
+      if (!m || m.activo === false) return;
+      if (String(m.colaborador || "").toLowerCase().trim() !== lower) return;
+      const pagos = Array.isArray(m.pagos) ? m.pagos : [];
+      const aplicado = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
+      if (m.tipo === "prestamo" || m.tipo === "anticipo") {
+        const monto = parseFloat(m.monto) || 0;
+        const saldo = Math.round((monto - aplicado) * 100) / 100;
+        if (saldo <= 0.009) return;
+        const inicio = parseLocalDate(m.fechaInicioPago || m.fecha);
+        if (inicio && endDate && inicio > endDate) return;
+        const numCuotas = Math.max(1, parseInt(m.numCuotas) || 1);
+        const cuota = parseFloat(m.cuotaMonto) || (monto / numCuotas);
+        const descuento = Math.min(saldo, Math.round(cuota * 100) / 100);
+        const cuotaNum = pagos.length + 1;
+        items.push({
+          type: "descuento",
+          orderId: m.id,
+          titulo: `${m.tipo === "prestamo" ? "Préstamo" : "Anticipo"}: ${m.nombre || "Descuento"} (Cuota ${cuotaNum}/${numCuotas})`,
+          subtitulo: `Monto original ${formatMoney(monto)} · Saldo antes de esta cuota ${formatMoney(saldo)}`,
+          fecha: m.fecha,
+          comision: -descuento,
+          nombre: m.nombre || (m.tipo === "prestamo" ? "Préstamo" : "Anticipo"),
+          movimientoId: m.id
+        });
+      } else if (m.tipo === "bono") {
+        const monto = parseFloat(m.monto) || 0;
+        if (monto <= 0) return;
+        if (!m.recurrente && pagos.length > 0) return;
+        const fechaBono = parseLocalDate(m.fecha);
+        if (fechaBono && endDate && fechaBono > endDate) return;
+        items.push({
+          type: "bono",
+          orderId: m.id,
+          titulo: `Bono: ${m.nombre || "Bonificación"}${m.recurrente ? " (recurrente)" : ""}`,
+          subtitulo: m.nota || "Bono / incentivo adicional al salario",
+          fecha: m.fecha,
+          comision: monto,
+          nombre: m.nombre || "Bonificación",
+          movimientoId: m.id
+        });
+      }
+    });
+    return items;
+  };
+
   const getPayrollUnpaidItems = (userName, userRol) => {
     const { startDate, endDate } = getPayrollDateRangeInfo();
     const lower = (userName || "").toLowerCase().trim();
+    const rol = normRol(userRol);
     const items = [];
     let totalComs = 0;
+    const userObj = (usuarios || []).find(u => String(u.user || "").toLowerCase().trim() === lower);
+    const laborCommDisabled = !!(userObj && userObj.comisionarLabor === false);
 
-    // Mechanics
-    if (userRol === "mecanico" || userRol === "jefe de taller" || userRol === "admin" || userRol === "mecánico") {
-      (ordenes || []).forEach(o => {
-        if (o.estado === "Entregado" && o.comisionPagada !== true && (o.mecanico || "").toLowerCase().trim() === lower) {
-          const d = o.fecha ? new Date(o.fecha) : new Date(o.id);
-          if (d >= startDate && d <= endDate) {
-            const amt = parseFloat(o.comision) || 0;
-            totalComs += amt;
-            items.push({
-              type: "taller",
-              orderId: o.id,
-              titulo: `Orden Taller #${o.id}`,
-              subtitulo: `${o.cliente || "Cliente"} - ${o.marca || ""} ${o.linea || ""} (${o.placa || ""})`,
-              fecha: o.fecha,
-              comision: amt
-            });
-          }
+    // Mechanics: se basa en las órdenes asignadas (no depende del texto exacto del rol).
+    // La comisión se recalcula en vivo para respetar la configuración del colaborador
+    // y la casilla "Comisión" de cada línea de mano de obra.
+    (ordenes || []).forEach(o => {
+      if (o.estado === "Entregado" && o.comisionPagada !== true && (o.mecanico || "").toLowerCase().trim() === lower) {
+        const d = o.fecha ? new Date(o.fecha) : new Date(o.id);
+        if (d >= startDate && d <= endDate) {
+          const amt = calcOrderCommission(o, usuarios, 0.10);
+          if (amt <= 0) return;
+          totalComs += amt;
+          items.push({
+            type: "taller",
+            orderId: o.id,
+            titulo: `Orden Taller #${o.id}`,
+            subtitulo: `${o.cliente || "Cliente"} - ${o.marca || ""} ${o.linea || ""} (${o.placa || ""})`,
+            fecha: o.fecha,
+            comision: amt
+          });
         }
+      }
+    });
+
+    // 🛡️ Penalizaciones por garantía pendientes de aplicar (hasta el fin del período)
+    (ordenes || []).forEach(o => {
+      const g = o && o.garantia;
+      if (!g || !g.activa || g.penalizacionAplicada) return;
+      if (String(g.tecnico || "").toLowerCase().trim() !== lower) return;
+      const d = o.fecha ? new Date(o.fecha) : new Date(o.id);
+      if (d > endDate) return;
+      const pen = getWarrantyPenalty(o);
+      if (pen <= 0) return;
+      totalComs -= pen;
+      items.push({
+        type: "penalizacion",
+        orderId: o.id,
+        titulo: `Penalización por garantía (Orden #${String(o.id).slice(-6)})`,
+        subtitulo: `${o.cliente || "Cliente"} - ${o.placa || ""} · ${g.tipo === "porcentaje" ? `${g.valor}% de ${formatMoney(g.base)}` : "Monto fijo"}`,
+        fecha: o.fecha,
+        comision: -pen,
+        nombre: "Penalización por garantía"
       });
-    }
+    });
 
     // Washers
-    if (userRol === "lavador" || userRol === "admin") {
-      (carwash || []).forEach(c => {
-        const lavList = c.lavadores && c.lavadores.length > 0 ? c.lavadores : (c.lavador ? c.lavador.split(", ").map(i => i.trim()).filter(Boolean) : []);
-        const isAssigned = lavList.some(l => l.toLowerCase().trim() === lower);
-        if (c.estado === "Entregado" && c.comisionPagada !== true && isAssigned) {
-          const d = c.fecha ? new Date(c.fecha) : new Date(c.id);
-          if (d >= startDate && d <= endDate) {
-            const isWorkshopWash = c.tallerOrderId || String(c.tipo || "").toLowerCase().trim() === "lavado de taller";
-            const matchedPreset = (carwashPresets || []).find(p => p.tipo && String(p.tipo).toLowerCase().trim() === String(c.tipo).toLowerCase().trim());
-            const totalComm = isWorkshopWash ? 5.0 : (matchedPreset && matchedPreset.comision !== undefined ? parseFloat(matchedPreset.comision) : (parseFloat(c.comision) || 5.0));
-            const splitComm = lavList.length > 0 ? (totalComm / lavList.length) : totalComm;
+    (carwash || []).forEach(c => {
+      const lavList = c.lavadores && c.lavadores.length > 0 ? c.lavadores : (c.lavador ? c.lavador.split(", ").map(i => i.trim()).filter(Boolean) : []);
+      const isAssigned = lavList.some(l => l.toLowerCase().trim() === lower);
+      if (c.estado === "Entregado" && c.comisionPagada !== true && isAssigned) {
+        const d = c.fecha ? new Date(c.fecha) : new Date(c.id);
+        if (d >= startDate && d <= endDate) {
+          const isWorkshopWash = c.tallerOrderId || String(c.tipo || "").toLowerCase().trim() === "lavado de taller";
+          const matchedPreset = (carwashPresets || []).find(p => p.tipo && String(p.tipo).toLowerCase().trim() === String(c.tipo).toLowerCase().trim());
+          const totalComm = isWorkshopWash ? 5.0 : (matchedPreset && matchedPreset.comision !== undefined ? parseFloat(matchedPreset.comision) : (parseFloat(c.comision) || 5.0));
+          const splitComm = lavList.length > 0 ? (totalComm / lavList.length) : totalComm;
 
-            totalComs += splitComm;
-            items.push({
-              type: "carwash",
-              orderId: c.id,
-              titulo: `Carwash (${c.tipo})`,
-              subtitulo: `${c.cliente || "Cliente"} - ${c.vehiculo?.marca || ""} ${c.vehiculo?.linea || ""} (${c.vehiculo?.placa || ""})`,
-              fecha: c.fecha,
-              comision: splitComm
-            });
-          }
+          totalComs += splitComm;
+          items.push({
+            type: "carwash",
+            orderId: c.id,
+            titulo: `Carwash (${c.tipo})`,
+            subtitulo: `${c.cliente || "Cliente"} - ${c.vehiculo?.marca || ""} ${c.vehiculo?.linea || ""} (${c.vehiculo?.placa || ""})`,
+            fecha: c.fecha,
+            comision: splitComm
+          });
         }
-      });
-    }
+      }
+    });
 
     // Cashiers
-    if (userRol === "cajero" || userRol === "admin") {
-      const cashierUser = (usuarios || []).find(u => u.user.toLowerCase().trim() === lower);
-      const pctTaller = cashierUser && cashierUser.comisionTaller !== undefined ? cashierUser.comisionTaller / 100 : 0.10;
+    {
+      const cashierUser = userObj;
+      const pctTaller = cashierUser && cashierUser.comisionTaller !== undefined && cashierUser.comisionTaller !== "" ? cashierUser.comisionTaller / 100 : 0.10;
 
       (ordenes || []).forEach(o => {
         if (o.estado === "Entregado" && o.cajeroComisionPagada !== true && o.cajero && o.cajero.toLowerCase().trim() === lower && o.cajeroComisionApplies === true) {
           const d = o.fecha ? new Date(o.fecha) : new Date(o.id);
           if (d >= startDate && d <= endDate) {
-            const totalLabor = o.presupuesto?.labor?.reduce((lSum, item) => lSum + (parseFloat(item.price) || 0), 0) || o.total || 0;
+            const totalLabor = ((o.presupuesto?.labor || []).length > 0 ? getCommissionableLabor(o.presupuesto) : (parseFloat(o.total) || 0));
             const amt = totalLabor * pctTaller;
+            if (amt <= 0) return;
             totalComs += amt;
             items.push({
               type: "cajero",
@@ -837,38 +986,47 @@ export default function Finance({
     }
 
     // Sales
-    if (userRol === "vendedor" || userRol === "admin") {
-      (vehiculosVenta || []).forEach(v => {
-        let isAssigned = false;
-        let commAmt = 0;
-        if (v.vendedoresAsignados && v.vendedoresAsignados.length > 0) {
-          if (v.vendedoresAsignados.some(s => s.toLowerCase().trim() === lower)) {
-            isAssigned = true;
-            commAmt = parseFloat(v.comisionTotalCalculada || 0) / v.vendedoresAsignados.length;
-          }
-        } else if (v.vendedorAsignado && v.vendedorAsignado.toLowerCase().trim() === lower) {
+    (vehiculosVenta || []).forEach(v => {
+      let isAssigned = false;
+      let commAmt = 0;
+      if (v.vendedoresAsignados && v.vendedoresAsignados.length > 0) {
+        if (v.vendedoresAsignados.some(s => s.toLowerCase().trim() === lower)) {
           isAssigned = true;
-          commAmt = parseFloat(v.comisionTotalCalculada || 0);
+          commAmt = parseFloat(v.comisionTotalCalculada || 0) / v.vendedoresAsignados.length;
         }
+      } else if (v.vendedorAsignado && v.vendedorAsignado.toLowerCase().trim() === lower) {
+        isAssigned = true;
+        commAmt = parseFloat(v.comisionTotalCalculada || 0);
+      }
 
-        if (v.estado === "Vendido" && v.comisionPagada !== true && isAssigned) {
-          const d = new Date(v.fechaVenta || v.fecha || v.id);
-          if (d >= startDate && d <= endDate) {
-            totalComs += commAmt;
-            items.push({
-              type: "vehiculo",
-              orderId: v.id,
-              titulo: `Venta Vehículo ${v.marca} ${v.linea}`,
-              subtitulo: `Placa: ${v.placa || "N/A"}`,
-              fecha: v.fechaVenta || v.fecha,
-              comision: commAmt
-            });
-          }
+      if (v.estado === "Vendido" && v.comisionPagada !== true && isAssigned) {
+        const d = new Date(v.fechaVenta || v.fecha || v.id);
+        if (d >= startDate && d <= endDate) {
+          totalComs += commAmt;
+          items.push({
+            type: "vehiculo",
+            orderId: v.id,
+            titulo: `Venta Vehículo ${v.marca} ${v.linea}`,
+            subtitulo: `Placa: ${v.placa || "N/A"}`,
+            fecha: v.fechaVenta || v.fecha,
+            comision: commAmt
+          });
         }
-      });
-    }
+      }
+    });
 
-    return { items, totalComs };
+    // 💵 Bonos y descuentos por préstamos / anticipos
+    getMovimientosNomina(userName, endDate).forEach(mi => {
+      totalComs += mi.comision;
+      items.push(mi);
+    });
+
+    // Aviso: órdenes del técnico sin comisión porque está desactivada en Configuración
+    const ordersWithoutCommission = laborCommDisabled
+      ? (ordenes || []).filter(o => o.estado === "Entregado" && o.comisionPagada !== true && (o.mecanico || "").toLowerCase().trim() === lower).length
+      : 0;
+
+    return { items, totalComs: Math.round(totalComs * 100) / 100, laborCommDisabled, ordersWithoutCommission, rol };
   };
 
   const handleExecutePayrollPayment = (userObj, baseSalaryOverride, items, totalComm) => {
@@ -876,40 +1034,79 @@ export default function Finance({
     const baseSal = parseFloat(baseSalaryOverride) || 0;
     const totalPaid = baseSal + totalComm;
     const payrollId = Date.now();
+    const nowIso = new Date().toISOString();
 
     // Mark orders as comisionPagada = true
     const orderIds = items.filter(i => i.type === "taller").map(i => i.orderId);
+    const commByOrder = {};
+    items.filter(i => i.type === "taller").forEach(i => { commByOrder[i.orderId] = i.comision; });
     if (orderIds.length > 0 && setOrdenes) {
-      setOrdenes(prev => (prev || []).map(o => orderIds.includes(o.id) ? { ...o, comisionPagada: true, fechaPagoComision: new Date().toISOString(), payrollId } : o));
+      setOrdenes(prev => (prev || []).map(o => orderIds.includes(o.id) ? { ...o, comision: commByOrder[o.id] ?? o.comision, comisionPagada: true, fechaPagoComision: nowIso, payrollId, updatedAt: nowIso } : o));
+    }
+
+    // 🛡️ Mark warranty penalties as applied
+    const penaltyOrderIds = items.filter(i => i.type === "penalizacion").map(i => i.orderId);
+    if (penaltyOrderIds.length > 0 && setOrdenes) {
+      setOrdenes(prev => (prev || []).map(o => penaltyOrderIds.includes(o.id) && o.garantia
+        ? { ...o, garantia: { ...o.garantia, penalizacionAplicada: true, fechaPenalizacion: nowIso, payrollId }, updatedAt: nowIso }
+        : o));
     }
 
     // Mark carwash as comisionPagada = true
     const carwashIds = items.filter(i => i.type === "carwash").map(i => i.orderId);
     if (carwashIds.length > 0 && setCarwash) {
-      setCarwash(prev => (prev || []).map(c => carwashIds.includes(c.id) ? { ...c, comisionPagada: true, fechaPagoComision: new Date().toISOString(), payrollId } : c));
+      setCarwash(prev => (prev || []).map(c => carwashIds.includes(c.id) ? { ...c, comisionPagada: true, fechaPagoComision: nowIso, payrollId } : c));
     }
 
     // Mark cajero commissions on orders as cajeroComisionPagada = true
     const cajeroOrderIds = items.filter(i => i.type === "cajero").map(i => i.orderId);
     if (cajeroOrderIds.length > 0 && setOrdenes) {
-      setOrdenes(prev => (prev || []).map(o => cajeroOrderIds.includes(o.id) ? { ...o, cajeroComisionPagada: true, fechaPagoComision: new Date().toISOString(), payrollId } : o));
+      setOrdenes(prev => (prev || []).map(o => cajeroOrderIds.includes(o.id) ? { ...o, cajeroComisionPagada: true, fechaPagoComision: nowIso, payrollId } : o));
     }
 
     // Mark vehicle sales as comisionPagada = true
     const vehiculoIds = items.filter(i => i.type === "vehiculo").map(i => i.orderId);
     if (vehiculoIds.length > 0 && setVehiculosVenta) {
-      setVehiculosVenta(prev => (prev || []).map(v => vehiculoIds.includes(v.id) ? { ...v, comisionPagada: true, fechaPagoComision: new Date().toISOString(), payrollId } : v));
+      setVehiculosVenta(prev => (prev || []).map(v => vehiculoIds.includes(v.id) ? { ...v, comisionPagada: true, fechaPagoComision: nowIso, payrollId } : v));
     }
+
+    // 💵 Registrar cuotas descontadas y bonos pagados en los movimientos de nómina
+    const movItems = items.filter(i => i.type === "descuento" || i.type === "bono");
+    if (movItems.length > 0 && setNominaMovimientos) {
+      setNominaMovimientos(prev => (prev || []).map(m => {
+        const it = movItems.find(i => String(i.movimientoId) === String(m.id));
+        if (!it) return m;
+        const pagos = [...(Array.isArray(m.pagos) ? m.pagos : []), { payrollId, fecha: nowIso, monto: Math.abs(it.comision), periodo: periodLabel }];
+        const next = { ...m, pagos };
+        if (m.tipo !== "bono") {
+          const aplicado = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
+          if (aplicado >= (parseFloat(m.monto) || 0) - 0.009) {
+            next.activo = false;
+            next.fechaLiquidado = nowIso;
+          }
+        } else if (!m.recurrente) {
+          next.activo = false;
+        }
+        return next;
+      }));
+    }
+
+    const comisionesItems = items.filter(i => !["bono", "descuento", "penalizacion"].includes(i.type));
+    const bonosItems = items.filter(i => i.type === "bono");
+    const descuentosItems = items.filter(i => i.type === "descuento" || i.type === "penalizacion");
+    const totalComisionesPuras = comisionesItems.reduce((s, i) => s + i.comision, 0);
+    const totalBonos = bonosItems.reduce((s, i) => s + i.comision, 0);
+    const totalDescuentos = descuentosItems.reduce((s, i) => s + Math.abs(i.comision), 0);
 
     // Add expense entry in compras/egresos so finance P&L reflects the cash expense
     if (setCompras) {
       const newExpense = {
         id: payrollId,
-        fecha: new Date().toISOString(),
+        fecha: nowIso,
         proveedor: `Nómina - ${userObj.user}`,
         categoria: "Nómina / Planilla",
         total: totalPaid,
-        descripcion: `Pago de Nómina (${periodLabel}) - Sueldo Base: Q${baseSal.toFixed(2)} + Comisiones: Q${totalComm.toFixed(2)}`,
+        descripcion: `Pago de Nómina (${periodLabel}) - Sueldo Base: Q${baseSal.toFixed(2)} + Comisiones: Q${totalComisionesPuras.toFixed(2)}${totalBonos ? ` + Bonos: Q${totalBonos.toFixed(2)}` : ""}${totalDescuentos ? ` - Descuentos: Q${totalDescuentos.toFixed(2)}` : ""}`,
         formaPago: { efectivo: totalPaid, tarjeta: 0, transferencia: 0, cheque: 0 },
         estado: "Pagado"
       };
@@ -922,20 +1119,49 @@ export default function Finance({
       colaborador: userObj.user,
       rol: userObj.rol || "Colaborador",
       periodo: periodLabel,
-      fechaPago: new Date().toISOString(),
+      fechaPago: nowIso,
       sueldoBase: baseSal,
-      totalComisiones: totalComm,
+      totalComisiones: totalComisionesPuras,
+      totalBonos,
+      totalDescuentos,
       totalPagado: totalPaid,
-      detallesComisiones: items,
-      registradoPor: "Gerencia"
+      detallesComisiones: comisionesItems,
+      bonos: bonosItems.map(i => ({ nombre: i.nombre, monto: i.comision, detalle: i.titulo })),
+      descuentos: descuentosItems.map(i => ({ nombre: i.nombre || i.titulo, monto: Math.abs(i.comision), detalle: i.titulo })),
+      registradoPor: usuarioActual?.user || "Gerencia",
+      updatedAt: nowIso
     };
 
     if (setPayrollHistory) {
       setPayrollHistory(prev => [record, ...(prev || [])]);
     }
 
-    alert(`¡Nómina y Comisiones aplicadas con éxito!\n\nSe liquidó Q${totalPaid.toFixed(2)} a ${userObj.user}.\nLas comisiones fueron descontadas de la lista por pagar y registradas como egreso.`);
+    alert(`¡Nómina y Comisiones aplicadas con éxito!\n\nSe liquidó Q${totalPaid.toFixed(2)} a ${userObj.user}.\nLas comisiones, bonos y descuentos fueron registrados.`);
     setSelectedPayrollUser(null);
+  };
+
+  // Construye el objeto de recibo a partir de los ítems seleccionados (vista previa)
+  const buildPayrollReceiptPreview = (userObj, baseSal, selectedItems, periodLabel) => {
+    const comisionesItems = selectedItems.filter(i => !["bono", "descuento", "penalizacion"].includes(i.type));
+    const bonosItems = selectedItems.filter(i => i.type === "bono");
+    const descuentosItems = selectedItems.filter(i => i.type === "descuento" || i.type === "penalizacion");
+    const total = baseSal + selectedItems.reduce((s, i) => s + i.comision, 0);
+    return {
+      id: Date.now(),
+      colaborador: userObj.user,
+      rol: userObj.rol,
+      periodo: periodLabel,
+      fechaPago: new Date().toISOString(),
+      sueldoBase: baseSal,
+      totalComisiones: comisionesItems.reduce((s, i) => s + i.comision, 0),
+      totalBonos: bonosItems.reduce((s, i) => s + i.comision, 0),
+      totalDescuentos: descuentosItems.reduce((s, i) => s + Math.abs(i.comision), 0),
+      totalPagado: total,
+      detallesComisiones: comisionesItems,
+      bonos: bonosItems.map(i => ({ nombre: i.nombre, monto: i.comision, detalle: i.titulo })),
+      descuentos: descuentosItems.map(i => ({ nombre: i.nombre || i.titulo, monto: Math.abs(i.comision), detalle: i.titulo })),
+      registradoPor: usuarioActual?.user || "Gerencia"
+    };
   };
 
   const imprimirReciboNominaPrint = (rec) => {
@@ -952,6 +1178,13 @@ export default function Finance({
         <td style="padding: 8px;">${item.fecha ? formatDate(item.fecha) : "-"}</td>
         <td style="padding: 8px; text-align: right; font-weight: bold;">Q${item.comision.toFixed(2)}</td>
       </tr>
+    `).join("");
+
+    const bonosHtml = (rec.bonos || []).map(b => `
+      <tr style="border-bottom: 1px solid #e5e7eb;"><td style="padding: 8px;"><strong>${b.nombre}</strong>${b.detalle && b.detalle !== b.nombre ? `<br/><small style="color:#6b7280;">${b.detalle}</small>` : ""}</td><td style="padding: 8px; text-align: right; font-weight: bold; color: #047857;">+Q${(parseFloat(b.monto) || 0).toFixed(2)}</td></tr>
+    `).join("");
+    const descuentosHtml = (rec.descuentos || []).map(d => `
+      <tr style="border-bottom: 1px solid #e5e7eb;"><td style="padding: 8px;"><strong>${d.nombre}</strong>${d.detalle && d.detalle !== d.nombre ? `<br/><small style="color:#6b7280;">${d.detalle}</small>` : ""}</td><td style="padding: 8px; text-align: right; font-weight: bold; color: #b91c1c;">-Q${(parseFloat(d.monto) || 0).toFixed(2)}</td></tr>
     `).join("");
 
     printWin.document.write(`
@@ -1006,18 +1239,23 @@ export default function Finance({
             </tbody>
           </table>
 
+          ${bonosHtml ? `<h3>🎁 Bonos e Incentivos</h3><table><thead><tr><th>Concepto</th><th style="text-align: right;">Monto</th></tr></thead><tbody>${bonosHtml}</tbody></table>` : ""}
+          ${descuentosHtml ? `<h3>➖ Descuentos (Préstamos / Anticipos / Penalizaciones)</h3><table><thead><tr><th>Concepto</th><th style="text-align: right;">Monto</th></tr></thead><tbody>${descuentosHtml}</tbody></table>` : ""}
+
           <div class="summary">
             <div class="summary-row">
               <span>Sueldo Base (${rec.periodo.includes("1ra") || rec.periodo.includes("2da") ? "Quincenal" : "Mensual"}):</span>
-              <strong>Q${rec.sueldoBase.toFixed(2)}</strong>
+              <strong>Q${(parseFloat(rec.sueldoBase) || 0).toFixed(2)}</strong>
             </div>
             <div class="summary-row">
               <span>Total Comisiones Liquidadas:</span>
-              <strong>Q${rec.totalComisiones.toFixed(2)}</strong>
+              <strong>Q${(parseFloat(rec.totalComisiones) || 0).toFixed(2)}</strong>
             </div>
+            ${(parseFloat(rec.totalBonos) || 0) > 0 ? `<div class="summary-row"><span>Total Bonos:</span><strong style="color:#047857;">+Q${(parseFloat(rec.totalBonos) || 0).toFixed(2)}</strong></div>` : ""}
+            ${(parseFloat(rec.totalDescuentos) || 0) > 0 ? `<div class="summary-row"><span>Total Descuentos:</span><strong style="color:#b91c1c;">-Q${(parseFloat(rec.totalDescuentos) || 0).toFixed(2)}</strong></div>` : ""}
             <div class="summary-row total">
               <span>TOTAL LÍQUIDO A RECIBIR:</span>
-              <span>Q${rec.totalPagado.toFixed(2)}</span>
+              <span>Q${(parseFloat(rec.totalPagado) || 0).toFixed(2)}</span>
             </div>
           </div>
 
@@ -1120,7 +1358,7 @@ export default function Finance({
       );
 
       cashierOrders.forEach(o => {
-        const totalLabor = o.presupuesto?.labor?.reduce((lSum, item) => lSum + (parseFloat(item.price) || 0), 0) || o.total || 0;
+        const totalLabor = ((o.presupuesto?.labor || []).length > 0 ? getCommissionableLabor(o.presupuesto) : (parseFloat(o.total) || 0));
         const commAmt = totalLabor * pctTaller;
         totalCobradas += commAmt;
         list.push({
@@ -1328,8 +1566,40 @@ export default function Finance({
     pdf.save(`Reporte_Comisiones_${colaboradorName.replace(/\s+/g, "_")}_${commStart}_${commEnd}.pdf`);
   };
 
-  const printReport = () => {
-    window.print();
+  // Imprime el contenido visible de Finanzas en una ventana aparte con estilo claro.
+  // (window.print() directo salía en blanco: el CSS de impresión global oculta todo
+  // excepto .client-report-paper)
+  const printReport = (titulo) => {
+    const root = document.getElementById("finance-print-root");
+    if (!root) { window.print(); return; }
+    const clone = root.cloneNode(true);
+    clone.querySelectorAll(".hide-print, button, .no-print").forEach(el => el.remove());
+    clone.querySelectorAll("input, select, textarea").forEach(el => {
+      const span = document.createElement("span");
+      span.textContent = el.tagName === "SELECT" ? (el.options[el.selectedIndex]?.text || "") : (el.value || "");
+      el.replaceWith(span);
+    });
+    const win = window.open("", "_blank");
+    if (!win) { alert("Por favor permite las ventanas emergentes (popups) para imprimir el reporte."); return; }
+    const docTitle = typeof titulo === "string" ? titulo : (activeTab === "pnl" ? "Estado de Resultados" : "Reporte de Caja");
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${docTitle} - Los Pits</title>
+      <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; padding: 24px; background: #fff !important; color: #111 !important; }
+        * { color: #111 !important; background: transparent !important; box-shadow: none !important; text-shadow: none !important; border-color: #d1d5db !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; animation: none !important; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border-bottom: 1px solid #e5e7eb !important; padding: 6px 8px; text-align: left; font-size: 12px; }
+        th { background: #f3f4f6 !important; }
+        h1, h2, h3 { margin: 8px 0; }
+        svg { display: none; }
+        .print-header { border-bottom: 2px solid #111; margin-bottom: 16px; padding-bottom: 8px; }
+        @media print { body { padding: 0; } }
+      </style></head><body>
+      <div class="print-header"><h1 style="font-size:20px;">LOS PITS AUTO CENTER — ${docTitle}</h1>
+      <div style="font-size:12px;">Período: ${currentPeriodLabel} · Generado: ${new Date().toLocaleString("es-GT")}</div></div>
+      ${clone.innerHTML}
+      <script>window.onload = function(){ setTimeout(function(){ window.print(); }, 300); };<\/script>
+      </body></html>`);
+    win.document.close();
   };
 
   const filterByBreakevenPeriod = (list, dateField = "fecha") => {
@@ -1337,7 +1607,8 @@ export default function Finance({
     const now = new Date();
     return list.filter(item => {
       if (!item[dateField]) return false;
-      const d = new Date(item[dateField]);
+      const d = parseLocalDate(item[dateField]);
+      if (!d) return false;
       if (d.getFullYear() !== now.getFullYear()) return false;
       
       const currentMonth = now.getMonth();
@@ -1456,7 +1727,7 @@ export default function Finance({
   };
 
   return (
-    <div style={styles.container} className="animate-fade-in print-area">
+    <div id="finance-print-root" style={styles.container} className="animate-fade-in print-area">
       {/* Module Header */}
       <div style={styles.header}>
         <div>
@@ -1637,7 +1908,8 @@ export default function Finance({
                 {formatMoney(netProfitPeriod)}
               </span>
               <p style={styles.revSub}>
-                {isProfitablePeriod ? `🟢 Superávit tras cubrir ${formatMoney(periodFixedCosts)} de costos fijos.` : `🔴 Déficit tras restar ${formatMoney(periodFixedCosts)} de costos fijos.`}
+                {isProfitablePeriod ? `🟢 Superávit tras cubrir ${formatMoney(periodFixedCosts)} de costos fijos` : `🔴 Déficit tras restar ${formatMoney(periodFixedCosts)} de costos fijos`}
+                {` y ${formatMoney(totalGeneralPurchasesPeriod)} de compras/gastos generales (${filteredCompras.length} registros).`}
               </p>
             </div>
           </div>
@@ -2118,6 +2390,20 @@ export default function Finance({
                   💼 Planilla y Liquidación
                 </button>
                 <button
+                  onClick={() => setCommSubTab("movimientos")}
+                  className="btn"
+                  style={{
+                    padding: "8px 16px",
+                    fontSize: "0.85rem",
+                    backgroundColor: commSubTab === "movimientos" ? "var(--color-primary)" : "rgba(255,255,255,0.05)",
+                    color: "#fff",
+                    borderRadius: "6px",
+                    fontWeight: "600"
+                  }}
+                >
+                  💵 Préstamos, Anticipos y Bonos ({(nominaMovimientos || []).filter(m => m && !m.eliminado && m.activo !== false).length})
+                </button>
+                <button
                   onClick={() => setCommSubTab("historial")}
                   className="btn"
                   style={{
@@ -2261,7 +2547,7 @@ export default function Finance({
                     </thead>
                     <tbody>
                       {(usuarios || []).map((u, i) => {
-                        const { items, totalComs } = getPayrollUnpaidItems(u.user, u.rol);
+                        const { items, totalComs, laborCommDisabled, ordersWithoutCommission } = getPayrollUnpaidItems(u.user, u.rol);
                         const salarioMensual = parseFloat(u.salarioBase) || 0;
                         const sueldoPeriodo = payrollPeriodMode === "mes" ? salarioMensual : (salarioMensual / 2);
                         const totalLiquido = sueldoPeriodo + totalComs;
@@ -2283,7 +2569,12 @@ export default function Finance({
                               {formatMoney(totalComs)}
                               {items.length > 0 && (
                                 <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block" }}>
-                                  ({items.length} trabajos)
+                                  ({items.length} conceptos)
+                                </span>
+                              )}
+                              {laborCommDisabled && ordersWithoutCommission > 0 && (
+                                <span title="Comisión por mano de obra desactivada en Configuración" style={{ fontSize: "0.72rem", color: "#fbbf24", display: "block" }}>
+                                  ⚠️ Comisión desactivada ({ordersWithoutCommission} órdenes)
                                 </span>
                               )}
                             </td>
@@ -2309,6 +2600,148 @@ export default function Finance({
                 </div>
               </>
             )}
+
+            {commSubTab === "movimientos" && (() => {
+              const movList = (nominaMovimientos || []).filter(m => m && !m.eliminado && (movShowInactive || m.activo !== false));
+              const isBonoForm = movForm.tipo === "bono";
+              const cuotaPreview = !isBonoForm && parseFloat(movForm.monto) > 0 ? (parseFloat(movForm.monto) / Math.max(1, parseInt(movForm.numCuotas) || 1)) : 0;
+              const lblStyle = { fontSize: "0.78rem", color: "var(--text-muted)", display: "block", marginBottom: "4px", fontWeight: 600 };
+              return (
+                <>
+                  <h3 style={{ ...styles.subtitle, color: "var(--color-warning)", borderBottom: "1px solid rgba(245, 158, 11, 0.2)", paddingBottom: "8px", marginBottom: "16px" }}>
+                    💵 Préstamos, Anticipos y Bonos de Colaboradores
+                  </h3>
+                  <p style={{ margin: "0 0 16px 0", color: "var(--text-muted)", fontSize: "0.82rem" }}>
+                    Los préstamos y anticipos se descuentan automáticamente en la liquidación de nómina según su plan de cuotas. Los bonos se suman al pago y aparecen con su nombre en el recibo.
+                  </p>
+
+                  <form onSubmit={handleAddMovimiento} style={{ backgroundColor: "rgba(0,0,0,0.25)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "12px", padding: "16px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "12px", marginBottom: "24px" }}>
+                    <div>
+                      <label style={lblStyle}>Colaborador *</label>
+                      <select className="input-field" value={movForm.colaborador} onChange={(e) => setMovForm({ ...movForm, colaborador: e.target.value })}>
+                        <option value="">-- Seleccionar --</option>
+                        {(usuarios || []).map(u => <option key={u.user} value={u.user}>{u.user}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={lblStyle}>Tipo *</label>
+                      <select className="input-field" value={movForm.tipo} onChange={(e) => setMovForm({ ...movForm, tipo: e.target.value })}>
+                        <option value="prestamo">Préstamo</option>
+                        <option value="anticipo">Anticipo de salario</option>
+                        <option value="bono">Bono / Incentivo</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={lblStyle}>{isBonoForm ? "Nombre del bono *" : "Concepto"}</label>
+                      <input className="input-field" value={movForm.nombre} onChange={(e) => setMovForm({ ...movForm, nombre: e.target.value })} placeholder={isBonoForm ? "Ej. Bono por productividad" : "Ej. Préstamo personal"} />
+                    </div>
+                    <div>
+                      <label style={lblStyle}>Monto total (Q) *</label>
+                      <input type="number" min="0.01" step="any" className="input-field" value={movForm.monto} onChange={(e) => setMovForm({ ...movForm, monto: e.target.value })} placeholder="0.00" />
+                    </div>
+                    <div>
+                      <label style={lblStyle}>Fecha</label>
+                      <input type="date" className="input-field" value={movForm.fecha} onChange={(e) => setMovForm({ ...movForm, fecha: e.target.value })} />
+                    </div>
+                    {!isBonoForm ? (
+                      <>
+                        <div>
+                          <label style={lblStyle}>Inicia descuento desde</label>
+                          <input type="date" className="input-field" value={movForm.fechaInicioPago} onChange={(e) => setMovForm({ ...movForm, fechaInicioPago: e.target.value })} />
+                        </div>
+                        <div>
+                          <label style={lblStyle}>Número de cuotas (planillas)</label>
+                          <input type="number" min="1" step="1" className="input-field" value={movForm.numCuotas} onChange={(e) => setMovForm({ ...movForm, numCuotas: e.target.value })} />
+                          {cuotaPreview > 0 && <span style={{ fontSize: "0.75rem", color: "var(--color-warning)" }}>Cuota: {formatMoney(cuotaPreview)} por planilla</span>}
+                        </div>
+                        <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.8rem", color: "var(--text-muted)", cursor: "pointer" }}>
+                          <input type="checkbox" checked={movForm.registrarEgreso} onChange={(e) => setMovForm({ ...movForm, registrarEgreso: e.target.checked })} />
+                          Registrar salida de efectivo en egresos
+                        </label>
+                      </>
+                    ) : (
+                      <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.8rem", color: "var(--text-muted)", cursor: "pointer" }}>
+                        <input type="checkbox" checked={movForm.recurrente} onChange={(e) => setMovForm({ ...movForm, recurrente: e.target.checked })} />
+                        Bono recurrente (cada planilla)
+                      </label>
+                    )}
+                    <div>
+                      <label style={lblStyle}>Nota</label>
+                      <input className="input-field" value={movForm.nota} onChange={(e) => setMovForm({ ...movForm, nota: e.target.value })} placeholder="Opcional" />
+                    </div>
+                    <div style={{ display: "flex", alignItems: "flex-end" }}>
+                      <button type="submit" className="btn btn-primary" style={{ width: "100%", fontWeight: 800 }}>+ Registrar</button>
+                    </div>
+                  </form>
+
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.8rem", color: "var(--text-muted)", cursor: "pointer" }}>
+                      <input type="checkbox" checked={movShowInactive} onChange={(e) => setMovShowInactive(e.target.checked)} />
+                      Mostrar liquidados / inactivos
+                    </label>
+                  </div>
+
+                  <div style={styles.tableResponsive}>
+                    <table style={styles.table}>
+                      <thead>
+                        <tr>
+                          <th style={styles.th}>Colaborador</th>
+                          <th style={styles.th}>Tipo / Concepto</th>
+                          <th style={styles.th}>Monto</th>
+                          <th style={styles.th}>Plan</th>
+                          <th style={styles.th}>Aplicado</th>
+                          <th style={styles.th}>Saldo</th>
+                          <th style={styles.th}>Estado</th>
+                          <th style={{ ...styles.th, textAlign: "right" }}>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {movList.length === 0 ? (
+                          <tr><td colSpan="8" style={{ ...styles.td, textAlign: "center", padding: "30px", color: "var(--text-muted)" }}>No hay préstamos, anticipos ni bonos registrados.</td></tr>
+                        ) : movList.map(m => {
+                          const aplicado = (m.pagos || []).reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
+                          const esBono = m.tipo === "bono";
+                          const saldo = esBono ? 0 : Math.max(0, (parseFloat(m.monto) || 0) - aplicado);
+                          const tipoLabel = esBono ? "🎁 Bono" : (m.tipo === "prestamo" ? "💳 Préstamo" : "💵 Anticipo");
+                          return (
+                            <tr key={m.id} style={styles.tr}>
+                              <td style={{ ...styles.td, fontWeight: 700, color: "#fff" }}>{m.colaborador}</td>
+                              <td style={styles.td}>
+                                <div style={{ fontWeight: 700, color: "#fff" }}>{tipoLabel}</div>
+                                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{m.nombre}{m.nota ? ` · ${m.nota}` : ""}</div>
+                              </td>
+                              <td style={styles.td}>{formatMoney(m.monto)}</td>
+                              <td style={{ ...styles.td, fontSize: "0.8rem" }}>
+                                {esBono ? (m.recurrente ? "Cada planilla" : "Pago único") : `${m.numCuotas} cuota(s) de ${formatMoney(m.cuotaMonto)} desde ${m.fechaInicioPago || m.fecha}`}
+                              </td>
+                              <td style={{ ...styles.td, color: "var(--color-success)" }}>{formatMoney(aplicado)} <span style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>({(m.pagos || []).length})</span></td>
+                              <td style={{ ...styles.td, fontWeight: 700, color: saldo > 0 ? "var(--color-warning)" : "var(--text-muted)" }}>{esBono ? "—" : formatMoney(saldo)}</td>
+                              <td style={styles.td}>
+                                <span className={`badge ${m.activo === false ? "badge-ready" : "badge-process"}`}>
+                                  {m.activo === false ? (saldo <= 0 && !esBono ? "Liquidado" : "Inactivo") : "Activo"}
+                                </span>
+                              </td>
+                              <td style={{ ...styles.td, textAlign: "right" }}>
+                                <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
+                                  {(esBono || saldo > 0) && (
+                                    <button onClick={() => toggleMovimientoActivo(m.id)} className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: "0.75rem" }}>
+                                      {m.activo === false ? "Reactivar" : "Pausar"}
+                                    </button>
+                                  )}
+                                  {isAdmin && (m.pagos || []).length === 0 && (
+                                    <button onClick={() => deleteMovimiento(m)} className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: "0.75rem", color: "#f87171" }}>🗑️</button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              );
+            })()}
 
             {commSubTab === "historial" && (
               <>
@@ -2383,7 +2816,7 @@ export default function Finance({
           {/* PAYROLL LIQUIDATION MODAL */}
           {selectedPayrollUser && createPortal(
             (() => {
-              const { items } = getPayrollUnpaidItems(selectedPayrollUser.user, selectedPayrollUser.rol);
+              const { items, laborCommDisabled, ordersWithoutCommission } = getPayrollUnpaidItems(selectedPayrollUser.user, selectedPayrollUser.rol);
               const selectedItems = items.filter(i => selectedCommKeys.includes(`${i.type}_${i.orderId}`));
               const totalSelectedComms = selectedItems.reduce((sum, i) => sum + i.comision, 0);
               const baseSal = parseFloat(customSueldoBaseInput) || 0;
@@ -2457,6 +2890,12 @@ export default function Finance({
                         📌 Período a Liquidar: <span style={{ color: "var(--color-primary)" }}>{periodLabel}</span>
                       </div>
                     </div>
+
+                    {laborCommDisabled && (
+                      <div style={{ backgroundColor: "rgba(245, 158, 11, 0.1)", border: "1px solid rgba(245, 158, 11, 0.35)", padding: "10px 14px", borderRadius: "10px", marginBottom: "16px", fontSize: "0.82rem", color: "#fbbf24" }}>
+                        ⚠️ Este colaborador tiene desactivada la opción "Comisionar mano de obra" en Configuración → Usuarios{ordersWithoutCommission > 0 ? ` (${ordersWithoutCommission} órdenes entregadas sin comisión)` : ""}. Actívala si debe recibir comisión por sus trabajos.
+                      </div>
+                    )}
 
                     {/* Base Salary Field */}
                     <div style={{ display: "flex", gap: "16px", marginBottom: "20px", alignItems: "center" }}>
@@ -2563,7 +3002,7 @@ export default function Finance({
                                   <td style={{ padding: "8px 12px", color: "var(--text-muted)" }}>
                                     {item.fecha ? formatDate(item.fecha) : "-"}
                                   </td>
-                                  <td style={{ padding: "8px 12px", textAlign: "right", color: isSelected ? "var(--color-success)" : "var(--text-muted)", fontWeight: "700" }}>
+                                  <td style={{ padding: "8px 12px", textAlign: "right", color: isSelected ? (item.comision < 0 ? "#f87171" : "var(--color-success)") : "var(--text-muted)", fontWeight: "700" }}>
                                     {formatMoney(item.comision)}
                                   </td>
                                 </tr>
@@ -2588,7 +3027,7 @@ export default function Finance({
                       <div>
                         <span style={{ fontSize: "0.8rem", color: "#34d399", fontWeight: "700", textTransform: "uppercase" }}>TOTAL LÍQUIDO A APLICAR</span>
                         <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
-                          Sueldo Base (Q{baseSal.toFixed(2)}) + Comisiones Seleccionadas (Q{totalSelectedComms.toFixed(2)})
+                          Sueldo Base (Q{baseSal.toFixed(2)}) + Comisiones, bonos y descuentos seleccionados (Q{totalSelectedComms.toFixed(2)})
                         </div>
                       </div>
                       <span style={{ fontSize: "1.8rem", fontWeight: "900", color: "#34d399" }}>
@@ -2608,18 +3047,7 @@ export default function Finance({
                       </button>
                       <button
                         type="button"
-                        onClick={() => imprimirReciboNominaPrint({
-                          id: Date.now(),
-                          colaborador: selectedPayrollUser.user,
-                          rol: selectedPayrollUser.rol,
-                          periodo: periodLabel,
-                          fechaPago: new Date().toISOString(),
-                          sueldoBase: baseSal,
-                          totalComisiones: totalSelectedComms,
-                          totalPagado: totalLiquido,
-                          detallesComisiones: selectedItems,
-                          registradoPor: "Gerencia"
-                        })}
+                        onClick={() => imprimirReciboNominaPrint(buildPayrollReceiptPreview(selectedPayrollUser, baseSal, selectedItems, periodLabel))}
                         className="btn"
                         style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.1)", color: "#fff", border: "1px solid rgba(255,255,255,0.2)" }}
                       >

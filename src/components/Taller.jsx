@@ -26,6 +26,7 @@ import {
   FileText
 } from "lucide-react";
 import { formatMoney, getLocalStorage, setLocalStorage, setTenantLocalStorage } from "../utils/storage";
+import { calcOrderCommission, laborComisiona, findPreviousOrderForPlate, getMissingExternalCosts, getWarrantyPenalty } from "../utils/workshopCalc";
 import { syncKeyToCloud } from "../utils/supabase";
 import { findVehiclesForClient } from "../utils/vehicleHelpers";
 import { DEFAULT_BRANDING, getCleanBranding, drawCanvasHeader } from "../utils/branding";
@@ -251,44 +252,118 @@ export default function Taller({
     vehicles: []
   });
 
-  const calculateOrderCommission = (orderObj) => {
-    if (!orderObj) return 0;
-    const mechName = orderObj.mecanico;
-    if (!mechName) return 0;
-    
-    const mechUser = (usuarios || []).find(u => u && String(u.user || "").toLowerCase().trim() === String(mechName || "").toLowerCase().trim());
-    
-    // Determine flags and rates
-    const comisionarLabor = mechUser ? (mechUser.comisionarLabor !== undefined ? mechUser.comisionarLabor : true) : true;
-    const comisionarRepuestos = mechUser ? (mechUser.comisionarRepuestos !== undefined ? mechUser.comisionarRepuestos : false) : false;
-    
-    const pctLabor = mechUser ? (mechUser.comisionTaller !== undefined ? Number(mechUser.comisionTaller) / 100 : comisionMecanico) : comisionMecanico;
-    const pctRepuestos = mechUser ? (mechUser.comisionRepuestos !== undefined ? Number(mechUser.comisionRepuestos) / 100 : 0) : 0;
-    
-    let laborComm = 0;
-    let repuestosComm = 0;
-    
-    if (orderObj.presupuesto) {
-      const totalLabor = orderObj.presupuesto.labor?.reduce((sum, item) => sum + Number(item.price || 0), 0) || 0;
-      if (comisionarLabor) {
-        laborComm = totalLabor * pctLabor;
-      }
-      
-      if (comisionarRepuestos) {
-        const totalPartsUtility = orderObj.presupuesto.parts?.reduce((sum, part) => {
-          const utility = Math.max(0, (Number(part.salePrice || 0) - Number(part.purchasePrice || 0)) * Number(part.qty || 0));
-          return sum + utility;
-        }, 0) || 0;
-        repuestosComm = totalPartsUtility * pctRepuestos;
-      }
-    } else {
-      // Reception order or simple total
-      if (comisionarLabor) {
-        laborComm = Number(orderObj.total || 0) * pctLabor;
-      }
-    }
-    
-    return laborComm + repuestosComm;
+  // Comisión del técnico: respeta la configuración del colaborador y la casilla
+  // "Comisiona" de cada línea de mano de obra (ver utils/workshopCalc.js)
+  const calculateOrderCommission = (orderObj) => calcOrderCommission(orderObj, usuarios, comisionMecanico);
+
+  // 🛡️ GARANTÍA: penalización al técnico que trabajó previamente el vehículo
+  const EMPTY_GARANTIA = { activa: false, tecnico: "", tipo: "porcentaje", valor: "", base: "", ordenOrigenId: null };
+  const [garantiaForm, setGarantiaForm] = useState(EMPTY_GARANTIA);
+
+  // Sugerencias a partir de la última orden entregada del mismo vehículo
+  const buildGarantiaSuggestion = (placa, excludeId = null) => {
+    const prev = findPreviousOrderForPlate(ordenes, placa, excludeId);
+    if (!prev) return { tecnico: "", base: "", ordenOrigenId: null, prev: null };
+    const stored = parseFloat(prev.comision) || 0;
+    const base = stored > 0 ? stored : calcOrderCommission(prev, usuarios, comisionMecanico);
+    return { tecnico: prev.mecanico || "", base: base ? String(Math.round(base * 100) / 100) : "", ordenOrigenId: prev.id || null, prev };
+  };
+
+  // Convierte el formulario en el objeto que se guarda en la orden
+  const buildGarantiaObject = (g) => {
+    if (!g || !g.activa) return null;
+    const obj = {
+      activa: true,
+      tecnico: g.tecnico || "",
+      tipo: g.tipo === "monto" ? "monto" : "porcentaje",
+      valor: parseFloat(g.valor) || 0,
+      base: parseFloat(g.base) || 0,
+      ordenOrigenId: g.ordenOrigenId || null,
+      penalizacionAplicada: !!g.penalizacionAplicada,
+      fechaPenalizacion: g.fechaPenalizacion || null
+    };
+    obj.monto = getWarrantyPenalty(obj);
+    return obj;
+  };
+
+  const renderGarantiaFields = (g, setG, placa, excludeId = null) => {
+    const sug = g.activa ? buildGarantiaSuggestion(placa, excludeId) : null;
+    const preview = getWarrantyPenalty({ garantia: { ...g, activa: g.activa } });
+    const boxStyle = {
+      marginTop: "10px",
+      marginBottom: "15px",
+      padding: "12px 14px",
+      borderRadius: "12px",
+      border: `1px solid ${g.activa ? "rgba(245,158,11,0.5)" : "rgba(255,255,255,0.08)"}`,
+      background: g.activa ? "linear-gradient(135deg, rgba(245,158,11,0.12), rgba(239,68,68,0.06))" : "rgba(255,255,255,0.02)",
+      transition: "all 0.25s ease"
+    };
+    return (
+      <div style={boxStyle}>
+        <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontWeight: 700, fontSize: "0.9rem", color: g.activa ? "#fbbf24" : "var(--text-main, #fff)" }}>
+          <input
+            type="checkbox"
+            checked={!!g.activa}
+            onChange={(e) => {
+              if (e.target.checked) {
+                const s = buildGarantiaSuggestion(placa, excludeId);
+                setG({ ...g, activa: true, tecnico: g.tecnico || s.tecnico, base: g.base || s.base, ordenOrigenId: g.ordenOrigenId || s.ordenOrigenId });
+              } else {
+                setG({ ...g, activa: false });
+              }
+            }}
+            style={{ width: "18px", height: "18px", accentColor: "#f59e0b", cursor: "pointer" }}
+          />
+          🛡️ ¿Es garantía?
+        </label>
+        {g.activa && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "10px" }}>
+            {sug && sug.prev ? (
+              <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                Último trabajo entregado de este vehículo: Orden #{String(sug.prev.id).slice(-6)} ({new Date(sug.prev.fecha).toLocaleDateString("es-GT")}) — técnico <strong>{sug.prev.mecanico || "sin asignar"}</strong>
+              </span>
+            ) : (
+              <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                No se encontró un trabajo anterior entregado para esta placa. Selecciona el técnico manualmente.
+              </span>
+            )}
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: "160px" }}>
+                <label style={{ ...styles.label, fontSize: "0.78rem" }}>Técnico penalizado</label>
+                <select className="select-field" value={g.tecnico} onChange={(e) => setG({ ...g, tecnico: e.target.value })} style={{ ...styles.select, width: "100%" }}>
+                  <option value="">-- Seleccionar --</option>
+                  {[...new Set([...(mecanicos || []), g.tecnico].filter(Boolean))].map((m, i) => (
+                    <option key={i} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ flex: 1, minWidth: "140px" }}>
+                <label style={{ ...styles.label, fontSize: "0.78rem" }}>Tipo de penalización</label>
+                <select className="select-field" value={g.tipo} onChange={(e) => setG({ ...g, tipo: e.target.value })} style={{ ...styles.select, width: "100%" }}>
+                  <option value="porcentaje">% de mano de obra pagada</option>
+                  <option value="monto">Monto fijo (Q)</option>
+                </select>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: "120px" }}>
+                <label style={{ ...styles.label, fontSize: "0.78rem" }}>{g.tipo === "monto" ? "Monto (Q)" : "Porcentaje (%)"}</label>
+                <input type="number" min="0" className="input-field" value={g.valor} onChange={(e) => setG({ ...g, valor: e.target.value })} placeholder={g.tipo === "monto" ? "Ej. 150" : "Ej. 50"} />
+              </div>
+              {g.tipo === "porcentaje" && (
+                <div style={{ flex: 1, minWidth: "160px" }}>
+                  <label style={{ ...styles.label, fontSize: "0.78rem" }}>Mano de obra pagada al técnico (Q)</label>
+                  <input type="number" min="0" className="input-field" value={g.base} onChange={(e) => setG({ ...g, base: e.target.value })} placeholder="Comisión pagada en el trabajo anterior" />
+                </div>
+              )}
+            </div>
+            <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#f87171" }}>
+              Penalización a descontar en planilla: Q{preview.toFixed(2)}
+            </div>
+          </div>
+        )}
+      </div>
+    );
   };
 
   const aceptarCotizacionVendedor = (orderId, cotizacion) => {
@@ -832,7 +907,7 @@ export default function Taller({
 
     (b.labor || []).forEach((item, idx) => {
       const vUnit = parseFloat(item.price) || 0;
-      const cUnit = item.cost !== undefined && item.cost !== "" ? (parseFloat(item.cost) || 0) : (vUnit * pctLabor);
+      const cUnit = item.cost !== undefined && item.cost !== "" ? (parseFloat(item.cost) || 0) : (laborComisiona(item) ? vUnit * pctLabor : 0);
       const profit = vUnit - cUnit;
       const margin = vUnit > 0 ? (profit / vUnit) * 100 : 0;
       ventasLabor += vUnit;
@@ -1509,6 +1584,38 @@ export default function Taller({
   // Detailed Budget Modal states
   const [budgetModalOrder, setBudgetModalOrder] = useState(null);
   const [quickAddOrder, setQuickAddOrder] = useState(null);
+  const [quickProveedor, setQuickProveedor] = useState("");
+
+  // 🔔 Trabajos externos sin costo registrado
+  const [showMissingCostsPanel, setShowMissingCostsPanel] = useState(false);
+  const [missingCostDrafts, setMissingCostDrafts] = useState({});
+  const missingExternalCosts = getMissingExternalCosts(ordenes);
+  const missingCostOrderIds = new Set(missingExternalCosts.map(m => String(m.order.id)));
+
+  const saveExternalServiceCost = (orderId, idx, { costo, proveedor, sinCosto }) => {
+    const cost = parseFloat(costo);
+    if (!sinCosto && (isNaN(cost) || cost <= 0)) {
+      alert("Ingresa un costo válido mayor a 0 o marca el servicio como 'Sin costo'.");
+      return;
+    }
+    setOrdenes(prev => (Array.isArray(prev) ? prev : []).map(o => {
+      if (String(o.id) !== String(orderId) || !o.presupuesto) return o;
+      const services = [...(o.presupuesto.services || [])];
+      if (!services[idx]) return o;
+      services[idx] = {
+        ...services[idx],
+        purchasePrice: sinCosto ? (parseFloat(services[idx].purchasePrice) || 0) : cost,
+        proveedor: (proveedor ?? services[idx].proveedor ?? "").trim(),
+        sinCosto: !!sinCosto
+      };
+      return { ...o, presupuesto: { ...o.presupuesto, services }, updatedAt: new Date().toISOString() };
+    }));
+    setMissingCostDrafts(prev => {
+      const next = { ...prev };
+      delete next[`${orderId}_${idx}`];
+      return next;
+    });
+  };
   const [quickType, setQuickType] = useState("part");
   const [quickDesc, setQuickDesc] = useState("");
   const [quickQty, setQuickQty] = useState("1");
@@ -1532,6 +1639,7 @@ export default function Taller({
   const [inputServiceDesc, setInputServiceDesc] = useState("");
   const [inputServicePrice, setInputServicePrice] = useState("");
   const [inputServicePurchasePrice, setInputServicePurchasePrice] = useState("");
+  const [inputServiceProveedor, setInputServiceProveedor] = useState("");
   
   const [cajeroComisionApplies, setCajeroComisionApplies] = useState(false);
   const [budgetCajeroComisionApplies, setBudgetCajeroComisionApplies] = useState(false);
@@ -1745,8 +1853,12 @@ export default function Taller({
       c.nombre?.toLowerCase().includes(val.toLowerCase())
     );
 
-    // If exact match on phone number and client is empty, autofill client details
-    const exactMatch = (clientes || []).find(c => c.telefono === val.trim());
+    // If exact match on a COMPLETE phone number (≥8 dígitos), autofill client details.
+    // Evita autollenar con clientes que tienen teléfonos cortos (ej. "4") mientras se escribe.
+    const typedDigits = val.replace(/\D/g, "");
+    const exactMatch = typedDigits.length >= 8
+      ? (clientes || []).find(c => String(c.telefono || "").replace(/\D/g, "") === typedDigits)
+      : null;
     if (exactMatch) {
       if (!cliente.trim()) {
         setCliente(exactMatch.nombre || "");
@@ -1877,7 +1989,7 @@ export default function Taller({
           telefono: tel,
           nombre: order.cliente.trim(),
           nit: order.nit || "C/F",
-          nombreFacturacion: order.nombreFacturacion || order.cliente.trim(),
+          nombreFacturacion: order.nombreFacturacion || "",
           fechaRegistro: new Date().toISOString(),
           _isNewOffline: true,
           isOfflineCreated: true
@@ -1960,7 +2072,8 @@ export default function Taller({
       kilometraje: (editingEntryOrder.kilometraje || "").trim(),
       chasis: (editingEntryOrder.chasis || "").toUpperCase().trim(),
       nit: (editingEntryOrder.nit || "").trim() || "C/F",
-      nombreFacturacion: (editingEntryOrder.nombreFacturacion || "").trim() || clienteVal,
+      nombreFacturacion: (editingEntryOrder.nombreFacturacion || "").trim(),
+      garantia: buildGarantiaObject(editingEntryOrder.garantia),
       vehiculo: `${marcaVal || "Marca"} ${lineaVal || "Línea"} (${fullPlaca})`,
       updatedAt: new Date().toISOString()
     };
@@ -2030,7 +2143,7 @@ export default function Taller({
             telefono: tel,
             nombre: clienteVal,
             nit: updatedOrder.nit || "C/F",
-            nombreFacturacion: updatedOrder.nombreFacturacion || clienteVal,
+            nombreFacturacion: updatedOrder.nombreFacturacion || "",
             fechaRegistro: new Date().toISOString(),
             _isNewOffline: true,
             isOfflineCreated: true
@@ -2087,6 +2200,12 @@ export default function Taller({
 
     const motivosString = motivosIngreso.join(" / ");
 
+    if (garantiaForm.activa && !garantiaForm.tecnico) {
+      alert("Selecciona el técnico al que se aplicará la penalización por garantía.");
+      return;
+    }
+    const garantiaObj = buildGarantiaObject(garantiaForm);
+
     const nueva = {
       id: `ord_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
       _isNewOffline: true,
@@ -2116,9 +2235,10 @@ export default function Taller({
       fecha: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       nit: nit.trim() || "C/F",
-      nombreFacturacion: nombreFacturacion.trim() || cliente.trim(),
+      nombreFacturacion: nombreFacturacion.trim(),
       checklist,
-      cajeroComisionApplies
+      cajeroComisionApplies,
+      ...(garantiaObj ? { garantia: garantiaObj } : {})
     };
 
     // Save the order immediately (synchronous)
@@ -2130,9 +2250,6 @@ export default function Taller({
       try {
         const activeTenant = (tenantId || "lospits").toLowerCase().trim();
         syncKeyToCloud(`${activeTenant}_ordenes`, updated);
-        if (activeTenant === "lospits") {
-          syncKeyToCloud("ordenes", updated);
-        }
       } catch (e) {}
       return updated;
     });
@@ -2168,6 +2285,7 @@ export default function Taller({
       setMotivosIngreso([]);
       setInputMotivo("");
       setCajeroComisionApplies(false);
+      setGarantiaForm(EMPTY_GARANTIA);
       setActiveFieldSuggestions(null);
       setSuggestions([]);
 
@@ -2239,7 +2357,7 @@ export default function Taller({
           // Open split payment modal instead of directly updating order state!
           setCheckoutOrder({ ...o, total: nuevoTotal, cajeroComisionApplies: o.cajeroComisionApplies === true });
           setCheckoutNit(o.nit || "C/F");
-          setCheckoutNombreFacturacion(o.nombreFacturacion || o.cliente);
+          setCheckoutNombreFacturacion(o.nombreFacturacion || "");
           setCheckoutPayments({ efectivo: "", transferencia: "", cheque: "", tarjeta: "", credito: "" });
           setSelectedPaymentMethods([]);
           cancelado = true;
@@ -2528,7 +2646,7 @@ export default function Taller({
           ...o,
           estado: "Entregado",
           nit: checkoutNit.trim() || "C/F",
-          nombreFacturacion: checkoutNombreFacturacion.trim() || o.cliente,
+          nombreFacturacion: checkoutNombreFacturacion.trim(),
           formaPago: breakdown,
           formaPagoDesc: (() => {
             const parts = paymentMethodsSelected.map(m => `${m.toUpperCase()} (Q${(breakdown[m] || 0).toFixed(2)})`);
@@ -2581,7 +2699,7 @@ export default function Taller({
     }
     setCurrentBudget((prev) => ({
       ...prev,
-      labor: [...(prev.labor || []), { desc: inputLaborDesc.trim(), price }]
+      labor: [...(prev.labor || []), { desc: inputLaborDesc.trim(), price, comisiona: true }]
     }));
     setInputLaborDesc("");
     setInputLaborPrice("");
@@ -2691,11 +2809,12 @@ export default function Taller({
     if (isNaN(price) || price < 0) return;
     setCurrentBudget((prev) => ({
       ...prev,
-      services: [...(prev.services || []), { desc: inputServiceDesc.trim(), purchasePrice, price }]
+      services: [...(prev.services || []), { desc: inputServiceDesc.trim(), purchasePrice, price, proveedor: inputServiceProveedor.trim() }]
     }));
     setInputServiceDesc("");
     setInputServicePurchasePrice("");
     setInputServicePrice("");
+    setInputServiceProveedor("");
   };
 
   const deleteLaborItem = (idx) => {
@@ -2730,6 +2849,27 @@ export default function Taller({
     setCurrentBudget((prev) => ({
       ...prev,
       services: (prev.services || []).filter((_, i) => i !== idx)
+    }));
+  };
+
+  // ✅ Casilla de comisión por línea de mano de obra (activada por defecto)
+  const toggleLaborComisiona = (idx) => {
+    setCurrentBudget((prev) => ({
+      ...prev,
+      labor: (prev.labor || []).map((item, i) => i === idx ? { ...item, comisiona: !laborComisiona(item) } : item)
+    }));
+  };
+
+  // Edición en línea de campos de un trabajo externo (proveedor / costo)
+  const updateServiceField = (idx, field, value) => {
+    setCurrentBudget((prev) => ({
+      ...prev,
+      services: (prev.services || []).map((item, i) => {
+        if (i !== idx) return item;
+        const next = { ...item, [field]: value };
+        if (field === "purchasePrice" && (parseFloat(value) || 0) > 0) next.sinCosto = false;
+        return next;
+      })
     }));
   };
 
@@ -2871,7 +3011,8 @@ export default function Taller({
       updatedServices.push({
         desc: quickDesc.trim(),
         purchasePrice: cost,
-        price
+        price,
+        proveedor: quickProveedor.trim()
       });
     }
 
@@ -2911,6 +3052,7 @@ export default function Taller({
     setQuickDesc("");
     setQuickQty("1");
     setQuickCost("");
+    setQuickProveedor("");
     setQuickPrice("");
     setQuickSuggestions([]);
     setQuickShowSuggestions(false);
@@ -4358,6 +4500,29 @@ export default function Taller({
           <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
             <button
               type="button"
+              onClick={() => setShowMissingCostsPanel(true)}
+              className="btn"
+              title="Trabajos externos sin costo registrado"
+              style={{
+                position: "relative",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                background: missingExternalCosts.length > 0 ? "linear-gradient(135deg, rgba(239,68,68,0.18), rgba(239,68,68,0.06))" : "rgba(255,255,255,0.04)",
+                border: `1px solid ${missingExternalCosts.length > 0 ? "rgba(239,68,68,0.5)" : "rgba(255,255,255,0.1)"}`,
+                color: missingExternalCosts.length > 0 ? "#fca5a5" : "var(--text-muted)",
+                fontWeight: "700",
+                padding: "10px 16px",
+                borderRadius: "10px"
+              }}
+            >
+              🔔 Costos externos
+              {missingExternalCosts.length > 0 && (
+                <span className="notif-pin notif-pin-floating">{missingExternalCosts.length}</span>
+              )}
+            </button>
+            <button
+              type="button"
               onClick={() => setShowExpressQuoteModal(true)}
               className="btn"
               style={{
@@ -4504,8 +4669,9 @@ export default function Taller({
                     onBlur={(e) => {
                       if (isSubmittingFormRef.current) return;
                       const val = e.target.value.trim();
-                      if (val && !cliente.trim()) {
-                        const match = (clientes || []).find(c => c.telefono === val);
+                      const valDigits = val.replace(/\D/g, "");
+                      if (valDigits.length >= 8 && !cliente.trim()) {
+                        const match = (clientes || []).find(c => String(c.telefono || "").replace(/\D/g, "") === valDigits);
                         if (match && match.nombre) {
                           setCliente(match.nombre);
                           if (match.nit && !nit.trim()) setNit(match.nit);
@@ -4538,6 +4704,8 @@ export default function Taller({
                   <input
                     placeholder="Ej. 1234567-8"
                     className="input-field"
+                    autoComplete="off"
+                    name="orden-nit-facturacion"
                     value={nit}
                     onChange={(e) => setNit(e.target.value)}
                   />
@@ -4547,6 +4715,8 @@ export default function Taller({
                   <input
                     placeholder="Ej. Juan López / Distribuidora XYZ"
                     className="input-field"
+                    autoComplete="off"
+                    name="orden-nombre-facturacion"
                     value={nombreFacturacion}
                     onChange={(e) => setNombreFacturacion(e.target.value)}
                   />
@@ -4796,6 +4966,13 @@ export default function Taller({
                   Comisión de cajero aplica sobre la mano de obra
                 </label>
               </div>
+
+              {/* 🛡️ Orden de garantía con penalización al técnico */}
+              {renderGarantiaFields(
+                garantiaForm,
+                setGarantiaForm,
+                plateNumber.trim() ? (platePrefix === "Extranjera" ? plateNumber.trim().toUpperCase() : `${platePrefix}-${plateNumber.trim().toUpperCase()}`) : ""
+              )}
 
               {/* Multiple Motives Tags Editor */}
               <div style={styles.inputGroup}>
@@ -5277,7 +5454,16 @@ export default function Taller({
                       )}
 
                       <div style={styles.infoRow}>
-                        <span style={styles.infoLabel}>💰 Total Trabajo:</span>
+                        <span style={styles.infoLabel}>💰 Total Trabajo:
+                          {isManager && missingCostOrderIds.has(String(o.id)) && (
+                            <span
+                              className="notif-pin"
+                              title="Trabajo externo sin costo registrado"
+                              onClick={() => setShowMissingCostsPanel(true)}
+                              style={{ marginLeft: "6px", cursor: "pointer", display: "inline-block" }}
+                            >!</span>
+                          )}
+                        </span>
                         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
                           <span style={o.total > 0 ? styles.infoValTotal : { ...styles.infoVal, color: "var(--color-warning)", fontWeight: "bold" }}>
                             {o.total > 0 ? formatMoney(o.total) : "Pendiente de presupuesto"}
@@ -6040,6 +6226,34 @@ export default function Taller({
                         ) : (
                           <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>(Precio Oculto)</span>
                         )}
+                        {!isWorker && (
+                          <label
+                            title={laborComisiona(item) ? "Genera comisión al técnico (desmarcar para anular)" : "Sin comisión para este trabajo"}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "4px",
+                              fontSize: "0.72rem",
+                              fontWeight: "700",
+                              cursor: "pointer",
+                              padding: "3px 8px",
+                              borderRadius: "999px",
+                              border: `1px solid ${laborComisiona(item) ? "rgba(16,185,129,0.45)" : "rgba(239,68,68,0.45)"}`,
+                              backgroundColor: laborComisiona(item) ? "rgba(16,185,129,0.12)" : "rgba(239,68,68,0.12)",
+                              color: laborComisiona(item) ? "#34d399" : "#f87171",
+                              userSelect: "none",
+                              whiteSpace: "nowrap"
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={laborComisiona(item)}
+                              onChange={() => toggleLaborComisiona(idx)}
+                              style={{ accentColor: "#10b981", cursor: "pointer", margin: 0 }}
+                            />
+                            Comisión
+                          </label>
+                        )}
                         <button type="button" onClick={() => deleteLaborItem(idx)} style={styles.btnDeleteBudget}>&times;</button>
                       </div>
                     </li>
@@ -6457,6 +6671,19 @@ export default function Taller({
                       style={{ flex: 2 }}
                     />
                     <input
+                      placeholder="Proveedor / Taller externo"
+                      className="input-field"
+                      list="taller-proveedores-externos"
+                      value={inputServiceProveedor}
+                      onChange={(e) => setInputServiceProveedor(e.target.value)}
+                      style={{ flex: 1.5 }}
+                    />
+                    <datalist id="taller-proveedores-externos">
+                      {[...new Set((ordenes || []).flatMap(o => (o?.presupuesto?.services || []).map(s => String(s?.proveedor || "").trim())).filter(Boolean))].map(p => (
+                        <option key={p} value={p} />
+                      ))}
+                    </datalist>
+                    <input
                       type="number"
                       placeholder="P. Compra"
                       className="input-field"
@@ -6478,9 +6705,48 @@ export default function Taller({
                   </div>
                   <ul style={styles.budgetList}>
                     {(currentBudget.services || []).map((item, idx) => (
-                      <li key={idx} style={styles.budgetItem}>
-                        <span style={{ flex: 1 }}>{item.desc}</span>
+                      <li key={idx} style={{ ...styles.budgetItem, flexWrap: "wrap", rowGap: "6px" }}>
+                        <div style={{ flex: 1, minWidth: "160px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                          <span>{item.desc}</span>
+                          <input
+                            placeholder="Proveedor"
+                            list="taller-proveedores-externos"
+                            value={item.proveedor || ""}
+                            onChange={(e) => updateServiceField(idx, "proveedor", e.target.value)}
+                            style={{
+                              height: "26px",
+                              padding: "2px 8px",
+                              fontSize: "0.78rem",
+                              backgroundColor: "rgba(0,0,0,0.25)",
+                              border: "1px solid rgba(255,255,255,0.12)",
+                              borderRadius: "6px",
+                              color: "#fff",
+                              maxWidth: "220px"
+                            }}
+                          />
+                          {!(parseFloat(item.purchasePrice) > 0) && !item.sinCosto && (
+                            <span style={{ fontSize: "0.72rem", color: "#f87171", fontWeight: "700" }}>
+                              ⚠️ Falta registrar el costo del trabajo externo
+                            </span>
+                          )}
+                          {Array.isArray(item.pagos) && item.pagos.length > 0 && (
+                            <span style={{ fontSize: "0.72rem", color: "#34d399" }}>
+                              Pagado al proveedor: Q{item.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0).toFixed(2)}
+                            </span>
+                          )}
+                        </div>
                         <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                          {!(parseFloat(item.purchasePrice) > 0) && (
+                            <label title="Marcar si este servicio no tiene costo (no generará alerta)" style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.72rem", color: "var(--text-muted)", cursor: "pointer" }}>
+                              <input
+                                type="checkbox"
+                                checked={!!item.sinCosto}
+                                onChange={(e) => updateServiceField(idx, "sinCosto", e.target.checked)}
+                                style={{ margin: 0 }}
+                              />
+                              Sin costo
+                            </label>
+                          )}
                           {/* Purchase Price Input */}
                           <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                             <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Compra: Q</span>
@@ -6768,6 +7034,76 @@ export default function Taller({
         document.body
       )}
 
+      {showMissingCostsPanel && createPortal(
+        <div style={styles.modalOverlay} onClick={() => setShowMissingCostsPanel(false)}>
+          <div className="glass-panel" style={{ ...styles.modalContent, maxWidth: "760px" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ ...styles.modalHeader, display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "15px" }}>
+              <div>
+                <h2 style={{ fontSize: "1.3rem", fontWeight: "800", color: "#fff" }}>🔔 Trabajos externos sin costo</h2>
+                <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "2px" }}>
+                  Registra cuánto cobró el proveedor para que la utilidad y los pagos a proveedores queden correctos.
+                </p>
+              </div>
+              <button type="button" onClick={() => setShowMissingCostsPanel(false)} style={styles.btnDeleteBudget}>&times;</button>
+            </div>
+            {missingExternalCosts.length === 0 ? (
+              <div style={{ padding: "30px", textAlign: "center", color: "#34d399", fontWeight: 700 }}>
+                ✅ Todos los trabajos externos tienen su costo registrado.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "65vh", overflowY: "auto", paddingRight: "4px" }}>
+                {missingExternalCosts.map(({ order, idx, service }) => {
+                  const key = `${order.id}_${idx}`;
+                  const draft = missingCostDrafts[key] || { costo: "", proveedor: service.proveedor || "" };
+                  const setDraft = (patch) => setMissingCostDrafts(prev => ({ ...prev, [key]: { ...draft, ...patch } }));
+                  return (
+                    <div key={key} style={{ padding: "12px", borderRadius: "10px", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.06)", display: "flex", flexDirection: "column", gap: "8px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" }}>
+                        <strong style={{ color: "#fff" }}>{service.desc || "Trabajo externo"}</strong>
+                        <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                          Orden {order.placa} · {order.cliente} · {order.estado} · Venta: {formatMoney(parseFloat(service.price) || 0)}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+                        <input
+                          className="input-field"
+                          placeholder="Proveedor"
+                          list="taller-proveedores-externos-panel"
+                          value={draft.proveedor}
+                          onChange={(e) => setDraft({ proveedor: e.target.value })}
+                          style={{ flex: 2, minWidth: "150px" }}
+                        />
+                        <input
+                          className="input-field"
+                          type="number"
+                          min="0"
+                          placeholder="Costo Q"
+                          value={draft.costo}
+                          onChange={(e) => setDraft({ costo: e.target.value })}
+                          style={{ flex: 1, minWidth: "100px" }}
+                        />
+                        <button type="button" className="btn btn-primary" onClick={() => saveExternalServiceCost(order.id, idx, { costo: draft.costo, proveedor: draft.proveedor, sinCosto: false })} style={{ height: "42px", padding: "0 14px" }}>
+                          Guardar
+                        </button>
+                        <button type="button" className="btn btn-ghost" onClick={() => saveExternalServiceCost(order.id, idx, { costo: 0, proveedor: draft.proveedor, sinCosto: true })} style={{ height: "42px", padding: "0 12px", fontSize: "0.8rem" }} title="Este servicio no tiene costo para el taller">
+                          Sin costo
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                <datalist id="taller-proveedores-externos-panel">
+                  {[...new Set((ordenes || []).flatMap(o => (o?.presupuesto?.services || []).map(s => String(s?.proveedor || "").trim())).filter(Boolean))].map(p => (
+                    <option key={p} value={p} />
+                  ))}
+                </datalist>
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+
       {quickAddOrder && createPortal(
         <div style={styles.modalOverlay}>
           <div className="glass-panel" style={{ ...styles.modalContent, maxWidth: "500px" }}>
@@ -6898,6 +7234,26 @@ export default function Taller({
                   </ul>
                 )}
               </div>
+
+              {quickType === "service" && (
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Proveedor / Taller externo</label>
+                  <input
+                    type="text"
+                    placeholder="Ej. Tornos Hernández"
+                    className="input-field"
+                    list="taller-proveedores-externos-quick"
+                    value={quickProveedor}
+                    onChange={(e) => setQuickProveedor(e.target.value)}
+                    style={{ width: "100%", boxSizing: "border-box" }}
+                  />
+                  <datalist id="taller-proveedores-externos-quick">
+                    {[...new Set((ordenes || []).flatMap(o => (o?.presupuesto?.services || []).map(s => String(s?.proveedor || "").trim())).filter(Boolean))].map(p => (
+                      <option key={p} value={p} />
+                    ))}
+                  </datalist>
+                </div>
+              )}
 
               {quickType !== "service" && (
                 <div style={styles.inputGroup}>
@@ -7880,6 +8236,13 @@ export default function Taller({
                   />
                 </div>
               </div>
+
+              {renderGarantiaFields(
+                editingEntryOrder.garantia ? { ...EMPTY_GARANTIA, ...editingEntryOrder.garantia, valor: String(editingEntryOrder.garantia.valor ?? ""), base: String(editingEntryOrder.garantia.base ?? "") } : EMPTY_GARANTIA,
+                (ng) => setEditingEntryOrder(prev => ({ ...prev, garantia: ng })),
+                editingEntryOrder.placa || "",
+                editingEntryOrder.id
+              )}
 
               <div style={{ display: "flex", gap: "12px" }}>
                 <div style={{ ...styles.inputGroup, flex: 1 }}>
