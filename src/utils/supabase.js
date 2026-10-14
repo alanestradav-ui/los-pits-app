@@ -7,6 +7,12 @@ const DEFAULT_SUPABASE_KEY = 'sb_publishable_0kZjBWa7tBuHTCXIzEYKTA_3QusIMTf';
 let supabaseInstance = null;
 
 /**
+ * 🚀 Versiones conocidas por llave (updated_at). Permite que el polling descargue
+ * SOLO las llaves que realmente cambiaron en la nube, en lugar de todo el dataset.
+ */
+export const cloudKeyVersions = {};
+
+/**
  * Obtiene la instancia activa del cliente Supabase con credenciales por defecto de respaldo
  */
 export const getSupabaseClient = () => {
@@ -220,17 +226,19 @@ export const syncKeyToCloud = async (key, value) => {
     const payloadSize = JSON.stringify(cleanValue).length;
     const dynamicTimeout = Math.min(30000, 10000 + Math.floor(payloadSize / 100000) * 1000);
     
+    let writtenAt = new Date().toISOString();
     const upsertPromise = client
       .from('app_data')
-      .upsert({ key, value: cleanValue, updated_at: new Date().toISOString() });
+      .upsert({ key, value: cleanValue, updated_at: writtenAt });
 
     let { error } = await withTimeout(upsertPromise, dynamicTimeout, `Timeout al sincronizar ${key}`);
     
     if (error) {
       console.warn(`[Sync] Direct sync for key "${key}" failed (${error.message}). Retrying...`);
+      writtenAt = new Date().toISOString();
       const retryPromise = client
         .from('app_data')
-        .upsert({ key, value: cleanValue, updated_at: new Date().toISOString() });
+        .upsert({ key, value: cleanValue, updated_at: writtenAt });
       
       const retryResult = await withTimeout(retryPromise, dynamicTimeout, `Timeout en reintento de ${key}`);
       
@@ -240,6 +248,9 @@ export const syncKeyToCloud = async (key, value) => {
         return false;
       }
     }
+
+    // Registrar la versión escrita para no volver a descargar nuestro propio cambio
+    cloudKeyVersions[key] = Date.parse(writtenAt);
 
     // SERVER CONFIRMED RECEIPT
     removeFromOfflineQueue(key);

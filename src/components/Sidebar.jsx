@@ -42,7 +42,8 @@ export default function Sidebar({
   handleForceSyncMobile, 
   activeTenantId = "lospits", 
   onTenantChange,
-  activeModules = DEFAULT_ACTIVE_MODULES
+  activeModules = DEFAULT_ACTIVE_MODULES,
+  badges = {}
 }) {
   const rol = usuarioActual?.rol?.toLowerCase()?.trim();
   
@@ -633,6 +634,11 @@ export default function Sidebar({
                     <span style={isActive ? styles.menuItemTextActive : styles.menuItemText}>
                       {item.label}
                     </span>
+                    {badges[item.id] > 0 && (
+                      <span className="notif-pin" title={`${badges[item.id]} pendiente(s)`}>
+                        {badges[item.id] > 99 ? "99+" : badges[item.id]}
+                      </span>
+                    )}
                     {isActive && <div style={styles.activeIndicator} />}
                   </button>
                 </li>

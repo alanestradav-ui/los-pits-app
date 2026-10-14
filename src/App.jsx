@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import Login from "./components/Login";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./components/Dashboard";
@@ -26,9 +26,9 @@ import Citas from "./components/Citas";
 import { DEFAULT_CATALOGO_PREMIOS } from "./utils/wallet";
 import { DEFAULT_BRANDING, getCleanBranding } from "./utils/branding";
 import { DEFAULT_ACTIVE_MODULES, isModuleActive } from "./utils/modulesConfig";
-import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocalStorage, getActiveTenantId, restoreMasterBackup, purgeStorageBloat, getDeletedUsernames, addDeletedUsername, removeDeletedUsername, getDeletedFixedCosts, addDeletedFixedCost, removeDeletedFixedCost } from "./utils/storage";
+import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocalStorage, getActiveTenantId, restoreMasterBackup, purgeStorageBloat, getDeletedUsernames, addDeletedUsername, removeDeletedUsername, getDeletedFixedCosts, addDeletedFixedCost, removeDeletedFixedCost, getTombMap, saveTombMap, mergeTombMaps, normalizeTombMap } from "./utils/storage";
 import masterBackupData from "./data/masterBackupData.json";
-import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout, processOfflineQueue } from "./utils/supabase";
+import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout, processOfflineQueue, cloudKeyVersions } from "./utils/supabase";
 import { initHourlyBackupScheduler, checkAndCreateHourlyBackup } from "./services/backupService";
 import { autoPurgeTrash } from "./services/trashService";
 
@@ -43,6 +43,9 @@ const globalSyncFlags = {
 
 // 🚀 Debounce timers for broadcast-triggered fetches
 const pendingBroadcastFetches = {};
+// 🚀 Coalescencia de escrituras: una subida activa por llave, el último valor queda pendiente
+const syncInFlight = {};
+const syncPending = {};
 const globalActiveSetters = {
   usuarios: null,
   ordenes: null,
@@ -113,9 +116,50 @@ const ARRAY_KEYS = [
   "cotizacionesRepuestos",
   "citas",
   "payrollHistory",
+  "nominaMovimientos",
   "activeModules",
   "cotizacionesExpress"
 ];
+
+// ==========================================
+// 🕒 MARCA DE TIEMPO POR REGISTRO (updatedAt)
+// Cada vez que un módulo modifica un registro (orden, lavado, compra...) se le pone
+// updatedAt = ahora. Así, al fusionar con la nube, SIEMPRE gana la versión editada más
+// reciente y los cambios hechos en un dispositivo no son revertidos por otro.
+// ==========================================
+const stampChangedItems = (prev, next) => {
+  if (!Array.isArray(next) || !Array.isArray(prev) || next === prev) return next;
+  const prevById = new Map();
+  prev.forEach(i => {
+    if (i && typeof i === "object" && i.id !== undefined && i.id !== null) prevById.set(String(i.id), i);
+  });
+  const now = new Date().toISOString();
+  let changed = false;
+  const out = next.map(item => {
+    if (!item || typeof item !== "object" || item.id === undefined || item.id === null) return item;
+    const old = prevById.get(String(item.id));
+    if (old === item) return item;
+    if (!old) {
+      if (item.updatedAt) return item;
+      changed = true;
+      return { ...item, updatedAt: now };
+    }
+    if (old.updatedAt !== item.updatedAt) return item; // el módulo ya lo marcó
+    const keys = new Set([...Object.keys(old), ...Object.keys(item)]);
+    let diff = false;
+    for (const k of keys) {
+      if (k === "updatedAt") continue;
+      if (old[k] !== item[k]) { diff = true; break; }
+    }
+    if (!diff) return item;
+    changed = true;
+    return { ...item, updatedAt: now };
+  });
+  return changed ? out : next;
+};
+
+const makeStampedSetter = (rawSetter) => (valOrFn) =>
+  rawSetter(prev => stampChangedItems(prev, typeof valOrFn === "function" ? valOrFn(prev) : valOrFn));
 
 const filterOutMockItems = (key, list) => {
   if (!Array.isArray(list)) return list;
@@ -941,6 +985,12 @@ export default function App() {
     return Array.isArray(val) ? val : [];
   });
 
+  // 💼 Préstamos, anticipos y bonos/incentivos de colaboradores (módulo de nómina)
+  const [nominaMovimientos, setNominaMovimientos] = useState(() => {
+    const val = getTenantLocalStorage("nominaMovimientos", [], tenantId);
+    return Array.isArray(val) ? val : [];
+  });
+
   const [toolsInventory, setToolsInventory] = useState(() => {
     const val = getTenantLocalStorage("toolsInventory", [], tenantId);
     return Array.isArray(val) ? val : [];
@@ -1061,6 +1111,17 @@ export default function App() {
     const val = getTenantLocalStorage("cotizacionesExpress", [], tenantId);
     return Array.isArray(val) ? val : [];
   });
+
+  // 🕒 Setters con marca de tiempo por registro para los módulos (la nube usa los setters crudos)
+  const setOrdenesUI = useMemo(() => makeStampedSetter(setOrdenes), []);
+  const setCarwashUI = useMemo(() => makeStampedSetter(setCarwash), []);
+  const setComprasUI = useMemo(() => makeStampedSetter(setCompras), []);
+  const setCuentasPorCobrarUI = useMemo(() => makeStampedSetter(setCuentasPorCobrar), []);
+  const setCuentasPorPagarUI = useMemo(() => makeStampedSetter(setCuentasPorPagar), []);
+  const setVehiculosVentaUI = useMemo(() => makeStampedSetter(setVehiculosVenta), []);
+  const setCitasUI = useMemo(() => makeStampedSetter(setCitas), []);
+  const setPayrollHistoryUI = useMemo(() => makeStampedSetter(setPayrollHistory), []);
+  const setNominaMovimientosUI = useMemo(() => makeStampedSetter(setNominaMovimientos), []);
 
   // Note: Master backup seeding for first-visit is handled by getTenantLocalStorage.
   // User data in localStorage is ALWAYS trusted once it exists — never overwritten by static backup.
@@ -1188,6 +1249,12 @@ export default function App() {
       setCafeteriaInventory(prev => [itemOriginal, ...(Array.isArray(prev) ? prev : [])]);
     } else if (moduloOrigen === "compras") {
       setCompras(prev => [itemOriginal, ...(Array.isArray(prev) ? prev : [])]);
+    } else if (moduloOrigen === "cuentasPorCobrar") {
+      setCuentasPorCobrar(prev => [itemOriginal, ...(Array.isArray(prev) ? prev : [])]);
+    } else if (moduloOrigen === "cuentasPorPagar") {
+      setCuentasPorPagar(prev => [itemOriginal, ...(Array.isArray(prev) ? prev : [])]);
+    } else if (moduloOrigen === "nominaMovimientos") {
+      setNominaMovimientos(prev => [itemOriginal, ...(Array.isArray(prev) ? prev : [])]);
     } else if (moduloOrigen === "fixedCosts") {
       setFixedCosts(prev => [itemOriginal, ...(Array.isArray(prev) ? prev : [])]);
       if (itemOriginal?.id !== undefined) removeDeletedFixedCost(itemOriginal.id, tenantId);
@@ -1311,6 +1378,7 @@ export default function App() {
     globalActiveSetters.regalosPasesReferidos = setRegalosPasesReferidos;
     globalActiveSetters.cotizacionesRepuestos = setCotizacionesRepuestos;
     globalActiveSetters.payrollHistory = setPayrollHistory;
+    globalActiveSetters.nominaMovimientos = setNominaMovimientos;
     globalActiveSetters.setIsInitialPullDone = setIsInitialPullDone;
     globalActiveSetters.setRealtimeStatus = setRealtimeStatus;
   });
@@ -1354,7 +1422,8 @@ export default function App() {
       cotizacionesExpress,
       regalosPasesReferidos,
       cotizacionesRepuestos,
-      payrollHistory
+      payrollHistory,
+      nominaMovimientos
     };
   }, [
     usuarios,
@@ -1393,7 +1462,8 @@ export default function App() {
     cotizacionesExpress,
     regalosPasesReferidos,
     cotizacionesRepuestos,
-    payrollHistory
+    payrollHistory,
+    nominaMovimientos
   ]);
 
   const globalBroadcastChannel = useRef(null);
@@ -1445,8 +1515,55 @@ export default function App() {
     return fromStorage || fromRef;
   };
 
+  // ==========================================
+  // 🛡️ REGISTRO DE ELIMINACIONES SINCRONIZADO ENTRE DISPOSITIVOS
+  // ==========================================
+  const TOMB_KINDS = ["usuarios", "fixedCosts"];
+  const canonTomb = (m) => {
+    const n = normalizeTombMap(m);
+    return JSON.stringify(Object.keys(n).sort().map(k => [k, n[k].d, n[k].r]));
+  };
+
+  // Fusiona las eliminaciones de la nube con las locales. Devuelve true si cambió algo localmente.
+  const absorbCloudTombstones = (kind, cloudRaw, activeTenant) => {
+    const local = getTombMap(kind, activeTenant);
+    const cloud = normalizeTombMap(safeParseJSON(cloudRaw));
+    const merged = mergeTombMaps(local, cloud);
+    const mergedC = canonTomb(merged);
+    const localChanged = mergedC !== canonTomb(local);
+    if (localChanged) saveTombMap(kind, merged, activeTenant, false);
+    if (mergedC !== canonTomb(cloud) && Object.keys(merged).length > 0) {
+      syncKeyToCloud(`${activeTenant}_deleted_${kind}`, merged);
+    }
+    return localChanged;
+  };
+
+  // Quita del estado actual cualquier usuario / costo fijo marcado como eliminado
+  const applyTombstonesToState = (activeTenant) => {
+    const deadUsers = getDeletedUsernames(activeTenant);
+    setUsuarios(prev => {
+      const arr = Array.isArray(prev) ? prev : [];
+      const f = arr.filter(u => {
+        const n = String(u?.user || u?.username || "").toLowerCase().trim();
+        return n === "admin" || !deadUsers.has(n);
+      });
+      return f.length === arr.length ? prev : f;
+    });
+    const deadCosts = getDeletedFixedCosts(activeTenant);
+    setFixedCosts(prev => {
+      const arr = Array.isArray(prev) ? prev : [];
+      const f = arr.filter(c => {
+        if (!c) return false;
+        const id = c.id !== undefined && c.id !== null ? String(c.id).toLowerCase().trim() : "";
+        const nm = c.name ? String(c.name).toLowerCase().trim() : "";
+        return !((id && deadCosts.has(id)) || (nm && deadCosts.has(nm)));
+      });
+      return f.length === arr.length ? prev : f;
+    });
+  };
+
   // Fetch a single key from cloud on-demand when notified via WebSocket Broadcast
-  const fetchSingleKeyFromCloud = async (targetKey) => {
+  const fetchSingleKeyFromCloud = async (targetKey, knownVersion = null) => {
     const client = getSupabaseClient();
     if (!client) return;
     try {
@@ -1463,13 +1580,28 @@ export default function App() {
         }
       }
 
+      // 🚀 Si ya tenemos esta versión exacta, no descargar nada
+      if (knownVersion && cloudKeyVersions[targetKey] === knownVersion) return;
+
       const queryPromise = client
         .from('app_data')
-        .select('key, value')
+        .select('key, value, updated_at')
         .eq('key', targetKey);
       
       const { data, error } = await withTimeout(queryPromise, 15000, `Timeout en fetch de ${targetKey}`);
       if (error || !data || data.length === 0) return;
+
+      const fetchedVersion = Date.parse(data[0].updated_at) || 0;
+      if (fetchedVersion) cloudKeyVersions[targetKey] = fetchedVersion;
+
+      // 🛡️ Registro de eliminaciones de otro dispositivo
+      if (baseKey.startsWith("deleted_")) {
+        const kind = baseKey.replace("deleted_", "");
+        if (TOMB_KINDS.includes(kind) && absorbCloudTombstones(kind, data[0].value, activeTenant)) {
+          applyTombstonesToState(activeTenant);
+        }
+        return;
+      }
 
       const cloudRaw = data[0].value;
       const cloudValue = safeParseJSON(cloudRaw);
@@ -1511,13 +1643,13 @@ export default function App() {
   };
 
   // 🚀 Debounced broadcast fetch — coalesces rapid-fire broadcasts for the same key
-  const debouncedFetchFromBroadcast = (targetKey) => {
+  const debouncedFetchFromBroadcast = (targetKey, knownVersion = null) => {
     if (pendingBroadcastFetches[targetKey]) {
       clearTimeout(pendingBroadcastFetches[targetKey]);
     }
     pendingBroadcastFetches[targetKey] = setTimeout(() => {
       delete pendingBroadcastFetches[targetKey];
-      fetchSingleKeyFromCloud(targetKey);
+      fetchSingleKeyFromCloud(targetKey, knownVersion);
     }, 80); // 80ms debounce — fast enough for instant feel, prevents duplicate fetches
   };
 
@@ -1537,22 +1669,39 @@ export default function App() {
     if (globalLastSynced[cloudKey] === valueStr) {
       return; // Already in sync, avoid loops
     }
-    
-    const ok = await syncKeyToCloud(cloudKey, cleanVal);
-    if (ok) {
-      globalLastSynced[cloudKey] = valueStr;
-      // 🚀 Emit instant WebSocket Broadcast event to all active clients
-      try {
-        if (globalBroadcastChannel.current) {
-          globalBroadcastChannel.current.send({
-            type: 'broadcast',
-            event: 'app_key_changed',
-            payload: { key: cloudKey, senderId: instanceId.current }
-          });
-        }
-      } catch (e) {}
-    } else {
-      console.warn(`[Sync] Falló la sincronización para la llave "${cloudKey}". Se reintentará en la próxima actualización.`);
+
+    // 🚀 Si ya hay una subida en curso para esta llave, guardar solo el valor más reciente
+    // y subirlo al terminar (evita subir varias veces listas grandes como las órdenes)
+    if (syncInFlight[cloudKey]) {
+      syncPending[cloudKey] = { baseKey, value: cleanVal };
+      return;
+    }
+    syncInFlight[cloudKey] = true;
+
+    try {
+      const ok = await syncKeyToCloud(cloudKey, cleanVal);
+      if (ok) {
+        globalLastSynced[cloudKey] = valueStr;
+        // 🚀 Emit instant WebSocket Broadcast event to all active clients
+        try {
+          if (globalBroadcastChannel.current) {
+            globalBroadcastChannel.current.send({
+              type: 'broadcast',
+              event: 'app_key_changed',
+              payload: { key: cloudKey, senderId: instanceId.current, version: cloudKeyVersions[cloudKey] || null }
+            });
+          }
+        } catch (e) {}
+      } else {
+        console.warn(`[Sync] Falló la sincronización para la llave "${cloudKey}". Se reintentará en la próxima actualización.`);
+      }
+    } finally {
+      syncInFlight[cloudKey] = false;
+      const next = syncPending[cloudKey];
+      if (next) {
+        delete syncPending[cloudKey];
+        syncToCloud(next.baseKey, next.value);
+      }
     }
   };
 
@@ -1597,9 +1746,11 @@ export default function App() {
       const cloudDataMap = new Map();
       const allKeysList = Array.from(new Set([...ARRAY_KEYS, "usuarios", "ordenes", "carwash", "parkingEntries", "parkingHistory", "vehiculosVenta", "workshopInventory", "cafeteriaInventory", "cafeteriaSales", "carwashPresets", "carwashInventory", "carwashConsumption", "tiendaSales", "cuentasPorCobrar", "cuentasPorPagar", "fixedCosts", "clientes", "vehiculos", "compras", "toolsInventory", "accesoriosInventory", "papeleraSistema", "cotizacionesRepuestos", "puntosRecompensas", "catalogoPremios", "historialCanjes", "reglasPrograma", "workshopBranding", "activeModules", "cotizacionesExpress"])).filter(k => k !== "systemSnapshots" && k !== "app_data_backup_snapshot");
 
-      // Build query keys: always scoped. For lospits, also include old unscoped keys for migration.
+      // Build query keys: always scoped. For lospits, also include old unscoped keys for migration
+      // (solo en la primera descarga completa; después ya no hace falta bajar esas copias antiguas).
+      const isFullPull = isUserInitiated === true || !globalSyncFlags.isInitialPullSucceeded;
       const scopedQueryKeys = allKeysList.map(k => getScopedKey(k));
-      if (activeTenant === "lospits") {
+      if (activeTenant === "lospits" && isFullPull) {
         // 🔄 MIGRATION: Also fetch old unscoped keys to migrate data to new scoped format
         allKeysList.forEach(k => {
           if (!scopedQueryKeys.includes(k)) {
@@ -1607,17 +1758,39 @@ export default function App() {
           }
         });
       }
+      // 🛡️ Registro de eliminaciones (usuarios / costos fijos) — también se consulta
+      TOMB_KINDS.forEach(kind => scopedQueryKeys.push(getScopedKey(`deleted_${kind}`)));
+
+      // 🚀 SINCRONIZACIÓN INCREMENTAL: primero consultar solo la fecha de modificación de cada llave
+      // (unos pocos KB) y descargar únicamente las llaves que cambiaron en la nube.
+      let keysToFetch = scopedQueryKeys;
+      if (!isFullPull) {
+        const metaRes = await withTimeout(
+          client.from('app_data').select('key, updated_at').in('key', scopedQueryKeys),
+          10000,
+          'Timeout consultando versiones'
+        );
+        if (metaRes.error) throw new Error(metaRes.error.message || 'Error consultando versiones');
+        const changed = [];
+        (metaRes.data || []).forEach(row => {
+          const ver = Date.parse(row.updated_at) || 0;
+          if (ver && cloudKeyVersions[row.key] !== ver) changed.push(row.key);
+        });
+        keysToFetch = changed;
+      }
+      const keysToFetchSet = new Set(keysToFetch);
+
       // Consultar llaves en paralelo en lotes de 10 con timeout generoso (20s)
       // Large keys like ordenes/carwash can be several MB and need more time
       const chunkSize = 10;
       const batchChunks = [];
       const promises = [];
-      for (let i = 0; i < scopedQueryKeys.length; i += chunkSize) {
-        const chunk = scopedQueryKeys.slice(i, i + chunkSize);
+      for (let i = 0; i < keysToFetch.length; i += chunkSize) {
+        const chunk = keysToFetch.slice(i, i + chunkSize);
         batchChunks.push(chunk);
         const queryPromise = client
           .from('app_data')
-          .select('key, value')
+          .select('key, value, updated_at')
           .in('key', chunk);
         promises.push(withTimeout(queryPromise, 20000, `Timeout en lote`));
       }
@@ -1626,9 +1799,11 @@ export default function App() {
       const failedBatchKeys = new Set();
       const results = await Promise.allSettled(promises);
       results.forEach((res, batchIdx) => {
-        if (res.status === "fulfilled" && res.value && res.value.data) {
+        if (res.status === "fulfilled" && res.value && res.value.data && !res.value.error) {
           res.value.data.forEach(item => {
             cloudDataMap.set(item.key, item.value);
+            const ver = Date.parse(item.updated_at) || 0;
+            if (ver) cloudKeyVersions[item.key] = ver;
           });
         } else {
           // Mark all keys in this failed batch — we must NOT push local data for these keys
@@ -1639,6 +1814,14 @@ export default function App() {
         }
       });
 
+      // 🛡️ Registro de eliminaciones (usuarios / costos fijos) que cambió en otro dispositivo
+      TOMB_KINDS.forEach(kind => {
+        const tk = getScopedKey(`deleted_${kind}`);
+        if (cloudDataMap.has(tk) && absorbCloudTombstones(kind, cloudDataMap.get(tk), activeTenant)) {
+          applyTombstonesToState(activeTenant);
+        }
+      });
+
       // 🛡️ Batch state updates: collect all changes first, then apply them together
       // This prevents intermediate renders that cause flickering
       const pendingUpdates = [];
@@ -1646,6 +1829,11 @@ export default function App() {
       allKeysList.forEach(baseKey => {
         const activeSetter = globalActiveSetters[baseKey];
         const scopedKey = getScopedKey(baseKey);
+
+        // 🚀 En sincronización incremental, saltar las llaves que no cambiaron en la nube
+        if (!isFullPull && !keysToFetchSet.has(scopedKey)) {
+          return;
+        }
 
         // 🛡️ If this key was in a FAILED batch, skip entirely — don't touch state or cloud
         if (failedBatchKeys.has(scopedKey)) {
@@ -1662,7 +1850,8 @@ export default function App() {
         const cloudValue = cloudRaw !== undefined ? safeParseJSON(cloudRaw) : null;
         const localValue = getLatestLocalValue(baseKey);
 
-        const papeleraRaw = cloudDataMap.get(getScopedKey("papeleraSistema"));
+        const papeleraScoped = getScopedKey("papeleraSistema");
+        const papeleraRaw = cloudDataMap.has(papeleraScoped) ? cloudDataMap.get(papeleraScoped) : null;
         let mergedValue = mergeCollections(baseKey, localValue, cloudValue, papeleraRaw, activeTenant);
 
         if (ARRAY_KEYS.includes(baseKey) && !Array.isArray(mergedValue)) {
@@ -1711,9 +1900,6 @@ export default function App() {
         // 🔄 Two-way synchronization: If local had items not yet in cloud, push merged dataset to cloud
         if (mergedValStr !== cloudValStr && (Array.isArray(mergedValue) ? mergedValue.length >= (Array.isArray(cloudValue) ? cloudValue.length : 0) : true)) {
           syncKeyToCloud(scopedKey, mergedValue);
-          if (activeTenant === "lospits") {
-            syncKeyToCloud(baseKey, mergedValue);
-          }
         }
       });
 
@@ -1769,15 +1955,15 @@ export default function App() {
       }
     }, 60000);
 
-    // ⏰ Background polling interval: 10s for responsive cross-device sync
-    // Realtime handles instant sync via broadcast, but polling catches any missed events
+    // ⏰ Background polling: cada 5s se consultan SOLO las fechas de modificación (consulta liviana)
+    // y se descargan únicamente las llaves que cambiaron. Realtime da la notificación instantánea.
     // NOTE: No document.hidden check — sync must work even when tab is in background
     // (PWAs and mobile browsers may not fire visibility events reliably)
     const interval = setInterval(() => {
       if (navigator.onLine && failedPullCount.current < 5) {
         forcePullFromCloud(false);
       }
-    }, 10000);
+    }, 5000);
 
     return () => {
       window.removeEventListener("online", handleSyncEvent);
@@ -1812,10 +1998,7 @@ export default function App() {
         (payload) => {
           if (!payload.new) return;
           const { key, value } = payload.new;
-          
-          if (value === null || value === undefined) {
-            return;
-          }
+          if (!key) return;
 
           // 🔒 TENANT ISOLATION GUARD: Parse tenant and baseKey from key
           let eventTenant = "lospits";
@@ -1835,6 +2018,17 @@ export default function App() {
           if (eventTenant !== activeTenant) {
             return;
           }
+
+          const eventVersion = Date.parse(payload.new.updated_at) || null;
+
+          // 🚀 Registros grandes (ej. órdenes > 1MB) llegan SIN el valor por el límite del websocket.
+          // En ese caso se descarga la llave directamente en lugar de ignorar el cambio.
+          // También el registro de eliminaciones se procesa por la ruta de descarga directa.
+          if (value === null || value === undefined || baseKey.startsWith("deleted_")) {
+            debouncedFetchFromBroadcast(key, eventVersion);
+            return;
+          }
+          if (eventVersion) cloudKeyVersions[key] = eventVersion;
 
           let sanitizedValue = safeParseJSON(value);
           
@@ -1881,7 +2075,7 @@ export default function App() {
             const targetKey = payload.payload.key;
             console.log(`[Instant Broadcast] Notificación de cambio recibida para la llave "${targetKey}"`);
             // 🚀 Use debounced fetch to prevent rapid-fire duplicate fetches
-            debouncedFetchFromBroadcast(targetKey);
+            debouncedFetchFromBroadcast(targetKey, payload.payload.version || null);
           }
         }
       )
@@ -1997,6 +2191,12 @@ export default function App() {
     setTenantLocalStorage("payrollHistory", payrollHistory, tenantId);
     syncToCloud("payrollHistory", payrollHistory);
   }, [payrollHistory, isInitialPullDone]);
+
+  useEffect(() => {
+    if (!isInitialPullDone) return;
+    setTenantLocalStorage("nominaMovimientos", nominaMovimientos, tenantId);
+    syncToCloud("nominaMovimientos", nominaMovimientos);
+  }, [nominaMovimientos, isInitialPullDone]);
 
   useEffect(() => {
     if (!isInitialPullDone) return;
@@ -2425,7 +2625,7 @@ export default function App() {
         {currentTab === "citas" && userHasPermission(usuarioActivo, "citas") && (
           <Citas 
             citas={citas}
-            setCitas={setCitas}
+            setCitas={setCitasUI}
             clientes={clientes}
             setClientes={setClientes}
             vehiculos={vehiculos}
@@ -2433,9 +2633,9 @@ export default function App() {
             mecanicos={mecanicos}
             lavadores={lavadores}
             ordenes={ordenes}
-            setOrdenes={setOrdenes}
+            setOrdenes={setOrdenesUI}
             carwash={carwash}
-            setCarwash={setCarwash}
+            setCarwash={setCarwashUI}
             usuarioActual={usuarioActivo}
             onNavigateTab={(tab) => setCurrentTab(tab)}
             workshopBranding={workshopBranding}
@@ -2445,11 +2645,11 @@ export default function App() {
         {currentTab === "taller" && userHasPermission(usuarioActivo, "taller") && (
           <Taller 
             ordenes={ordenes} 
-            setOrdenes={setOrdenes} 
+            setOrdenes={setOrdenesUI} 
             usuarioActual={usuarioActivo} 
             mecanicos={mecanicos} 
             carwash={carwash}
-            setCarwash={setCarwash}
+            setCarwash={setCarwashUI}
             lavadores={lavadores}
             workshopInventory={workshopInventory}
             setWorkshopInventory={setWorkshopInventory}
@@ -2458,9 +2658,9 @@ export default function App() {
             comisionMecanico={comisionMecanico}
             usuarios={usuarios}
             cuentasPorCobrar={cuentasPorCobrar}
-            setCuentasPorCobrar={setCuentasPorCobrar}
+            setCuentasPorCobrar={setCuentasPorCobrarUI}
             cuentasPorPagar={cuentasPorPagar}
-            setCuentasPorPagar={setCuentasPorPagar}
+            setCuentasPorPagar={setCuentasPorPagarUI}
             clientes={clientes}
             setClientes={setClientes}
             vehiculos={vehiculos}
@@ -2470,7 +2670,7 @@ export default function App() {
             setCotizacionesRepuestos={setCotizacionesRepuestos}
             softDelete={softDelete}
             compras={compras}
-            setCompras={setCompras}
+            setCompras={setComprasUI}
             tenantId={tenantId}
             addPuntosLealtad={addPuntosLealtad}
             workshopBranding={workshopBranding}
@@ -2482,11 +2682,11 @@ export default function App() {
         {currentTab === "carwash" && userHasPermission(usuarioActivo, "carwash") && (
           <Carwash 
             carwash={carwash} 
-            setCarwash={setCarwash} 
+            setCarwash={setCarwashUI} 
             usuarioActual={usuarioActivo} 
             lavadores={lavadores} 
             ordenes={ordenes}
-            setOrdenes={setOrdenes}
+            setOrdenes={setOrdenesUI}
             carwashPresets={carwashPresets}
             carwashInventory={carwashInventory}
             setCarwashInventory={setCarwashInventory}
@@ -2496,9 +2696,9 @@ export default function App() {
             setCarwashConsumption={setCarwashConsumption}
             usuarios={usuarios}
             cuentasPorCobrar={cuentasPorCobrar}
-            setCuentasPorCobrar={setCuentasPorCobrar}
+            setCuentasPorCobrar={setCuentasPorCobrarUI}
             cuentasPorPagar={cuentasPorPagar}
-            setCuentasPorPagar={setCuentasPorPagar}
+            setCuentasPorPagar={setCuentasPorPagarUI}
             clientes={clientes}
             setClientes={setClientes}
             vehiculos={vehiculos}
@@ -2519,7 +2719,7 @@ export default function App() {
             setParkingHistory={setParkingHistory}
             usuarioActual={usuarioActivo}
             cuentasPorCobrar={cuentasPorCobrar}
-            setCuentasPorCobrar={setCuentasPorCobrar}
+            setCuentasPorCobrar={setCuentasPorCobrarUI}
             clientes={clientes}
             setClientes={setClientes}
             vehiculos={vehiculos}
@@ -2540,7 +2740,7 @@ export default function App() {
             usuarioActual={usuarioActivo}
             ordenes={ordenes}
             cuentasPorPagar={cuentasPorPagar}
-            setCuentasPorPagar={setCuentasPorPagar}
+            setCuentasPorPagar={setCuentasPorPagarUI}
           />
         )}
 
@@ -2552,7 +2752,7 @@ export default function App() {
             setCafeteriaSales={setCafeteriaSales}
             usuarioActual={usuarioActivo}
             cuentasPorCobrar={cuentasPorCobrar}
-            setCuentasPorCobrar={setCuentasPorCobrar}
+            setCuentasPorCobrar={setCuentasPorCobrarUI}
             clientes={clientes}
             setClientes={setClientes}
             addPuntosLealtad={addPuntosLealtad}
@@ -2572,9 +2772,9 @@ export default function App() {
             tiendaSales={tiendaSales}
             setTiendaSales={setTiendaSales}
             cuentasPorCobrar={cuentasPorCobrar}
-            setCuentasPorCobrar={setCuentasPorCobrar}
+            setCuentasPorCobrar={setCuentasPorCobrarUI}
             cuentasPorPagar={cuentasPorPagar}
-            setCuentasPorPagar={setCuentasPorPagar}
+            setCuentasPorPagar={setCuentasPorPagarUI}
             usuarioActual={usuarioActivo}
             clientes={clientes}
             setClientes={setClientes}
@@ -2588,16 +2788,16 @@ export default function App() {
             setAccesoriosInventory={setAccesoriosInventory}
             usuarioActual={usuarioActivo}
             cuentasPorPagar={cuentasPorPagar}
-            setCuentasPorPagar={setCuentasPorPagar}
+            setCuentasPorPagar={setCuentasPorPagarUI}
           />
         )}
 
         {currentTab === "cuentas" && userHasPermission(usuarioActivo, "cuentas") && (
           <Cuentas 
             cuentasPorCobrar={cuentasPorCobrar}
-            setCuentasPorCobrar={setCuentasPorCobrar}
+            setCuentasPorCobrar={setCuentasPorCobrarUI}
             cuentasPorPagar={cuentasPorPagar}
-            setCuentasPorPagar={setCuentasPorPagar}
+            setCuentasPorPagar={setCuentasPorPagarUI}
             usuarioActual={usuarioActivo}
             clientes={clientes}
             setClientes={setClientes}
@@ -2607,11 +2807,11 @@ export default function App() {
         {currentTab === "repuestosFaltantes" && userHasPermission(usuarioActivo, "repuestosFaltantes") && (
           <RepuestosFaltantes 
             ordenes={ordenes}
-            setOrdenes={setOrdenes}
+            setOrdenes={setOrdenesUI}
             workshopInventory={workshopInventory}
             setWorkshopInventory={setWorkshopInventory}
             cuentasPorPagar={cuentasPorPagar}
-            setCuentasPorPagar={setCuentasPorPagar}
+            setCuentasPorPagar={setCuentasPorPagarUI}
             usuarios={usuarios}
             comisionMecanico={comisionMecanico}
           />
@@ -2620,18 +2820,18 @@ export default function App() {
         {currentTab === "historial" && userHasPermission(usuarioActivo, "historial") && (
           <VehicleHistory 
             ordenes={ordenes}
-            setOrdenes={setOrdenes}
+            setOrdenes={setOrdenesUI}
             carwash={carwash}
-            setCarwash={setCarwash}
+            setCarwash={setCarwashUI}
             workshopInventory={workshopInventory}
             mecanicos={mecanicos}
             usuarioActual={usuarioActivo}
             compras={compras}
-            setCompras={setCompras}
+            setCompras={setComprasUI}
             cuentasPorCobrar={cuentasPorCobrar}
-            setCuentasPorCobrar={setCuentasPorCobrar}
+            setCuentasPorCobrar={setCuentasPorCobrarUI}
             cuentasPorPagar={cuentasPorPagar}
-            setCuentasPorPagar={setCuentasPorPagar}
+            setCuentasPorPagar={setCuentasPorPagarUI}
           />
         )}
 
@@ -2680,9 +2880,9 @@ export default function App() {
           <Finance 
             usuarioActual={usuarioActivo}
             ordenes={ordenes} 
-            setOrdenes={setOrdenes}
+            setOrdenes={setOrdenesUI}
             carwash={carwash} 
-            setCarwash={setCarwash}
+            setCarwash={setCarwashUI}
             mecanicos={mecanicos} 
             lavadores={lavadores} 
             parkingHistory={parkingHistory}
@@ -2691,14 +2891,14 @@ export default function App() {
             usuarios={usuarios}
             fixedCosts={fixedCosts}
             vehiculosVenta={vehiculosVenta}
-            setVehiculosVenta={setVehiculosVenta}
+            setVehiculosVenta={setVehiculosVentaUI}
             cuentasPorCobrar={cuentasPorCobrar}
             cuentasPorPagar={cuentasPorPagar}
             carwashConsumption={carwashConsumption}
             compras={compras}
-            setCompras={setCompras}
+            setCompras={setComprasUI}
             payrollHistory={payrollHistory}
-            setPayrollHistory={setPayrollHistory}
+            setPayrollHistory={setPayrollHistoryUI}
             carwashPresets={carwashPresets}
             dashboardPeriod={dashboardPeriod}
             setDashboardPeriod={setDashboardPeriod}
@@ -2767,7 +2967,7 @@ export default function App() {
         {currentTab === "compras" && userHasPermission(usuarioActivo, "compras") && (
           <Compras 
             compras={compras}
-            setCompras={setCompras}
+            setCompras={setComprasUI}
             toolsInventory={toolsInventory}
             setToolsInventory={setToolsInventory}
             workshopInventory={workshopInventory}
@@ -2777,7 +2977,7 @@ export default function App() {
             cafeteriaInventory={cafeteriaInventory}
             setCafeteriaInventory={setCafeteriaInventory}
             cuentasPorPagar={cuentasPorPagar}
-            setCuentasPorPagar={setCuentasPorPagar}
+            setCuentasPorPagar={setCuentasPorPagarUI}
             usuarioActual={usuarioActivo}
           />
         )}
@@ -2785,10 +2985,10 @@ export default function App() {
         {currentTab === "vehiculosVenta" && userHasPermission(usuarioActivo, "vehiculosVenta") && (
           <VehiculosVenta 
             vehiculosVenta={vehiculosVenta}
-            setVehiculosVenta={setVehiculosVenta}
+            setVehiculosVenta={setVehiculosVentaUI}
             usuarioActual={usuarioActivo}
             cuentasPorCobrar={cuentasPorCobrar}
-            setCuentasPorCobrar={setCuentasPorCobrar}
+            setCuentasPorCobrar={setCuentasPorCobrarUI}
             usuarios={usuarios}
           />
         )}
@@ -2800,9 +3000,9 @@ export default function App() {
             vehiculos={vehiculos}
             setVehiculos={setVehiculos}
             usuarioActual={usuarioActivo}
-            setOrdenes={setOrdenes}
-            setCarwash={setCarwash}
-            setCuentasPorCobrar={setCuentasPorCobrar}
+            setOrdenes={setOrdenesUI}
+            setCarwash={setCarwashUI}
+            setCuentasPorCobrar={setCuentasPorCobrarUI}
             onForceSyncCloud={forcePullFromCloud}
             puntosRecompensas={puntosRecompensas}
           />

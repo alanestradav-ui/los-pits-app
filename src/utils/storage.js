@@ -159,142 +159,141 @@ export const setTenantLocalStorage = (key, value, tenantId = null) => {
 
 // ==========================================
 // 🛡️ TOMBSTONES REGISTRY: PREVENT DELETED USERS AND FIXED COSTS FROM RESURRECTING
+// Formato: { "<llave>": { d: deletedAtMs, r: restoredAtMs } }
+// Una llave está eliminada si d > r. Se fusiona entre dispositivos tomando el máximo
+// de cada marca de tiempo, así una eliminación en el PC se respeta en el celular y
+// volver a crear el mismo usuario/costo después (r más reciente) lo reactiva.
 // ==========================================
 
 import { syncKeyToCloud } from './supabase';
 
-export const getDeletedUsernames = (tenantId = null) => {
-  const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
-  const scopedKey = `${activeTenant}_deleted_usuarios`;
-  const raw = localStorage.getItem(scopedKey);
-  let list = [];
-  try {
-    list = raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    list = [];
-  }
-  if (!Array.isArray(list)) list = [];
+const tombScopedKey = (kind, tenantId) => `${(tenantId || getActiveTenantId()).toLowerCase().trim()}_deleted_${kind}`;
 
-  // Also check papeleraSistema for any soft-deleted usuarios
+export const normalizeTombMap = (raw) => {
+  let val = raw;
+  for (let i = 0; i < 3 && typeof val === "string"; i++) {
+    try { val = JSON.parse(val); } catch (e) { break; }
+  }
+  const out = {};
+  if (Array.isArray(val)) {
+    // Formato legado (lista de nombres) → eliminación antigua (d=1)
+    val.forEach(k => {
+      const key = String(k || "").toLowerCase().trim();
+      if (key) out[key] = { d: 1, r: 0 };
+    });
+  } else if (val && typeof val === "object") {
+    Object.keys(val).forEach(k => {
+      const key = String(k || "").toLowerCase().trim();
+      const e = val[k] || {};
+      if (key) out[key] = { d: Number(e.d) || 0, r: Number(e.r) || 0 };
+    });
+  }
+  return out;
+};
+
+export const mergeTombMaps = (a, b) => {
+  const A = normalizeTombMap(a);
+  const B = normalizeTombMap(b);
+  const out = { ...A };
+  Object.keys(B).forEach(k => {
+    const x = out[k] || { d: 0, r: 0 };
+    const y = B[k];
+    out[k] = { d: Math.max(x.d, y.d), r: Math.max(x.r, y.r) };
+  });
+  return out;
+};
+
+export const getTombMap = (kind, tenantId = null) => {
   try {
+    return normalizeTombMap(localStorage.getItem(tombScopedKey(kind, tenantId)));
+  } catch (e) {
+    return {};
+  }
+};
+
+export const saveTombMap = (kind, map, tenantId = null, pushToCloud = true) => {
+  const scopedKey = tombScopedKey(kind, tenantId);
+  const clean = normalizeTombMap(map);
+  try { localStorage.setItem(scopedKey, JSON.stringify(clean)); } catch (e) {}
+  if (pushToCloud) syncKeyToCloud(scopedKey, clean).catch(() => {});
+  return clean;
+};
+
+const isDead = (e) => !!e && (e.d || 0) > (e.r || 0);
+
+// Incluir eliminaciones registradas en la papelera (por si se borraron desde otra versión)
+const withTrashEntries = (kind, map, tenantId) => {
+  const out = { ...map };
+  try {
+    const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
     const trashRaw = localStorage.getItem(`${activeTenant}_papeleraSistema`);
     const trash = trashRaw ? JSON.parse(trashRaw) : [];
-    if (Array.isArray(trash)) {
-      trash.forEach(entry => {
-        if (!entry) return;
-        const mod = (entry.moduloOrigen || entry.moduleKey || "").toLowerCase();
-        if (mod === "usuarios" && entry.itemOriginal?.user) {
-          list.push(String(entry.itemOriginal.user).toLowerCase().trim());
-        }
+    if (!Array.isArray(trash)) return out;
+    trash.forEach(entry => {
+      if (!entry) return;
+      if ((entry.tenantId || activeTenant).toLowerCase().trim() !== activeTenant) return;
+      const mod = String(entry.moduloOrigen || entry.moduleKey || "").toLowerCase();
+      if (mod !== kind.toLowerCase()) return;
+      const when = Date.parse(entry.fechaEliminacion || entry.deletedAt || "") || 1;
+      const item = entry.itemOriginal || entry.originalData || {};
+      const keys = kind === "usuarios"
+        ? [item.user]
+        : [item.name, item.id, entry.targetOriginalId];
+      keys.forEach(k => {
+        if (k === undefined || k === null) return;
+        const key = String(k).toLowerCase().trim();
+        if (!key) return;
+        const cur = out[key] || { d: 0, r: 0 };
+        out[key] = { d: Math.max(cur.d, when), r: cur.r };
       });
-    }
+    });
   } catch (e) {}
+  return out;
+};
 
-  return new Set(list.map(u => String(u || "").toLowerCase().trim()).filter(Boolean));
+const deadSet = (kind, tenantId) => {
+  const map = withTrashEntries(kind, getTombMap(kind, tenantId), tenantId);
+  return new Set(Object.keys(map).filter(k => isDead(map[k])));
+};
+
+export const getDeletedUsernames = (tenantId = null) => deadSet("usuarios", tenantId);
+export const getDeletedFixedCosts = (tenantId = null) => deadSet("fixedCosts", tenantId);
+
+const markKeys = (kind, keys, field, tenantId) => {
+  const map = getTombMap(kind, tenantId);
+  const now = Date.now();
+  keys.forEach(k => {
+    if (k === undefined || k === null) return;
+    const key = String(k).toLowerCase().trim();
+    if (!key) return;
+    const cur = map[key] || { d: 0, r: 0 };
+    map[key] = { ...cur, [field]: now };
+  });
+  return saveTombMap(kind, map, tenantId, true);
 };
 
 export const addDeletedUsername = (username, tenantId = null) => {
   if (!username) return;
-  const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
-  const clean = String(username).toLowerCase().trim();
-  const scopedKey = `${activeTenant}_deleted_usuarios`;
-  const raw = localStorage.getItem(scopedKey);
-  let list = [];
-  try {
-    list = raw ? JSON.parse(raw) : [];
-  } catch (e) {}
-  if (!Array.isArray(list)) list = [];
-  if (!list.includes(clean)) {
-    const updated = [...list, clean];
-    localStorage.setItem(scopedKey, JSON.stringify(updated));
-    syncKeyToCloud(scopedKey, updated).catch(() => {});
-  }
+  markKeys("usuarios", [username], "d", tenantId);
 };
 
 export const removeDeletedUsername = (username, tenantId = null) => {
   if (!username) return;
-  const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
-  const clean = String(username).toLowerCase().trim();
-  const scopedKey = `${activeTenant}_deleted_usuarios`;
-  const raw = localStorage.getItem(scopedKey);
-  let list = [];
-  try {
-    list = raw ? JSON.parse(raw) : [];
-  } catch (e) {}
-  if (!Array.isArray(list)) list = [];
-  const updated = list.filter(u => String(u).toLowerCase().trim() !== clean);
-  localStorage.setItem(scopedKey, JSON.stringify(updated));
-  syncKeyToCloud(scopedKey, updated).catch(() => {});
-};
-
-export const getDeletedFixedCosts = (tenantId = null) => {
-  const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
-  const scopedKey = `${activeTenant}_deleted_fixedCosts`;
-  const raw = localStorage.getItem(scopedKey);
-  let list = [];
-  try {
-    list = raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    list = [];
-  }
-  if (!Array.isArray(list)) list = [];
-
-  // Also check papeleraSistema for any soft-deleted fixedCosts
-  try {
-    const trashRaw = localStorage.getItem(`${activeTenant}_papeleraSistema`);
-    const trash = trashRaw ? JSON.parse(trashRaw) : [];
-    if (Array.isArray(trash)) {
-      trash.forEach(entry => {
-        if (!entry) return;
-        const mod = (entry.moduloOrigen || entry.moduleKey || "").toLowerCase();
-        if (mod === "fixedcosts") {
-          if (entry.targetOriginalId) list.push(String(entry.targetOriginalId).trim());
-          if (entry.itemOriginal?.name) list.push(String(entry.itemOriginal.name).toLowerCase().trim());
-          if (entry.itemOriginal?.id !== undefined) list.push(String(entry.itemOriginal.id).trim());
-        }
-      });
-    }
-  } catch (e) {}
-
-  return new Set(list.map(c => String(c || "").toLowerCase().trim()).filter(Boolean));
+  const map = getTombMap("usuarios", tenantId);
+  if (!map[String(username).toLowerCase().trim()]) return; // nada que reactivar
+  markKeys("usuarios", [username], "r", tenantId);
 };
 
 export const addDeletedFixedCost = (costItem, tenantId = null) => {
   if (!costItem) return;
-  const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
-  const scopedKey = `${activeTenant}_deleted_fixedCosts`;
-  const raw = localStorage.getItem(scopedKey);
-  let list = [];
-  try {
-    list = raw ? JSON.parse(raw) : [];
-  } catch (e) {}
-  if (!Array.isArray(list)) list = [];
-  const toAdd = [];
-  if (costItem.id !== undefined && costItem.id !== null) {
-    toAdd.push(String(costItem.id).toLowerCase().trim());
-  }
-  if (costItem.name) {
-    toAdd.push(String(costItem.name).toLowerCase().trim());
-  }
-  const updated = Array.from(new Set([...list, ...toAdd])).filter(Boolean);
-  localStorage.setItem(scopedKey, JSON.stringify(updated));
-  syncKeyToCloud(scopedKey, updated).catch(() => {});
+  markKeys("fixedCosts", [costItem.id, costItem.name], "d", tenantId);
 };
 
 export const removeDeletedFixedCost = (costIdentifier, tenantId = null) => {
-  if (!costIdentifier) return;
-  const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
-  const clean = String(costIdentifier).toLowerCase().trim();
-  const scopedKey = `${activeTenant}_deleted_fixedCosts`;
-  const raw = localStorage.getItem(scopedKey);
-  let list = [];
-  try {
-    list = raw ? JSON.parse(raw) : [];
-  } catch (e) {}
-  if (!Array.isArray(list)) list = [];
-  const updated = list.filter(c => String(c).toLowerCase().trim() !== clean);
-  localStorage.setItem(scopedKey, JSON.stringify(updated));
-  syncKeyToCloud(scopedKey, updated).catch(() => {});
+  if (costIdentifier === undefined || costIdentifier === null || costIdentifier === "") return;
+  const map = getTombMap("fixedCosts", tenantId);
+  if (!map[String(costIdentifier).toLowerCase().trim()]) return;
+  markKeys("fixedCosts", [costIdentifier], "r", tenantId);
 };
 
 export const formatMoney = (amount) => {
