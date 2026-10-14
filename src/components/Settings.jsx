@@ -47,7 +47,8 @@ import {
   CheckCircle2
 } from "lucide-react";
 import { formatMoney } from "../utils/storage";
-import { DEFAULT_BRANDING, COLOR_PRESETS, getCleanBranding } from "../utils/branding";
+import { DEFAULT_BRANDING, getCleanBranding } from "../utils/branding";
+import BrandingPaletteEditor from "./BrandingPaletteEditor";
 import { ALL_AVAILABLE_MODULES, DEFAULT_ACTIVE_MODULES, MODULE_PRESETS, isModuleActive } from "../utils/modulesConfig";
 import { getSupabaseClient, resetSupabaseClient, syncKeyToCloud, testSupabaseConnection } from "../utils/supabase";
 import PapeleraModal from "./PapeleraModal";
@@ -223,17 +224,6 @@ export default function SettingsComponent({
       setIsUploadingLogo(false);
     };
     reader.readAsDataURL(file);
-  };
-
-  const handleApplyPreset = (preset) => {
-    setBrandingForm(prev => ({
-      ...prev,
-      colorPrimario: preset.colorPrimario,
-      colorSecundario: preset.colorSecundario,
-      colorTextoEncabezado: preset.colorTextoEncabezado,
-      colorTotalFondo: preset.colorTotalFondo,
-      colorTotalTexto: preset.colorTotalTexto
-    }));
   };
 
   const handleResetDefaultBranding = () => {
@@ -1250,137 +1240,13 @@ export default function SettingsComponent({
         {activeTab === "branding" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
             
-            {/* Live Preview Box */}
-            <div className="glass-panel" style={{ ...styles.formCard, border: "1px solid rgba(234, 179, 8, 0.3)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "10px" }}>
-                <div>
-                  <h3 style={{ ...styles.sectionTitle, display: "flex", alignItems: "center", gap: "8px", margin: 0 }}>
-                    <Sparkles size={20} color="#eab308" /> Vista Previa en Vivo de Documentos & Encabezados
-                  </h3>
-                  <p style={{ ...styles.sectionSubtitle, margin: "2px 0 0 0" }}>
-                    Así lucirán tus cotizaciones, hojas de recepción, tickets y documentos impresos o en PDF para tus clientes.
-                  </p>
-                </div>
-                {brandingSavedToast && (
-                  <div style={{
-                    backgroundColor: "rgba(16, 185, 129, 0.2)",
-                    border: "1px solid #10b981",
-                    color: "#34d399",
-                    padding: "6px 14px",
-                    borderRadius: "20px",
-                    fontSize: "0.85rem",
-                    fontWeight: "bold",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    animation: "fadeIn 0.3s ease"
-                  }}>
-                    <Check size={16} /> ¡Configuración Guardada!
-                  </div>
-                )}
-              </div>
-
-              {/* SIMULATED DOCUMENT HEADER */}
-              <div style={{
-                backgroundColor: brandingForm.colorPrimario || "#0a0c10",
-                borderRadius: "12px",
-                padding: "20px 24px",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                flexWrap: "wrap",
-                gap: "16px",
-                borderBottom: `4px solid ${brandingForm.colorSecundario || "#f59e0b"}`,
-                boxShadow: "0 10px 25px rgba(0, 0, 0, 0.4)",
-                position: "relative",
-                overflow: "hidden"
-              }}>
-                {/* Left: Logo & Workshop Titles */}
-                <div style={{ display: "flex", alignItems: "center", gap: "16px", zIndex: 1 }}>
-                  {brandingForm.logoUrl ? (
-                    <img 
-                      src={brandingForm.logoUrl} 
-                      alt="Logo Taller" 
-                      style={{ maxHeight: "60px", maxWidth: "120px", objectFit: "contain", borderRadius: "8px", backgroundColor: "rgba(255,255,255,0.05)", padding: "4px" }}
-                    />
-                  ) : brandingForm.mostrarBanderaPits ? (
-                    <div style={{
-                      transform: "skewX(-15deg)",
-                      display: "grid",
-                      gridTemplateColumns: "repeat(4, 10px)",
-                      gridTemplateRows: "repeat(2, 10px)",
-                      backgroundColor: "#fff",
-                      padding: "2px",
-                      borderRadius: "2px"
-                    }}>
-                      {[...Array(8)].map((_, i) => (
-                        <div key={i} style={{ backgroundColor: ((Math.floor(i / 4) + (i % 4)) % 2 === 0) ? "#000" : "#fff" }} />
-                      ))}
-                    </div>
-                  ) : null}
-
-                  <div>
-                    <h2 style={{
-                      margin: 0,
-                      fontFamily: "'Orbitron', sans-serif",
-                      fontSize: "1.6rem",
-                      fontWeight: "900",
-                      color: brandingForm.colorTextoEncabezado || "#ffffff",
-                      letterSpacing: "1px",
-                      textTransform: "uppercase"
-                    }}>
-                      {brandingForm.nombreEmpresa || "NOMBRE DE TU TALLER"}
-                    </h2>
-                    {brandingForm.subtitulo && (
-                      <span style={{ fontSize: "0.8rem", color: "#9ca3af", fontWeight: "600", display: "block" }}>
-                        {brandingForm.subtitulo}
-                      </span>
-                    )}
-                    <span style={{
-                      display: "inline-block",
-                      color: brandingForm.colorSecundario || "#f59e0b",
-                      fontSize: "0.78rem",
-                      fontWeight: "800",
-                      letterSpacing: "0.5px",
-                      marginTop: "2px",
-                      textTransform: "uppercase"
-                    }}>
-                      {brandingForm.eslogan || "TU ESLOGAN O LEMA AQUÍ"}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Right: Contact & Location */}
-                <div style={{ textAlign: "right", zIndex: 1, color: "#fff", fontSize: "0.8rem" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "6px", marginBottom: "4px" }}>
-                    <span style={{ color: "#d1d5db" }}>{brandingForm.direccion || "Dirección de tu taller"}</span>
-                    <span style={{ color: brandingForm.colorSecundario || "#f59e0b", fontWeight: "bold" }}>📍</span>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "6px", marginBottom: "4px" }}>
-                    <span style={{ fontWeight: "bold", fontSize: "1.1rem", color: brandingForm.colorTextoEncabezado || "#fff" }}>
-                      {brandingForm.telefono || "Tel: 0000-0000"}
-                    </span>
-                    <span style={{ backgroundColor: brandingForm.colorSecundario || "#f59e0b", color: "#000", padding: "2px 6px", borderRadius: "50%", fontSize: "0.7rem", fontWeight: "bold" }}>📞</span>
-                  </div>
-                  {brandingForm.nit && (
-                    <span style={{ fontSize: "0.72rem", color: "#9ca3af" }}>NIT: {brandingForm.nit}</span>
-                  )}
-                </div>
-
-                {/* Mini Total Simulation Box */}
-                <div style={{
-                  position: "absolute",
-                  bottom: "8px",
-                  right: "24px",
-                  opacity: 0.15,
-                  fontFamily: "monospace",
-                  fontSize: "0.7rem",
-                  color: "#fff"
-                }}>
-                  VISTA PREVIA
-                </div>
-              </div>
-            </div>
+            {/* 🎨 PALETA DE COLORES + HOJA MODELO EN VIVO */}
+            <BrandingPaletteEditor
+              brandingForm={brandingForm}
+              setBrandingForm={setBrandingForm}
+              onSave={handleSaveBranding}
+              savedToast={brandingSavedToast}
+            />
 
             {/* FORM SETTINGS */}
             <form onSubmit={handleSaveBranding} className="glass-panel" style={styles.formCard}>
@@ -1528,124 +1394,6 @@ export default function SettingsComponent({
                 </div>
               </div>
 
-              {/* 3. PALETA DE COLORES DE DOCUMENTOS */}
-              <div style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.08)", paddingBottom: "20px", marginBottom: "20px" }}>
-                <h3 style={{ ...styles.sectionTitle, color: "#eab308", marginBottom: "4px" }}>
-                  🎨 Paleta de Colores para Documentos y PDFs
-                </h3>
-                <p style={styles.sectionSubtitle}>Elige un tema predefinido o personaliza los colores exactos de tu taller.</p>
-
-                {/* Presets Row */}
-                <div style={{ marginBottom: "18px" }}>
-                  <label style={{ ...styles.label, marginBottom: "8px" }}>Temas Rápidos Predefinidos:</label>
-                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                    {COLOR_PRESETS.map((preset) => (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        onClick={() => handleApplyPreset(preset)}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "8px",
-                          padding: "8px 14px",
-                          borderRadius: "10px",
-                          backgroundColor: "rgba(255, 255, 255, 0.04)",
-                          border: brandingForm.colorSecundario === preset.colorSecundario ? `2px solid ${preset.colorSecundario}` : "1px solid rgba(255, 255, 255, 0.1)",
-                          cursor: "pointer",
-                          color: "#fff",
-                          fontSize: "0.8rem",
-                          fontWeight: "600",
-                          transition: "all 0.2s ease"
-                        }}
-                      >
-                        <span style={{ width: "12px", height: "12px", borderRadius: "50%", backgroundColor: preset.colorPrimario, border: "1px solid rgba(255,255,255,0.3)" }} />
-                        <span style={{ width: "12px", height: "12px", borderRadius: "50%", backgroundColor: preset.colorSecundario }} />
-                        <span>{preset.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Custom Color Inputs */}
-                <div style={styles.formGrid}>
-                  <div style={styles.inputGroup}>
-                    <label style={styles.label}>Color Primario (Encabezados y Barras)</label>
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <input
-                        type="color"
-                        value={brandingForm.colorPrimario || "#0a0c10"}
-                        onChange={(e) => setBrandingForm({ ...brandingForm, colorPrimario: e.target.value })}
-                        style={{ width: "42px", height: "38px", padding: 0, border: "none", borderRadius: "6px", cursor: "pointer", backgroundColor: "transparent" }}
-                      />
-                      <input
-                        type="text"
-                        className="input-field"
-                        value={brandingForm.colorPrimario}
-                        onChange={(e) => setBrandingForm({ ...brandingForm, colorPrimario: e.target.value })}
-                        style={{ flex: 1, textTransform: "uppercase" }}
-                      />
-                    </div>
-                  </div>
-
-                  <div style={styles.inputGroup}>
-                    <label style={styles.label}>Color Secundario / Acento (Líneas y Badges)</label>
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <input
-                        type="color"
-                        value={brandingForm.colorSecundario || "#f59e0b"}
-                        onChange={(e) => setBrandingForm({ ...brandingForm, colorSecundario: e.target.value })}
-                        style={{ width: "42px", height: "38px", padding: 0, border: "none", borderRadius: "6px", cursor: "pointer", backgroundColor: "transparent" }}
-                      />
-                      <input
-                        type="text"
-                        className="input-field"
-                        value={brandingForm.colorSecundario}
-                        onChange={(e) => setBrandingForm({ ...brandingForm, colorSecundario: e.target.value })}
-                        style={{ flex: 1, textTransform: "uppercase" }}
-                      />
-                    </div>
-                  </div>
-
-                  <div style={styles.inputGroup}>
-                    <label style={styles.label}>Color de Texto en Encabezados</label>
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <input
-                        type="color"
-                        value={brandingForm.colorTextoEncabezado || "#ffffff"}
-                        onChange={(e) => setBrandingForm({ ...brandingForm, colorTextoEncabezado: e.target.value })}
-                        style={{ width: "42px", height: "38px", padding: 0, border: "none", borderRadius: "6px", cursor: "pointer", backgroundColor: "transparent" }}
-                      />
-                      <input
-                        type="text"
-                        className="input-field"
-                        value={brandingForm.colorTextoEncabezado}
-                        onChange={(e) => setBrandingForm({ ...brandingForm, colorTextoEncabezado: e.target.value })}
-                        style={{ flex: 1, textTransform: "uppercase" }}
-                      />
-                    </div>
-                  </div>
-
-                  <div style={styles.inputGroup}>
-                    <label style={styles.label}>Color Cuadro de Total</label>
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <input
-                        type="color"
-                        value={brandingForm.colorTotalFondo || "#000000"}
-                        onChange={(e) => setBrandingForm({ ...brandingForm, colorTotalFondo: e.target.value })}
-                        style={{ width: "42px", height: "38px", padding: 0, border: "none", borderRadius: "6px", cursor: "pointer", backgroundColor: "transparent" }}
-                      />
-                      <input
-                        type="text"
-                        className="input-field"
-                        value={brandingForm.colorTotalFondo}
-                        onChange={(e) => setBrandingForm({ ...brandingForm, colorTotalFondo: e.target.value })}
-                        style={{ flex: 1, textTransform: "uppercase" }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
 
               {/* 4. DATOS DE CONTACTO PARA DOCUMENTOS */}
               <div style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.08)", paddingBottom: "20px", marginBottom: "20px" }}>

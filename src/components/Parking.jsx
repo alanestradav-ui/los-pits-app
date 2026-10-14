@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { formatMoney } from "../utils/storage";
 import { findVehiclesForClient } from "../utils/vehicleHelpers";
-import { DEFAULT_BRANDING, getCleanBranding, drawCanvasHeader } from "../utils/branding";
+import { DEFAULT_BRANDING, getCleanBranding, drawCanvasHeader, applyDocumentTheme } from "../utils/branding";
 import ClientVehiclesModal from "./ClientVehiclesModal";
 import { jsPDF } from "jspdf";
 
@@ -517,14 +517,15 @@ export default function Parking({
     canvas.height = page1End + page2Height;
     const ctx = canvas.getContext("2d");
     const brand = getCleanBranding(workshopBranding);
+    applyDocumentTheme(ctx, brand); // 🎨 Paleta configurada en toda la hoja
     
-    ctx.fillStyle = brand.colorFondoDocumento || "#ffffff";
+    ctx.fillStyle = "@fondo";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     drawCanvasHeader(ctx, canvas.width, brand);
     
     ctx.fillStyle = "#ffffff";
-    ctx.strokeStyle = brand.colorSecundario || "#f59e0b";
+    ctx.strokeStyle = "@secundario";
     ctx.lineWidth = 1;
     
     const drawRoundedRect = (c2d, rx, ry, rw, rh, rad) => {

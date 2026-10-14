@@ -24,7 +24,7 @@ import CustomerPortal from "./components/CustomerPortal";
 import SaaSAdmin from "./components/SaaSAdmin";
 import Citas from "./components/Citas";
 import { DEFAULT_CATALOGO_PREMIOS } from "./utils/wallet";
-import { DEFAULT_BRANDING, getCleanBranding } from "./utils/branding";
+import { DEFAULT_BRANDING, getCleanBranding, setActiveBranding } from "./utils/branding";
 import { DEFAULT_ACTIVE_MODULES, isModuleActive } from "./utils/modulesConfig";
 import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocalStorage, getActiveTenantId, restoreMasterBackup, purgeStorageBloat, getDeletedUsernames, addDeletedUsername, removeDeletedUsername, getDeletedFixedCosts, addDeletedFixedCost, removeDeletedFixedCost, getTombMap, saveTombMap, mergeTombMaps, normalizeTombMap } from "./utils/storage";
 import masterBackupData from "./data/masterBackupData.json";
@@ -1086,6 +1086,8 @@ export default function App() {
     const val = getTenantLocalStorage("workshopBranding", DEFAULT_BRANDING, tenantId);
     return val && typeof val === "object" ? getCleanBranding(val) : DEFAULT_BRANDING;
   });
+  // 🎨 Marca activa global: módulos sin la prop workshopBranding (Finanzas, Vehículos en Venta) la leen de aquí
+  setActiveBranding(workshopBranding);
 
   const [activeModules, setActiveModules] = useState(() => {
     const val = getTenantLocalStorage("activeModules", DEFAULT_ACTIVE_MODULES, tenantId);

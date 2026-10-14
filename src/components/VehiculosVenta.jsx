@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { formatMoney } from "../utils/storage";
 import { jsPDF } from "jspdf";
+import { getActiveBranding, applyDocumentTheme, drawCanvasHeader } from "../utils/branding";
 
 const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
 
@@ -470,86 +471,15 @@ export default function VehiculosVenta({
 
     canvas.height = page1End + page2Height;
     const ctx = canvas.getContext("2d");
+    const brand = getActiveBranding();
+    applyDocumentTheme(ctx, brand); // 🎨 Paleta configurada en toda la hoja
 
     // Clear background
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = "@fondo";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Header background
-    ctx.fillStyle = "#0a0c10";
-    ctx.fillRect(0, 0, canvas.width, 150);
-
-    // Checker Flag decoration
-    ctx.save();
-    ctx.transform(1, 0, -0.25, 1, 0, 0);
-    const flagX = 55;
-    const flagY = 25;
-    const sqSize = 14;
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(flagX, flagY, sqSize * 4, sqSize * 2);
-    ctx.fillStyle = "#000000";
-    for (let r = 0; r < 2; r++) {
-      for (let c = 0; c < 4; c++) {
-        if ((r + c) % 2 === 0) {
-          ctx.fillRect(flagX + c * sqSize, flagY + r * sqSize, sqSize, sqSize);
-        }
-      }
-    }
-    ctx.restore();
-
-    // Title Brand
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 42px sans-serif";
-    ctx.fillText("LOS PITS", 40, 95);
-
-    ctx.fillStyle = "#f59e0b";
-    ctx.font = "bold 11px sans-serif";
-    ctx.fillText("SERVICIO QUE SE SIENTE, CALIDAD QUE SE VE", 40, 120);
-
-    // Divider slant line
-    ctx.strokeStyle = "#f59e0b";
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(520, 0);
-    ctx.lineTo(460, 150);
-    ctx.stroke();
-
-    // Map pin icon
-    ctx.beginPath();
-    ctx.arc(520, 48, 12, 0, Math.PI * 2);
-    ctx.fillStyle = "#f59e0b";
-    ctx.fill();
-    ctx.fillStyle = "#000000";
-    ctx.beginPath();
-    ctx.arc(520, 45, 3, 0, Math.PI, true);
-    ctx.lineTo(520, 52);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#f59e0b";
-    ctx.beginPath();
-    ctx.arc(520, 45, 1.2, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "12px sans-serif";
-    ctx.fillText("3 calle 6-47 zona 10,", 540, 44);
-    ctx.fillText("Ciudad de Guatemala", 540, 59);
-
-    // Phone Icon
-    ctx.beginPath();
-    ctx.arc(520, 100, 12, 0, Math.PI * 2);
-    ctx.fillStyle = "#f59e0b";
-    ctx.fill();
-    ctx.strokeStyle = "#000000";
-    ctx.lineWidth = 2.5;
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.arc(518, 102, 5, Math.PI * 1.0, Math.PI * 1.6);
-    ctx.stroke();
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 24px sans-serif";
-    ctx.fillText("3271-1268", 540, 108);
+    // Encabezado de marca (nombre, eslogan, dirección y teléfono configurados)
+    drawCanvasHeader(ctx, canvas.width, brand);
 
     // Rounded Box Helper
     const drawRoundedRect = (c2d, rx, ry, rw, rh, rad) => {

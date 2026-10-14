@@ -25,7 +25,7 @@ import {
   AlertCircle
 } from "lucide-react";
 import { formatMoney } from "../utils/storage";
-import { DEFAULT_BRANDING, getCleanBranding, drawCanvasHeader } from "../utils/branding";
+import { DEFAULT_BRANDING, getCleanBranding, drawCanvasHeader, applyDocumentTheme } from "../utils/branding";
 import { findVehiclesForClient } from "../utils/vehicleHelpers";
 import ClientVehiclesModal from "./ClientVehiclesModal";
 import { jsPDF } from "jspdf";
@@ -400,9 +400,10 @@ export default function ExpressQuoteModal({
     const tableEnd = tableHeaderY + 30 + totalTableHeight;
     canvas.height = tableEnd + 390;
     const ctx = canvas.getContext("2d");
+    applyDocumentTheme(ctx, brand); // 🎨 Paleta configurada en toda la hoja
 
     // 1. Background
-    ctx.fillStyle = brand.colorFondoDocumento || "#ffffff";
+    ctx.fillStyle = "@fondo";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // 2. Header Box
@@ -424,7 +425,7 @@ export default function ExpressQuoteModal({
     };
 
     ctx.fillStyle = "#ffffff";
-    ctx.strokeStyle = brand.colorSecundario || "#f59e0b";
+    ctx.strokeStyle = "@secundario";
     ctx.lineWidth = 1;
     drawRoundedRect(ctx, 300, 170, 200, 36, 6);
     ctx.fill();
@@ -442,7 +443,7 @@ export default function ExpressQuoteModal({
     drawRoundedRect(ctx, 40, 230, 720, 40, 10);
     ctx.fill();
 
-    ctx.strokeStyle = brand.colorSecundario || "#f59e0b";
+    ctx.strokeStyle = "@secundario";
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(55, 250); ctx.lineTo(105, 250); ctx.stroke();
@@ -469,7 +470,7 @@ export default function ExpressQuoteModal({
     const drawMetaRow = (c2d, label, value, startX, startY) => {
       c2d.beginPath();
       c2d.arc(startX + 12, startY + 4, 12, 0, Math.PI * 2);
-      c2d.fillStyle = brand.colorSecundario || "#f59e0b";
+      c2d.fillStyle = "@secundario";
       c2d.fill();
 
       c2d.fillStyle = "#6b7280";
@@ -568,13 +569,13 @@ export default function ExpressQuoteModal({
     ctx.fillText(formatMoney(q.subtotalParts || subtotalParts), 745, totalBoxY + 44);
     ctx.textAlign = "left";
 
-    ctx.fillStyle = "#000000";
+    ctx.fillStyle = "@totalFondo";
     ctx.fillRect(470, totalBoxY + 54, 290, 26);
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = "@totalTexto";
     ctx.font = "bold 14px 'Plus Jakarta Sans', sans-serif";
     ctx.fillText("TOTAL ESTIMADO:", 485, totalBoxY + 72);
     ctx.textAlign = "right";
-    ctx.fillStyle = brand.colorSecundario || "#f59e0b";
+    ctx.fillStyle = "@totalTexto";
     ctx.fillText(formatMoney(q.total || totalCotizacion), 745, totalBoxY + 72);
     ctx.textAlign = "left";
 
@@ -601,7 +602,7 @@ export default function ExpressQuoteModal({
     ctx.fillStyle = "#0a0c10";
     ctx.fillRect(0, footerY, canvas.width, footerHeight);
 
-    ctx.strokeStyle = brand.colorSecundario || "#f59e0b";
+    ctx.strokeStyle = "@secundario";
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(0, footerY); ctx.lineTo(canvas.width, footerY); ctx.stroke();

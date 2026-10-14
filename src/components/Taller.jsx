@@ -29,7 +29,7 @@ import { formatMoney, getLocalStorage, setLocalStorage, setTenantLocalStorage } 
 import { calcOrderCommission, laborComisiona, findPreviousOrderForPlate, getMissingExternalCosts, getWarrantyPenalty } from "../utils/workshopCalc";
 import { syncKeyToCloud } from "../utils/supabase";
 import { findVehiclesForClient } from "../utils/vehicleHelpers";
-import { DEFAULT_BRANDING, getCleanBranding, drawCanvasHeader } from "../utils/branding";
+import { DEFAULT_BRANDING, getCleanBranding, drawCanvasHeader, applyDocumentTheme, themeHtmlDocument } from "../utils/branding";
 import ClientVehiclesModal from "./ClientVehiclesModal";
 import ExpressQuoteModal from "./ExpressQuoteModal";
 import { jsPDF } from "jspdf";
@@ -581,7 +581,7 @@ export default function Taller({
     const fechaFmt = fechaObj.toLocaleDateString("es-GT", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
     const receiptCorrelative = String(anticipo.id || "").replace("ANT-", "");
 
-    printWin.document.write(`
+    printWin.document.write(themeHtmlDocument(`
       <!DOCTYPE html>
       <html>
         <head>
@@ -858,7 +858,7 @@ export default function Taller({
           </script>
         </body>
       </html>
-    `);
+    `, workshopBranding));
     printWin.document.close();
   };
 
@@ -1153,7 +1153,7 @@ export default function Taller({
     const saldoRestante = fin.ventasNetas > 0 ? Math.max(0, fin.ventasNetas - totalAnticipos) : 0;
     const fechaEmision = new Date().toLocaleDateString("es-GT", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
-    printWin.document.write(`
+    printWin.document.write(themeHtmlDocument(`
       <!DOCTYPE html>
       <html>
         <head>
@@ -1436,7 +1436,7 @@ export default function Taller({
           </script>
         </body>
       </html>
-    `);
+    `, workshopBranding));
     printWin.document.close();
   };
 
@@ -3267,9 +3267,10 @@ export default function Taller({
     canvas.height = tableEnd + 390 + page2Height;
     const ctx = canvas.getContext("2d");
     const brand = getCleanBranding(workshopBranding);
+    applyDocumentTheme(ctx, brand); // 🎨 Paleta configurada en toda la hoja
     
     // 1. Draw Background
-    ctx.fillStyle = brand.colorFondoDocumento || "#ffffff";
+    ctx.fillStyle = "@fondo";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     // 2. Draw Header Box
@@ -3277,7 +3278,7 @@ export default function Taller({
     
     // 3. Date box centered
     ctx.fillStyle = "#ffffff";
-    ctx.strokeStyle = brand.colorSecundario || "#f59e0b";
+    ctx.strokeStyle = "@secundario";
     ctx.lineWidth = 1;
     
     const drawRoundedRect = (c2d, rx, ry, rw, rh, rad) => {
@@ -3574,9 +3575,9 @@ export default function Taller({
     ctx.textAlign = "center";
     ctx.fillText("TOTAL:", 565, totalY + 25);
     
-    ctx.fillStyle = "#f59e0b";
+    ctx.fillStyle = "@totalFondo";
     ctx.fillRect(630, totalY, 130, 40);
-    ctx.fillStyle = "#000000";
+    ctx.fillStyle = "@totalTexto";
     ctx.font = "bold 16px 'Plus Jakarta Sans', sans-serif";
     ctx.fillText(formatMoney(o.total), 695, totalY + 25);
     ctx.textAlign = "left";
@@ -3916,9 +3917,10 @@ export default function Taller({
     
     const ctx = canvas.getContext("2d");
     const brand = getCleanBranding(workshopBranding);
+    applyDocumentTheme(ctx, brand); // 🎨 Paleta configurada en toda la hoja
     
     // 1. Draw Background
-    ctx.fillStyle = brand.colorFondoDocumento || "#ffffff";
+    ctx.fillStyle = "@fondo";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     // 2. Draw Header Box
@@ -3926,7 +3928,7 @@ export default function Taller({
     
     // 3. Date box centered
     ctx.fillStyle = "#ffffff";
-    ctx.strokeStyle = brand.colorSecundario || "#f59e0b";
+    ctx.strokeStyle = "@secundario";
     ctx.lineWidth = 1;
     
     const drawRoundedRect = (c2d, rx, ry, rw, rh, rad) => {

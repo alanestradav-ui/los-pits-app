@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { formatMoney, formatDate } from "../utils/storage";
 import { jsPDF } from "jspdf";
+import { getActiveBranding, getDocThemeRgb, themeHtmlDocument } from "../utils/branding";
 import { calcOrderCommission, getCommissionableLabor, getWarrantyPenalty, parseLocalDate } from "../utils/workshopCalc";
 
 export default function Finance({ 
@@ -658,15 +659,19 @@ export default function Finance({
 
   const exportarPDFEstadoResultados = () => {
     const pdf = new jsPDF();
-    const primaryColor = [20, 24, 33];
-    const accentColor = [245, 158, 11];
+    const docTheme = getDocThemeRgb(getActiveBranding());
+    const primaryColor = docTheme.primario;
+    const accentColor = docTheme.secundario;
+    const headerTextColor = docTheme.textoEncabezado;
     const successColor = [16, 185, 129];
     const dangerColor = [239, 68, 68];
 
     pdf.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
     pdf.rect(0, 0, 210, 38, "F");
+    pdf.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
+    pdf.rect(0, 38, 210, 1.5, "F");
 
-    pdf.setTextColor(255, 255, 255);
+    pdf.setTextColor(headerTextColor[0], headerTextColor[1], headerTextColor[2]);
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(16);
     pdf.text("LOS PITS AUTO CENTER", 15, 16);
@@ -679,9 +684,9 @@ export default function Finance({
     let y = 48;
 
     const drawSectionHeader = (title) => {
-      pdf.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      pdf.setFillColor(docTheme.banda[0], docTheme.banda[1], docTheme.banda[2]);
       pdf.rect(15, y, 180, 7, "F");
-      pdf.setTextColor(255, 255, 255);
+      pdf.setTextColor(headerTextColor[0], headerTextColor[1], headerTextColor[2]);
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(9);
       pdf.text(title, 18, y + 5);
@@ -693,11 +698,11 @@ export default function Finance({
       pdf.setFontSize(9);
       if (isDanger) pdf.setTextColor(dangerColor[0], dangerColor[1], dangerColor[2]);
       else if (isSuccess) pdf.setTextColor(successColor[0], successColor[1], successColor[2]);
-      else pdf.setTextColor(40, 40, 40);
+      else pdf.setTextColor(docTheme.texto[0], docTheme.texto[1], docTheme.texto[2]);
 
       pdf.text(label, 20, y);
       pdf.text(formatMoney(val), 190, y, { align: "right" });
-      pdf.setDrawColor(240, 240, 240);
+      pdf.setDrawColor(docTheme.bordes[0], docTheme.bordes[1], docTheme.bordes[2]);
       pdf.line(15, y + 2, 195, y + 2);
       y += 7;
     };
@@ -1187,7 +1192,7 @@ export default function Finance({
       <tr style="border-bottom: 1px solid #e5e7eb;"><td style="padding: 8px;"><strong>${d.nombre}</strong>${d.detalle && d.detalle !== d.nombre ? `<br/><small style="color:#6b7280;">${d.detalle}</small>` : ""}</td><td style="padding: 8px; text-align: right; font-weight: bold; color: #b91c1c;">-Q${(parseFloat(d.monto) || 0).toFixed(2)}</td></tr>
     `).join("");
 
-    printWin.document.write(`
+    printWin.document.write(themeHtmlDocument(`
       <!DOCTYPE html>
       <html>
         <head>
@@ -1277,7 +1282,7 @@ export default function Finance({
           </script>
         </body>
       </html>
-    `);
+    `, getActiveBranding()));
     printWin.document.close();
   };
 
@@ -1416,15 +1421,19 @@ export default function Finance({
     const data = getCollaboratorCommissionDetails(colaboradorName, role);
     const pdf = new jsPDF();
 
-    const primaryColor = [20, 24, 33];
-    const accentColor = [245, 158, 11];
+    const docTheme = getDocThemeRgb(getActiveBranding());
+    const primaryColor = docTheme.primario;
+    const accentColor = docTheme.secundario;
+    const headerTextColor = docTheme.textoEncabezado;
     const successColor = [16, 185, 129];
-    const mutedColor = [100, 116, 139];
+    const mutedColor = docTheme.textoSecundario;
 
     pdf.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
     pdf.rect(0, 0, 210, 40, "F");
+    pdf.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
+    pdf.rect(0, 40, 210, 1.5, "F");
 
-    pdf.setTextColor(255, 255, 255);
+    pdf.setTextColor(headerTextColor[0], headerTextColor[1], headerTextColor[2]);
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(16);
     pdf.text("LOS PITS AUTO CENTER", 15, 18);
@@ -1433,12 +1442,12 @@ export default function Finance({
     pdf.text("Reporte Detallado de Comisiones", 15, 26);
     pdf.text(`Generado: ${new Date().toLocaleDateString()}`, 160, 26);
 
-    pdf.setFillColor(245, 247, 250);
+    pdf.setFillColor(docTheme.filaAlterna[0], docTheme.filaAlterna[1], docTheme.filaAlterna[2]);
     pdf.rect(15, 50, 180, 25, "F");
-    pdf.setDrawColor(226, 232, 240);
+    pdf.setDrawColor(docTheme.bordes[0], docTheme.bordes[1], docTheme.bordes[2]);
     pdf.rect(15, 50, 180, 25, "S");
 
-    pdf.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    pdf.setTextColor(docTheme.texto[0], docTheme.texto[1], docTheme.texto[2]);
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(10);
     pdf.text("Colaborador:", 20, 60);
@@ -1462,10 +1471,10 @@ export default function Finance({
     pdf.text(`${formatDate(commStart)} al ${formatDate(commEnd)}`, 135, 60);
 
     let y = 90;
-    pdf.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    pdf.setFillColor(docTheme.banda[0], docTheme.banda[1], docTheme.banda[2]);
     pdf.rect(15, y, 180, 8, "F");
 
-    pdf.setTextColor(255, 255, 255);
+    pdf.setTextColor(headerTextColor[0], headerTextColor[1], headerTextColor[2]);
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(8);
     pdf.text("Tipo / Serv.", 18, y + 6);
@@ -1490,9 +1499,9 @@ export default function Finance({
         if (y > 260) {
           pdf.addPage();
           y = 20;
-          pdf.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+          pdf.setFillColor(docTheme.banda[0], docTheme.banda[1], docTheme.banda[2]);
           pdf.rect(15, y, 180, 8, "F");
-          pdf.setTextColor(255, 255, 255);
+          pdf.setTextColor(headerTextColor[0], headerTextColor[1], headerTextColor[2]);
           pdf.setFont("helvetica", "bold");
           pdf.text("Tipo / Serv.", 18, y + 6);
           pdf.text("Vehículo", 45, y + 6);
@@ -1506,14 +1515,14 @@ export default function Finance({
         }
 
         if (index % 2 === 0) {
-          pdf.setFillColor(248, 250, 252);
+          pdf.setFillColor(docTheme.filaAlterna[0], docTheme.filaAlterna[1], docTheme.filaAlterna[2]);
           pdf.rect(15, y, 180, 8, "F");
         }
 
-        pdf.setDrawColor(241, 245, 249);
+        pdf.setDrawColor(docTheme.bordes[0], docTheme.bordes[1], docTheme.bordes[2]);
         pdf.line(15, y + 8, 195, y + 8);
 
-        pdf.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        pdf.setTextColor(docTheme.texto[0], docTheme.texto[1], docTheme.texto[2]);
         
         const typeStr = item.tipo.length > 15 ? item.tipo.substring(0, 15) : item.tipo;
         const vehicleStr = `${item.marca} ${item.linea}`;
@@ -1538,9 +1547,9 @@ export default function Finance({
       y = 20;
     }
 
-    pdf.setFillColor(245, 247, 250);
+    pdf.setFillColor(docTheme.filaAlterna[0], docTheme.filaAlterna[1], docTheme.filaAlterna[2]);
     pdf.rect(120, y, 75, 30, "F");
-    pdf.setDrawColor(226, 232, 240);
+    pdf.setDrawColor(docTheme.bordes[0], docTheme.bordes[1], docTheme.bordes[2]);
     pdf.rect(120, y, 75, 30, "S");
 
     pdf.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
