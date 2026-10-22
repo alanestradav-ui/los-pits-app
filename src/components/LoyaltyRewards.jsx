@@ -28,6 +28,7 @@ import {
   Smartphone
 } from "lucide-react";
 import WalletInviteModal from "./WalletInviteModal";
+import { getPuntosPorVencer, yaSeAvisoVencimiento, DIAS_AVISO_VENCIMIENTO } from "../utils/loyaltyExpiry";
 
 export default function LoyaltyRewards({
   clientes = [],
@@ -50,6 +51,7 @@ export default function LoyaltyRewards({
   const [redeemingPremio, setRedeemingPremio] = useState(null);
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
   const [lastRedeemedTicket, setLastRedeemedTicket] = useState(null);
+  const [mostrarAvisados, setMostrarAvisados] = useState(false);
 
   // Modals state for admin editing
   const [isAdjustPointsOpen, setIsAdjustPointsOpen] = useState(false);
@@ -91,6 +93,38 @@ export default function LoyaltyRewards({
       String(p.nombre || "").toLowerCase().trim() === key
     );
     return match ? (parseInt(match.puntos) || 0) : 0;
+  };
+
+  // 🔔 Puntos que vencen en el próximo mes
+  const puntosPorVencer = getPuntosPorVencer(puntosRecompensas, programRules);
+  const puntosPorVencerPendientes = puntosPorVencer.filter(p => !yaSeAvisoVencimiento(p));
+  const puntosPorVencerVisibles = mostrarAvisados ? puntosPorVencer : puntosPorVencerPendientes;
+
+  const marcarAvisoVencimiento = (registro) => {
+    if (!onUpdatePuntos || !registro) return;
+    const tel = String(registro.telefono || "").replace(/\D/g, "");
+    const nombre = String(registro.nombre || "").toLowerCase().trim();
+    const nowIso = new Date().toISOString();
+    onUpdatePuntos(prev => (Array.isArray(prev) ? prev : []).map(p => {
+      if (!p) return p;
+      const pTel = String(p.telefono || "").replace(/\D/g, "");
+      const pNombre = String(p.nombre || "").toLowerCase().trim();
+      const coincide = (tel && pTel && tel === pTel) || (!tel && nombre && pNombre === nombre);
+      return coincide ? { ...p, avisoVencimientoEnviado: nowIso, updatedAt: nowIso } : p;
+    }));
+  };
+
+  const avisarVencimientoWhatsApp = (registro) => {
+    const limpio = String(registro.telefono || "").replace(/\D/g, "");
+    const telefonoWa = limpio.length === 8 ? `502${limpio}` : limpio;
+    if (!telefonoWa) {
+      alert("Este cliente no tiene un número de teléfono válido registrado.");
+      return;
+    }
+    const fecha = registro.fechaVencimiento.toLocaleDateString("es-GT", { day: "2-digit", month: "2-digit", year: "numeric" });
+    const texto = `Hola ${registro.nombre || ""} 👋, te saludamos de Los Pits Auto Center. Tus ${(parseInt(registro.puntos) || 0).toLocaleString("es-GT")} Puntos Pits vencen el ${fecha}. ¡Visítanos antes de esa fecha para conservarlos o canjearlos por un premio! 🎁`;
+    window.open(`https://wa.me/${telefonoWa}?text=${encodeURIComponent(texto)}`, "_blank");
+    marcarAvisoVencimiento(registro);
   };
 
   // Filter clients list
@@ -390,6 +424,81 @@ export default function LoyaltyRewards({
           </button>
         </div>
       </div>
+
+      {/* 🔔 AVISO: PUNTOS POR VENCER (un mes antes) */}
+      {puntosPorVencer.length > 0 && (
+        <div id="aviso-puntos-por-vencer" style={{
+          background: "linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(245, 158, 11, 0.10) 100%)",
+          border: "1px solid rgba(239, 68, 68, 0.35)",
+          borderRadius: "14px",
+          padding: "16px 18px",
+          marginBottom: "20px"
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", flexWrap: "wrap", marginBottom: puntosPorVencerVisibles.length > 0 ? "12px" : 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <AlertTriangle size={22} color="#f87171" />
+              <div>
+                <div style={{ fontWeight: "800", color: "#fecaca", fontSize: "1rem" }}>
+                  Puntos por vencer en los próximos {DIAS_AVISO_VENCIMIENTO} días
+                </div>
+                <div style={{ fontSize: "0.8rem", color: "#cbd5e1" }}>
+                  {puntosPorVencerPendientes.length} cliente(s) pendiente(s) de aviso · {puntosPorVencer.length} en total
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMostrarAvisados(v => !v)}
+              style={{ background: "rgba(15,23,42,0.6)", border: "1px solid rgba(255,255,255,0.15)", color: "#cbd5e1", borderRadius: "8px", padding: "6px 12px", fontSize: "0.78rem", fontWeight: "700", cursor: "pointer" }}
+            >
+              {mostrarAvisados ? "Ocultar ya avisados" : "Ver también ya avisados"}
+            </button>
+          </div>
+
+          {puntosPorVencerVisibles.length > 0 && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "10px" }}>
+              {puntosPorVencerVisibles.map((p, idx) => {
+                const avisado = yaSeAvisoVencimiento(p);
+                return (
+                  <div key={`${p.telefono || p.nombre}-${idx}`} style={{ backgroundColor: "rgba(15, 23, 42, 0.7)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "10px", padding: "12px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: "8px" }}>
+                      <strong style={{ color: "#fff", fontSize: "0.9rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nombre || "Cliente"}</strong>
+                      <span style={{ color: p.diasRestantes <= 7 ? "#f87171" : "#fbbf24", fontWeight: "800", fontSize: "0.8rem", whiteSpace: "nowrap" }}>
+                        {p.diasRestantes === 0 ? "Vence hoy" : `${p.diasRestantes} día(s)`}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: "0.78rem", color: "#94a3b8" }}>
+                      {p.telefono || "Sin teléfono"} · <span style={{ color: "#fde047", fontWeight: "700" }}>{(parseInt(p.puntos) || 0).toLocaleString("es-GT")} pts</span>
+                    </div>
+                    <div style={{ fontSize: "0.78rem", color: "#cbd5e1" }}>
+                      Vence: {p.fechaVencimiento.toLocaleDateString("es-GT", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                      {avisado && <span style={{ color: "#4ade80", marginLeft: "6px" }}>✓ Avisado</span>}
+                    </div>
+                    <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "4px" }}>
+                      <button
+                        type="button"
+                        onClick={() => avisarVencimientoWhatsApp(p)}
+                        style={{ flex: 1, backgroundColor: "rgba(34, 197, 94, 0.15)", border: "1px solid rgba(34, 197, 94, 0.4)", color: "#4ade80", borderRadius: "8px", padding: "6px 10px", fontSize: "0.75rem", fontWeight: "700", cursor: "pointer" }}
+                      >
+                        💬 Avisar por WhatsApp
+                      </button>
+                      {!avisado && (
+                        <button
+                          type="button"
+                          onClick={() => marcarAvisoVencimiento(p)}
+                          style={{ backgroundColor: "transparent", border: "1px solid rgba(255,255,255,0.15)", color: "#cbd5e1", borderRadius: "8px", padding: "6px 10px", fontSize: "0.75rem", fontWeight: "700", cursor: "pointer" }}
+                        >
+                          Marcar avisado
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* TAB 1: CLIENTES Y PUNTOS */}
       {activeTab === "clientes" && (

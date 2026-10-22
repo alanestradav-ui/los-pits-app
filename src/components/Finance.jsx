@@ -20,7 +20,7 @@ import {
 import { formatMoney, formatDate } from "../utils/storage";
 import { jsPDF } from "jspdf";
 import { getActiveBranding, getDocThemeRgb, themeHtmlDocument } from "../utils/branding";
-import { calcOrderCommission, getCommissionableLabor, getWarrantyPenalty, parseLocalDate } from "../utils/workshopCalc";
+import { calcOrderCommission, getCommissionableLabor, getWarrantyPenalty, parseLocalDate, calcSupervisorPartsCommission, getUserCarwashFixedCommission, getPartsProfit } from "../utils/workshopCalc";
 
 export default function Finance({ 
   usuarioActual,
@@ -222,7 +222,8 @@ export default function Finance({
     const salarioMensual = parseFloat(u.salarioBase) || 0;
     const sueldoPeriodo = payrollPeriodMode === "mes" ? salarioMensual : (salarioMensual / 2);
     const { items } = getPayrollUnpaidItems(u.user, u.rol || "Colaborador");
-    const allKeys = items.map(i => `${i.type}_${i.orderId}`);
+    // Las comisiones de períodos anteriores se muestran pero no se preseleccionan (revisar antes de pagar)
+    const allKeys = items.filter(i => !i.periodoAnterior).map(i => `${i.type}_${i.orderId}`);
     setSelectedCommKeys(allKeys);
     setCustomSueldoBaseInput(sueldoPeriodo.toString());
     setSelectedPayrollUser({ user: u.user, rol: u.rol || "Colaborador", salarioBase: u.salarioBase || 0 });
@@ -542,7 +543,19 @@ export default function Finance({
     return sum + (totalLabor * pct);
   }, 0);
 
-  const totalCommissionsPaidPeriod = periodMechanicComms + periodWasherComms + periodCashierComms;
+  // 🧑‍💼 Comisiones de supervisión sobre repuestos (admin / jefe de taller) y comisión fija de carwash por cobro
+  const periodSupervisionComms = billedTaller.reduce((sum, o) =>
+    sum + (usuarios || []).reduce((s, u) => s + calcSupervisorPartsCommission(o, u), 0), 0);
+  const periodCarwashCobroComms = billedCarwash.reduce((sum, c) => {
+    const cajeroUser = (usuarios || []).find(u => String(u.user || "").toLowerCase().trim() === String(c.cajero || "").toLowerCase().trim());
+    const qFijo = getUserCarwashFixedCommission(cajeroUser);
+    if (!qFijo) return sum;
+    const lavList = c.lavadores && c.lavadores.length > 0 ? c.lavadores : (c.lavador ? c.lavador.split(", ").map(i => i.trim()).filter(Boolean) : []);
+    if (lavList.some(l => l.toLowerCase().trim() === String(cajeroUser.user || "").toLowerCase().trim())) return sum;
+    return sum + qFijo;
+  }, 0);
+
+  const totalCommissionsPaidPeriod = periodMechanicComms + periodWasherComms + periodCashierComms + periodSupervisionComms + periodCarwashCobroComms;
   const totalVariableCostsPeriod = totalTallerPartsCost + totalCafeteriaItemCost + totalTiendaItemCost + totalCarwashSuppliesCost + totalCommissionsPaidPeriod;
 
   const totalContributionMarginPeriod = totalGrandRevenue - totalVariableCostsPeriod;
@@ -896,26 +909,65 @@ export default function Finance({
     const userObj = (usuarios || []).find(u => String(u.user || "").toLowerCase().trim() === lower);
     const laborCommDisabled = !!(userObj && userObj.comisionarLabor === false);
 
+    // 📅 Clasificación por fecha: "actual" (dentro del período) o "anterior" (pendiente de los 60 días previos).
+    // Las anteriores aparecen marcadas para que ninguna comisión quede sin pagar si se saltó un período.
+    const arrearsStart = new Date(startDate.getTime() - 60 * 24 * 60 * 60 * 1000);
+    let totalAnteriores = 0;
+    const clasificar = (fechaVal, fallbackId) => {
+      const d = fechaVal ? new Date(fechaVal) : new Date(fallbackId);
+      if (!d || isNaN(d.getTime())) return null;
+      if (d >= startDate && d <= endDate) return "actual";
+      if (d >= arrearsStart && d < startDate) return "anterior";
+      return null;
+    };
+    const pushItem = (item, periodo) => {
+      if (periodo === "anterior") {
+        totalAnteriores += item.comision;
+        items.push({ ...item, periodoAnterior: true, titulo: `⏪ ${item.titulo} (período anterior)` });
+      } else {
+        totalComs += item.comision;
+        items.push(item);
+      }
+    };
+
     // Mechanics: se basa en las órdenes asignadas (no depende del texto exacto del rol).
     // La comisión se recalcula en vivo para respetar la configuración del colaborador
     // y la casilla "Comisión" de cada línea de mano de obra.
     (ordenes || []).forEach(o => {
       if (o.estado === "Entregado" && o.comisionPagada !== true && (o.mecanico || "").toLowerCase().trim() === lower) {
-        const d = o.fecha ? new Date(o.fecha) : new Date(o.id);
-        if (d >= startDate && d <= endDate) {
+        const periodo = clasificar(o.fecha, o.id);
+        if (periodo) {
           const amt = calcOrderCommission(o, usuarios, 0.10);
           if (amt <= 0) return;
-          totalComs += amt;
-          items.push({
+          pushItem({
             type: "taller",
             orderId: o.id,
             titulo: `Orden Taller #${o.id}`,
             subtitulo: `${o.cliente || "Cliente"} - ${o.marca || ""} ${o.linea || ""} (${o.placa || ""})`,
             fecha: o.fecha,
             comision: amt
-          });
+          }, periodo);
         }
       }
+    });
+
+    // 🧑‍💼 Supervisión (Administrador / Jefe de Taller): % sobre la utilidad de repuestos de todas las órdenes
+    // entregadas en las que NO es el técnico asignado (si lo es, ya va en su comisión de taller).
+    (ordenes || []).forEach(o => {
+      if (!o || o.estado !== "Entregado") return;
+      if (o.comisionesSupervision && o.comisionesSupervision[lower]) return;
+      const periodo = clasificar(o.fecha, o.id);
+      if (!periodo) return;
+      const amt = calcSupervisorPartsCommission(o, userObj);
+      if (amt <= 0) return;
+      pushItem({
+        type: "supervision",
+        orderId: o.id,
+        titulo: `Comisión Repuestos (Orden #${o.id})`,
+        subtitulo: `${o.cliente || "Cliente"} - ${o.placa || ""} · ${userObj.comisionRepuestos}% de utilidad ${formatMoney(getPartsProfit(o.presupuesto))}`,
+        fecha: o.fecha,
+        comision: amt
+      }, periodo);
     });
 
     // 🛡️ Penalizaciones por garantía pendientes de aplicar (hasta el fin del período)
@@ -944,25 +996,48 @@ export default function Finance({
       const lavList = c.lavadores && c.lavadores.length > 0 ? c.lavadores : (c.lavador ? c.lavador.split(", ").map(i => i.trim()).filter(Boolean) : []);
       const isAssigned = lavList.some(l => l.toLowerCase().trim() === lower);
       if (c.estado === "Entregado" && c.comisionPagada !== true && isAssigned) {
-        const d = c.fecha ? new Date(c.fecha) : new Date(c.id);
-        if (d >= startDate && d <= endDate) {
+        const periodo = clasificar(c.fecha, c.id);
+        if (periodo) {
           const isWorkshopWash = c.tallerOrderId || String(c.tipo || "").toLowerCase().trim() === "lavado de taller";
           const matchedPreset = (carwashPresets || []).find(p => p.tipo && String(p.tipo).toLowerCase().trim() === String(c.tipo).toLowerCase().trim());
           const totalComm = isWorkshopWash ? 5.0 : (matchedPreset && matchedPreset.comision !== undefined ? parseFloat(matchedPreset.comision) : (parseFloat(c.comision) || 5.0));
           const splitComm = lavList.length > 0 ? (totalComm / lavList.length) : totalComm;
 
-          totalComs += splitComm;
-          items.push({
+          pushItem({
             type: "carwash",
             orderId: c.id,
             titulo: `Carwash (${c.tipo})`,
             subtitulo: `${c.cliente || "Cliente"} - ${c.vehiculo?.marca || ""} ${c.vehiculo?.linea || ""} (${c.vehiculo?.placa || ""})`,
             fecha: c.fecha,
             comision: splitComm
-          });
+          }, periodo);
         }
       }
     });
+
+    // 🧼 Comisión fija de Carwash (Q) configurada en el usuario: por cada lavado entregado que cobró
+    // (administrador / cajero) y en el que no participó como lavador.
+    {
+      const qFijo = getUserCarwashFixedCommission(userObj);
+      if (qFijo > 0) {
+        (carwash || []).forEach(c => {
+          if (!c || c.estado !== "Entregado" || c.cajeroComisionPagada === true) return;
+          if (String(c.cajero || "").toLowerCase().trim() !== lower) return;
+          const lavList = c.lavadores && c.lavadores.length > 0 ? c.lavadores : (c.lavador ? c.lavador.split(", ").map(i => i.trim()).filter(Boolean) : []);
+          if (lavList.some(l => l.toLowerCase().trim() === lower)) return;
+          const periodo = clasificar(c.fecha, c.id);
+          if (!periodo) return;
+          pushItem({
+            type: "carwashCobro",
+            orderId: c.id,
+            titulo: `Comisión Carwash cobrado (${c.tipo || "Lavado"})`,
+            subtitulo: `${c.cliente || "Cliente"} - ${c.vehiculo?.placa || ""} · Comisión fija ${formatMoney(qFijo)}`,
+            fecha: c.fecha,
+            comision: qFijo
+          }, periodo);
+        });
+      }
+    }
 
     // Cashiers
     {
@@ -971,20 +1046,19 @@ export default function Finance({
 
       (ordenes || []).forEach(o => {
         if (o.estado === "Entregado" && o.cajeroComisionPagada !== true && o.cajero && o.cajero.toLowerCase().trim() === lower && o.cajeroComisionApplies === true) {
-          const d = o.fecha ? new Date(o.fecha) : new Date(o.id);
-          if (d >= startDate && d <= endDate) {
+          const periodo = clasificar(o.fecha, o.id);
+          if (periodo) {
             const totalLabor = ((o.presupuesto?.labor || []).length > 0 ? getCommissionableLabor(o.presupuesto) : (parseFloat(o.total) || 0));
             const amt = totalLabor * pctTaller;
             if (amt <= 0) return;
-            totalComs += amt;
-            items.push({
+            pushItem({
               type: "cajero",
               orderId: o.id,
               titulo: `Comisión Cajero (Orden #${o.id})`,
               subtitulo: `Cliente: ${o.cliente || "Cliente"} - Labor: ${formatMoney(totalLabor)}`,
               fecha: o.fecha,
               comision: amt
-            });
+            }, periodo);
           }
         }
       });
@@ -1004,18 +1078,17 @@ export default function Finance({
         commAmt = parseFloat(v.comisionTotalCalculada || 0);
       }
 
-      if (v.estado === "Vendido" && v.comisionPagada !== true && isAssigned) {
-        const d = new Date(v.fechaVenta || v.fecha || v.id);
-        if (d >= startDate && d <= endDate) {
-          totalComs += commAmt;
-          items.push({
+      if (v.estado === "Vendido" && v.comisionPagada !== true && isAssigned && commAmt > 0) {
+        const periodo = clasificar(v.fechaVenta || v.fecha, v.id);
+        if (periodo) {
+          pushItem({
             type: "vehiculo",
             orderId: v.id,
             titulo: `Venta Vehículo ${v.marca} ${v.linea}`,
             subtitulo: `Placa: ${v.placa || "N/A"}`,
             fecha: v.fechaVenta || v.fecha,
             comision: commAmt
-          });
+          }, periodo);
         }
       }
     });
@@ -1031,7 +1104,7 @@ export default function Finance({
       ? (ordenes || []).filter(o => o.estado === "Entregado" && o.comisionPagada !== true && (o.mecanico || "").toLowerCase().trim() === lower).length
       : 0;
 
-    return { items, totalComs: Math.round(totalComs * 100) / 100, laborCommDisabled, ordersWithoutCommission, rol };
+    return { items, totalComs: Math.round(totalComs * 100) / 100, totalAnteriores: Math.round(totalAnteriores * 100) / 100, laborCommDisabled, ordersWithoutCommission, rol };
   };
 
   const handleExecutePayrollPayment = (userObj, baseSalaryOverride, items, totalComm) => {
@@ -1073,6 +1146,23 @@ export default function Finance({
     const vehiculoIds = items.filter(i => i.type === "vehiculo").map(i => i.orderId);
     if (vehiculoIds.length > 0 && setVehiculosVenta) {
       setVehiculosVenta(prev => (prev || []).map(v => vehiculoIds.includes(v.id) ? { ...v, comisionPagada: true, fechaPagoComision: nowIso, payrollId } : v));
+    }
+
+    // 🧑‍💼 Comisiones de supervisión sobre repuestos: se registran por colaborador en cada orden
+    const userKey = String(userObj.user || "").toLowerCase().trim();
+    const supervisionItems = items.filter(i => i.type === "supervision");
+    if (supervisionItems.length > 0 && setOrdenes) {
+      const montoPorOrden = {};
+      supervisionItems.forEach(i => { montoPorOrden[i.orderId] = i.comision; });
+      setOrdenes(prev => (prev || []).map(o => montoPorOrden[o.id] !== undefined
+        ? { ...o, comisionesSupervision: { ...(o.comisionesSupervision || {}), [userKey]: { payrollId, monto: montoPorOrden[o.id], fecha: nowIso } }, updatedAt: nowIso }
+        : o));
+    }
+
+    // 🧼 Comisión fija de Carwash por cobro
+    const carwashCobroIds = items.filter(i => i.type === "carwashCobro").map(i => i.orderId);
+    if (carwashCobroIds.length > 0 && setCarwash) {
+      setCarwash(prev => (prev || []).map(c => carwashCobroIds.includes(c.id) ? { ...c, cajeroComisionPagada: true, fechaPagoComisionCajero: nowIso, payrollIdCajero: payrollId, updatedAt: nowIso } : c));
     }
 
     // 💵 Registrar cuotas descontadas y bonos pagados en los movimientos de nómina
@@ -2556,7 +2646,7 @@ export default function Finance({
                     </thead>
                     <tbody>
                       {(usuarios || []).map((u, i) => {
-                        const { items, totalComs, laborCommDisabled, ordersWithoutCommission } = getPayrollUnpaidItems(u.user, u.rol);
+                        const { items, totalComs, totalAnteriores, laborCommDisabled, ordersWithoutCommission } = getPayrollUnpaidItems(u.user, u.rol);
                         const salarioMensual = parseFloat(u.salarioBase) || 0;
                         const sueldoPeriodo = payrollPeriodMode === "mes" ? salarioMensual : (salarioMensual / 2);
                         const totalLiquido = sueldoPeriodo + totalComs;
@@ -2584,6 +2674,11 @@ export default function Finance({
                               {laborCommDisabled && ordersWithoutCommission > 0 && (
                                 <span title="Comisión por mano de obra desactivada en Configuración" style={{ fontSize: "0.72rem", color: "#fbbf24", display: "block" }}>
                                   ⚠️ Comisión desactivada ({ordersWithoutCommission} órdenes)
+                                </span>
+                              )}
+                              {totalAnteriores > 0 && (
+                                <span title="Comisiones de períodos anteriores que quedaron sin pagar (revísalas en el desglose)" style={{ fontSize: "0.72rem", color: "#f87171", display: "block" }}>
+                                  ⏪ + {formatMoney(totalAnteriores)} pendiente de períodos anteriores
                                 </span>
                               )}
                             </td>

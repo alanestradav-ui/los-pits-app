@@ -922,7 +922,6 @@ export default function Cafeteria({
                     className="input-field"
                     value={checkoutNombreFacturacion}
                     onChange={(e) => setCheckoutNombreFacturacion(e.target.value)}
-                    required
                   />
                 </div>
               </div>

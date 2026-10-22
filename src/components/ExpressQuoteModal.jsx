@@ -80,6 +80,12 @@ export default function ExpressQuoteModal({
   ]);
   const [descuento, setDescuento] = useState("");
   const [diasValidez, setDiasValidez] = useState("15");
+  // Fecha que sale impresa en la cotización: por defecto hoy (fecha de impresión), editable
+  const hoyLocalISO = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+  const [fechaImpresion, setFechaImpresion] = useState(hoyLocalISO());
   const [notas, setNotas] = useState("Precios incluyen mano de obra e instalación. Cotización válida por 15 días. Sujeto a disponibilidad de repuestos.");
 
   // Autocomplete suggestions
@@ -113,6 +119,7 @@ export default function ExpressQuoteModal({
     setRepuestos([{ id: Date.now() + 1, name: "", qty: 1, price: "", brand: "" }]);
     setDescuento("");
     setDiasValidez("15");
+    setFechaImpresion(hoyLocalISO());
     setNotas("Precios incluyen mano de obra e instalación. Cotización válida por 15 días. Sujeto a disponibilidad de repuestos.");
     setClienteSuggestions([]);
   };
@@ -147,6 +154,7 @@ export default function ExpressQuoteModal({
 
     setDescuento(q.descuento || "");
     setDiasValidez(q.diasValidez || "15");
+    setFechaImpresion(hoyLocalISO());
     setNotas(q.notas || "Precios incluyen mano de obra e instalación. Cotización válida por 15 días. Sujeto a disponibilidad de repuestos.");
     setActiveTab("form");
   };
@@ -434,7 +442,10 @@ export default function ExpressQuoteModal({
     ctx.fillStyle = "#000000";
     ctx.font = "bold 15px 'Plus Jakarta Sans', sans-serif";
     ctx.textAlign = "center";
-    const dateFormatted = new Date().toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const fechaMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fechaImpresion || "");
+    const dateFormatted = fechaMatch
+      ? `${fechaMatch[3]}/${fechaMatch[2]}/${fechaMatch[1]}`
+      : new Date().toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
     ctx.fillText(`Fecha:  ${dateFormatted}`, 400, 194);
     ctx.textAlign = "left";
 
@@ -1104,15 +1115,28 @@ _¡Contáctanos para agendar tu cita y confirmar la orden de trabajo!_`;
                 </div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                  <div style={styles.inputGroup}>
-                    <label style={styles.label}>Validez de la Cotización (Días)</label>
-                    <input
-                      type="number"
-                      className="input-field"
-                      value={diasValidez}
-                      onChange={(e) => setDiasValidez(e.target.value)}
-                      style={{ width: "120px" }}
-                    />
+                  <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label}>Validez de la Cotización (Días)</label>
+                      <input
+                        type="number"
+                        className="input-field"
+                        value={diasValidez}
+                        onChange={(e) => setDiasValidez(e.target.value)}
+                        style={{ width: "120px" }}
+                      />
+                    </div>
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label}>Fecha de Impresión</label>
+                      <input
+                        type="date"
+                        id="cotizacion-express-fecha-impresion"
+                        className="input-field"
+                        value={fechaImpresion}
+                        onChange={(e) => setFechaImpresion(e.target.value || hoyLocalISO())}
+                        style={{ width: "170px" }}
+                      />
+                    </div>
                   </div>
 
                   <div style={styles.inputGroup}>

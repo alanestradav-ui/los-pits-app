@@ -238,13 +238,16 @@ p {
 }
 
 /* Animations */
+/* ⚠️ Sin keyframe "to": al terminar, el elemento vuelve a transform: none.
+   Un transform persistente (aunque sea translateY(0)) convierte al contenedor en el
+   bloque contenedor de los position: fixed, y las ventanas emergentes aparecían
+   arriba del contenido desplazado en vez de centradas en la pantalla. */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 
 .animate-fade-in {
-  animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
 @keyframes pulseGlow {
@@ -424,14 +427,139 @@ p {
   50% { transform: scale(1.12); }
 }
 
-/* Centrado de modales desplazado en PC considerando el Sidebar persistente (280px) */
+/* ==========================================================================
+   🪟 VENTANAS EMERGENTES SIEMPRE CENTRADAS
+   ========================================================================== */
+/* Antes se desplazaban 280px a la derecha (ancho del Sidebar). Ahora todas se centran en la pantalla. */
 .modal-overlay-centered {
-  padding-left: 280px;
+  padding-left: 0;
 }
-@media (max-width: 768px) {
-  .modal-overlay-centered {
-    padding-left: 0 !important;
+
+/* Un ancestro con transform / filter / backdrop-filter convierte a los position: fixed en "relativos"
+   a ese contenedor y la ventana aparecía arriba, a un lado o cortada. Mientras haya una ventana
+   emergente abierta dentro, se neutralizan esas propiedades en sus contenedores. */
+:where(#root, #root *):has([style*="position: fixed"][style*="z-index"]) {
+  transform: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  perspective: none !important;
+  contain: none !important;
+  will-change: auto !important;
+}
+
+/* Overlays (fondo oscuro a pantalla completa con contenido centrado):
+   si el contenido es más alto que la pantalla se puede desplazar sin que se corte la parte de arriba. */
+[style*="position: fixed"][style*="z-index"][style*="justify-content: center"][style*="align-items: center"] {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+[style*="position: fixed"][style*="z-index"][style*="justify-content: center"][style*="align-items: center"] > * {
+  margin: auto;
+  min-width: 0;
+}
+
+/* ==========================================================================
+   📱 AJUSTES PARA CELULAR
+   ========================================================================== */
+.app-container,
+.app-main {
+  height: 100vh;
+}
+@supports (height: 100dvh) {
+  .app-container,
+  .app-main {
+    height: 100dvh !important;
   }
+}
+
+.app-main {
+  min-width: 0;
+}
+.app-main > * {
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .app-container {
+    width: 100% !important;
+  }
+
+  /* El contenido de cada módulo nunca debe ser más ancho que la pantalla */
+  .app-main > * {
+    max-width: 100vw;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    padding-bottom: 90px !important; /* espacio para el botón flotante del menú */
+  }
+  .app-main * {
+    max-width: 100%;
+  }
+  .app-main img,
+  .app-main video,
+  .app-main canvas {
+    height: auto;
+  }
+
+  /* Encabezados y filas de botones: se acomodan en varias líneas en lugar de salirse */
+  .app-main [style*="display: flex"][style*="justify-content: space-between"],
+  .app-main [style*="display: flex"][style*="gap"] {
+    flex-wrap: wrap;
+  }
+
+  /* Grids de columnas fijas → una sola columna (los auto-fill / auto-fit ya son adaptables) */
+  .app-main [style*="grid-template-columns"]:not([style*="auto-fill"]):not([style*="auto-fit"]),
+  [style*="position: fixed"][style*="z-index"] [style*="grid-template-columns"]:not([style*="auto-fill"]):not([style*="auto-fit"]) {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .responsive-carwash-grid,
+  .responsive-parking-grid,
+  .responsive-inventory-grid,
+  .responsive-dashboard-grid,
+  .responsive-pos-grid,
+  .responsive-cafeteria-manager-grid {
+    gap: 16px;
+  }
+
+  /* Tablas anchas: desplazamiento horizontal dentro de su propio contenedor */
+  .app-main table,
+  [style*="position: fixed"][style*="z-index"] table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+
+  /* Ventanas emergentes a lo ancho del celular */
+  [style*="position: fixed"][style*="z-index"][style*="justify-content: center"] {
+    padding: 10px !important;
+  }
+  [style*="position: fixed"][style*="z-index"][style*="justify-content: center"] > * {
+    max-width: 100% !important;
+    max-height: none;
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+  }
+  [style*="position: fixed"][style*="z-index"][style*="justify-content: center"] > * * {
+    max-width: 100%;
+  }
+  [style*="position: fixed"][style*="z-index"][style*="justify-content: center"] [style*="display: flex"] {
+    flex-wrap: wrap;
+  }
+
+  /* Evita el zoom automático de iOS al tocar un campo (requiere 16px) */
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  .btn {
+    padding: 10px 16px;
+  }
+
+  h1 { font-size: 1.35rem !important; }
+  h2 { font-size: 1.2rem !important; }
 }
 
 /* Print CSS Media Queries for Client Reports */

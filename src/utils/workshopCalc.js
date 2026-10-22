@@ -54,6 +54,39 @@ export const calcOrderCommission = (orderObj, usuarios, defaultPct = 0.10) => {
   return Math.round((laborComm + repuestosComm) * 100) / 100;
 };
 
+const normRolCalc = (r) => String(r || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+/**
+ * Roles de supervisión (administrador / jefe de taller / gerente): comisionan sobre la
+ * utilidad de repuestos de TODAS las órdenes entregadas, no solo las que tienen asignadas.
+ */
+export const isSupervisorRol = (rol) => {
+  const r = normRolCalc(rol);
+  return r === "admin" || r === "administrador" || r === "administradora" || r === "jefe de taller" || r === "jefe" || r === "gerente";
+};
+
+/** Utilidad (venta - costo) de los repuestos de una orden. */
+export const getPartsProfit = (presupuesto) =>
+  ((presupuesto && presupuesto.parts) || []).reduce((sum, part) =>
+    sum + Math.max(0, (Number(part?.salePrice || 0) - Number(part?.purchasePrice || 0)) * Number(part?.qty || 0)), 0);
+
+/**
+ * Comisión de supervisión sobre repuestos para un usuario que NO es el técnico de la orden
+ * (si es el técnico, ya va incluida en calcOrderCommission).
+ */
+export const calcSupervisorPartsCommission = (orderObj, userObj) => {
+  if (!orderObj || !userObj || !orderObj.presupuesto) return 0;
+  if (userObj.comisionarRepuestos !== true || !isSupervisorRol(userObj.rol)) return 0;
+  if (norm(orderObj.mecanico) === norm(userObj.user)) return 0;
+  const pct = (Number(userObj.comisionRepuestos) || 0) / 100;
+  if (pct <= 0) return 0;
+  return Math.round(getPartsProfit(orderObj.presupuesto) * pct * 100) / 100;
+};
+
+/** Comisión fija de Carwash (Q) configurada en el usuario, si está activada. */
+export const getUserCarwashFixedCommission = (userObj) =>
+  userObj && userObj.comisionarCarwash === true ? (Number(userObj.comisionCarwash) || 0) : 0;
+
 /**
  * Monto de penalización por garantía de una orden.
  * order.garantia = { activa, tecnico, tipo: "monto"|"porcentaje", valor, base, monto }

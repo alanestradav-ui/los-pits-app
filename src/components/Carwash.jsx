@@ -3008,7 +3008,6 @@ export default function Carwash({
                     className="input-field"
                     value={checkoutNombreFacturacion}
                     onChange={(e) => setCheckoutNombreFacturacion(e.target.value)}
-                    required
                   />
                 </div>
               </div>

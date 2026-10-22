@@ -1447,7 +1447,6 @@ export default function Parking({
                     className="input-field"
                     value={checkoutNombreFacturacion}
                     onChange={(e) => setCheckoutNombreFacturacion(e.target.value)}
-                    required
                   />
                 </div>
               </div>

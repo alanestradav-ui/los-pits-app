@@ -32,6 +32,7 @@ import { findVehiclesForClient } from "../utils/vehicleHelpers";
 import { DEFAULT_BRANDING, getCleanBranding, drawCanvasHeader, applyDocumentTheme, themeHtmlDocument } from "../utils/branding";
 import ClientVehiclesModal from "./ClientVehiclesModal";
 import ExpressQuoteModal from "./ExpressQuoteModal";
+import ServicePackagesManager, { aplicarPaqueteAPresupuesto, paqueteDesdePresupuesto, getTotalesPaquete } from "./ServicePackages";
 import { jsPDF } from "jspdf";
 
 const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
@@ -205,9 +206,15 @@ export default function Taller({
   addPuntosLealtad,
   workshopBranding = DEFAULT_BRANDING,
   cotizacionesExpress = [],
-  setCotizacionesExpress
+  setCotizacionesExpress,
+  paquetesServicios = [],
+  setPaquetesServicios
 }) {
   const [showExpressQuoteModal, setShowExpressQuoteModal] = useState(false);
+  // 📦 Paquetes de servicio
+  const [showPaquetesManager, setShowPaquetesManager] = useState(false);
+  const [paqueteDraft, setPaqueteDraft] = useState(null);
+  const [paqueteSeleccionadoId, setPaqueteSeleccionadoId] = useState("");
   const [viewingVendorQuotesOrder, setViewingVendorQuotesOrder] = useState(null);
   const [cliente, setCliente] = useState("");
   const [telefono, setTelefono] = useState("");
@@ -1659,6 +1666,19 @@ export default function Taller({
   // Formal budget preview state
   const [presupuestoFormalOrder, setPresupuestoFormalOrder] = useState(null);
   const [recepcionFormalOrder, setRecepcionFormalOrder] = useState(null);
+  // Fecha que se imprime en el presupuesto: por defecto la fecha de impresión (hoy), editable por el usuario
+  const fechaLocalHoyISO = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+  const [presupuestoFechaImpresion, setPresupuestoFechaImpresion] = useState(fechaLocalHoyISO());
+  useEffect(() => {
+    if (presupuestoFormalOrder?.id !== undefined) setPresupuestoFechaImpresion(fechaLocalHoyISO());
+  }, [presupuestoFormalOrder?.id]);
+  const formatFechaISOaGT = (iso) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : new Date().toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  };
   
   const [selectedFullPhoto, setSelectedFullPhoto] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -2667,7 +2687,22 @@ export default function Taller({
     });
     
     setOrdenes(updatedOrders);
-    
+
+    // Nombre de facturación: solo se guarda en la ficha del cliente cuando se llenó la casilla
+    const nombreFactCheckout = (checkoutNombreFacturacion || "").trim();
+    const telCheckout = (checkoutOrder.telefono || "").trim();
+    if (nombreFactCheckout && telCheckout && typeof setClientes === "function") {
+      setClientes(prev => {
+        const safePrev = Array.isArray(prev) ? prev : [];
+        if (!safePrev.some(c => c.telefono === telCheckout)) return safePrev;
+        const updated = safePrev.map(c => c.telefono === telCheckout
+          ? { ...c, nombreFacturacion: nombreFactCheckout, updatedAt: new Date().toISOString() }
+          : c);
+        setTenantLocalStorage("clientes", updated, tenantId);
+        return updated;
+      });
+    }
+
     // Award loyalty points upon billing and completion
     if (typeof addPuntosLealtad === "function" && checkoutOrder) {
       const laborMonto = checkoutOrder.presupuesto?.labor?.reduce((sum, item) => sum + Number(item.price || 0), 0) || checkoutOrder.total;
@@ -3331,7 +3366,8 @@ export default function Taller({
       return new Date().toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
     };
 
-    const dateFormatted = getOrderFormattedDate(o);
+    // Fecha de impresión elegida en el modal; si no viene, se usa la fecha de hoy (fecha de impresión)
+    const dateFormatted = formatFechaISOaGT(o._fechaImpresion || fechaLocalHoyISO());
     ctx.fillText(`Fecha:  ${dateFormatted}`, 400, 194);
     ctx.textAlign = "left";
     
@@ -4522,6 +4558,25 @@ export default function Taller({
               {missingExternalCosts.length > 0 && (
                 <span className="notif-pin notif-pin-floating">{missingExternalCosts.length}</span>
               )}
+            </button>
+            <button
+              type="button"
+              id="taller-paquetes-servicio"
+              onClick={() => { setPaqueteDraft(null); setShowPaquetesManager(true); }}
+              className="btn"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                background: "linear-gradient(135deg, rgba(59,130,246,0.18), rgba(168,85,247,0.18))",
+                border: "1px solid rgba(168,85,247,0.45)",
+                color: "#e9d5ff",
+                fontWeight: "700",
+                padding: "10px 16px",
+                borderRadius: "10px"
+              }}
+            >
+              📦 Paquetes de Servicio
             </button>
             <button
               type="button"
@@ -6153,6 +6208,19 @@ export default function Taller({
         document.body
       )}
 
+      {/* 📦 Administrador de Paquetes de Servicio */}
+      {showPaquetesManager && typeof setPaquetesServicios === "function" && (
+        <ServicePackagesManager
+          paquetes={paquetesServicios}
+          setPaquetes={setPaquetesServicios}
+          workshopInventory={workshopInventory}
+          accesoriosInventory={accesoriosInventory}
+          usuarioActual={usuarioActual}
+          initialDraft={paqueteDraft}
+          onClose={() => { setShowPaquetesManager(false); setPaqueteDraft(null); }}
+        />
+      )}
+
       {/* Detailed Budget Modal Overlay */}
       {budgetModalOrder && createPortal(
         <div style={styles.modalOverlay}>
@@ -6167,6 +6235,66 @@ export default function Taller({
             </div>
 
             <div style={styles.modalBody}>
+              {/* 📦 Paquetes de Servicio: cargan mano de obra, repuestos e insumos recurrentes */}
+              {(() => {
+                const paquetesActivos = (paquetesServicios || []).filter(p => p && !p.eliminado);
+                const aplicarPaquete = () => {
+                  const paq = paquetesActivos.find(p => String(p.id) === String(paqueteSeleccionadoId));
+                  if (!paq) {
+                    alert("Selecciona un paquete de servicio.");
+                    return;
+                  }
+                  setCurrentBudget(prev => aplicarPaqueteAPresupuesto(prev, paq, workshopInventory, accesoriosInventory));
+                  setPaqueteSeleccionadoId("");
+                };
+                return (
+                  <div id="presupuesto-paquetes" style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center", padding: "12px", borderRadius: "12px", border: "1px solid rgba(168, 85, 247, 0.3)", background: "linear-gradient(135deg, rgba(59,130,246,0.08), rgba(168,85,247,0.10))", marginBottom: "16px" }}>
+                    <span style={{ fontWeight: "800", fontSize: "0.85rem", color: "#d8b4fe", whiteSpace: "nowrap" }}>📦 Paquete de Servicio:</span>
+                    <select
+                      id="presupuesto-paquete-select"
+                      className="select-field"
+                      value={paqueteSeleccionadoId}
+                      onChange={(e) => setPaqueteSeleccionadoId(e.target.value)}
+                      style={{ flex: 1, minWidth: "180px", padding: "8px 10px", fontSize: "0.85rem" }}
+                    >
+                      <option value="">{paquetesActivos.length === 0 ? "No hay paquetes creados" : "-- Seleccionar paquete --"}</option>
+                      {paquetesActivos.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.nombre}{!isWorker ? ` · ${formatMoney(getTotalesPaquete(p).total)}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <button type="button" className="btn btn-secondary" onClick={aplicarPaquete} disabled={!paqueteSeleccionadoId} style={{ padding: "8px 14px", fontSize: "0.85rem", opacity: paqueteSeleccionadoId ? 1 : 0.5 }}>
+                      Aplicar
+                    </button>
+                    {!isWorker && (
+                      <>
+                        <button type="button" className="btn btn-ghost" onClick={() => { setPaqueteDraft(null); setShowPaquetesManager(true); }} style={{ padding: "8px 12px", fontSize: "0.8rem" }}>
+                          ⚙️ Administrar
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          onClick={() => {
+                            const tieneLineas = (currentBudget.labor || []).length + (currentBudget.parts || []).length + (currentBudget.insumos || []).length > 0;
+                            if (!tieneLineas) {
+                              alert("Agrega mano de obra, repuestos o insumos al presupuesto para guardarlo como paquete.");
+                              return;
+                            }
+                            setPaqueteDraft(paqueteDesdePresupuesto(currentBudget, ""));
+                            setShowPaquetesManager(true);
+                          }}
+                          style={{ padding: "8px 12px", fontSize: "0.8rem" }}
+                          title="Crear un paquete con las líneas actuales de este presupuesto"
+                        >
+                          💾 Guardar como paquete
+                        </button>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* 🛠️ Mano de Obra */}
               <div style={styles.budgetSection}>
                 <h3 style={styles.budgetSecTitle}>🛠️ Mano de Obra</h3>
@@ -7358,26 +7486,28 @@ export default function Taller({
               {/* metadata client */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "15px", fontSize: "0.85rem", backgroundColor: "rgba(255,255,255,0.02)", padding: "12px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.04)" }}>
                 <div>
-                  <p style={{ color: "var(--text-muted)", fontWeight: "bold" }}>FECHA:</p>
-                  <p style={{ color: "#fff", fontWeight: "bold" }}>
-                    {(() => {
-                      const order = presupuestoFormalOrder;
-                      if (!order) return new Date().toLocaleDateString('es-GT');
-                      const candidate = order.fecha || order.createdAt || order.fechaIngreso || order.updatedAt;
-                      if (candidate) {
-                        const d = new Date(candidate);
-                        if (!isNaN(d.getTime())) return d.toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                      }
-                      if (typeof order.id === "string" && order.id.includes("_")) {
-                        const ts = parseInt(order.id.split("_")[1]);
-                        if (!isNaN(ts) && ts > 100000000000) {
-                          const d = new Date(ts);
-                          if (!isNaN(d.getTime())) return d.toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                        }
-                      }
-                      return new Date().toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                    })()}
-                  </p>
+                  <p style={{ color: "var(--text-muted)", fontWeight: "bold" }}>FECHA (impresión):</p>
+                  <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
+                    <input
+                      type="date"
+                      id="presupuesto-fecha-impresion"
+                      className="input-field"
+                      value={presupuestoFechaImpresion}
+                      onChange={(e) => setPresupuestoFechaImpresion(e.target.value || fechaLocalHoyISO())}
+                      style={{ padding: "6px 8px", fontSize: "0.85rem", maxWidth: "160px" }}
+                      title="Fecha que saldrá en el presupuesto impreso"
+                    />
+                    {presupuestoFechaImpresion !== fechaLocalHoyISO() && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={() => setPresupuestoFechaImpresion(fechaLocalHoyISO())}
+                        style={{ padding: "4px 8px", fontSize: "0.75rem" }}
+                      >
+                        Hoy
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <p style={{ color: "var(--text-muted)", fontWeight: "bold" }}>CLIENTE:</p>
@@ -7637,7 +7767,7 @@ export default function Taller({
                     <button 
                       type="button" 
                       className="btn btn-primary" 
-                      onClick={() => exportarPresupuestoImagen(presupuestoFormalOrder)}
+                      onClick={() => exportarPresupuestoImagen({ ...presupuestoFormalOrder, _fechaImpresion: presupuestoFechaImpresion })}
                       style={{ display: "flex", alignItems: "center", gap: "6px" }}
                     >
                       📥 Descargar PDF
@@ -7660,7 +7790,7 @@ export default function Taller({
                         
                         const filename = `Presupuesto_${presupuestoFormalOrder.placa || "auto"}.pdf`;
                         try {
-                          const pdf = await exportarPresupuestoImagen(presupuestoFormalOrder, true);
+                          const pdf = await exportarPresupuestoImagen({ ...presupuestoFormalOrder, _fechaImpresion: presupuestoFechaImpresion }, true);
                           pdf.save(filename);
                           const text = `Estimado cliente, le comparto su presupuesto en PDF (se ha descargado automáticamente en su dispositivo como "${filename}"). Por favor, adjunte o arrastre el archivo a este chat para visualizarlo.`;
                           handleWhatsAppRedirect(phoneFormatted, text);
@@ -7679,7 +7809,7 @@ export default function Taller({
                       onClick={async () => {
                         const filename = `Presupuesto_${presupuestoFormalOrder.placa || "auto"}.pdf`;
                         try {
-                          const pdf = await exportarPresupuestoImagen(presupuestoFormalOrder, true);
+                          const pdf = await exportarPresupuestoImagen({ ...presupuestoFormalOrder, _fechaImpresion: presupuestoFechaImpresion }, true);
                           const pdfBlob = pdf.output('blob');
                           const file = new File([pdfBlob], filename, { type: 'application/pdf' });
                           if (navigator.share) {
@@ -7928,12 +8058,12 @@ export default function Taller({
                   />
                 </div>
                 <div style={{ ...styles.inputGroup, flex: 2 }}>
-                  <label style={styles.label}>Nombre Facturación</label>
+                  <label style={styles.label}>Nombre Facturación (Opcional)</label>
                   <input
                     className="input-field"
                     value={checkoutNombreFacturacion}
                     onChange={(e) => setCheckoutNombreFacturacion(e.target.value)}
-                    required
+                    placeholder="Dejar en blanco si no aplica"
                   />
                 </div>
               </div>

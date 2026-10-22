@@ -30,6 +30,7 @@ import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocal
 import masterBackupData from "./data/masterBackupData.json";
 import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout, processOfflineQueue, cloudKeyVersions } from "./utils/supabase";
 import { getMissingExternalCosts } from "./utils/workshopCalc";
+import { getPuntosPorVencer, yaSeAvisoVencimiento } from "./utils/loyaltyExpiry";
 import { initHourlyBackupScheduler, checkAndCreateHourlyBackup } from "./services/backupService";
 import { autoPurgeTrash } from "./services/trashService";
 
@@ -119,7 +120,8 @@ const ARRAY_KEYS = [
   "payrollHistory",
   "nominaMovimientos",
   "activeModules",
-  "cotizacionesExpress"
+  "cotizacionesExpress",
+  "paquetesServicios"
 ];
 
 // ==========================================
@@ -1115,6 +1117,12 @@ export default function App() {
     return Array.isArray(val) ? val : [];
   });
 
+  // 📦 Paquetes de servicio (mano de obra + repuestos + insumos recurrentes)
+  const [paquetesServicios, setPaquetesServicios] = useState(() => {
+    const val = getTenantLocalStorage("paquetesServicios", [], tenantId);
+    return Array.isArray(val) ? val : [];
+  });
+
   // 🕒 Setters con marca de tiempo por registro para los módulos (la nube usa los setters crudos)
   const setOrdenesUI = useMemo(() => makeStampedSetter(setOrdenes), []);
   const setCarwashUI = useMemo(() => makeStampedSetter(setCarwash), []);
@@ -1130,6 +1138,13 @@ export default function App() {
   const missingExternalCostCount = useMemo(() => {
     try { return getMissingExternalCosts(ordenes).length; } catch (e) { return 0; }
   }, [ordenes]);
+
+  // 🔔 Clientes cuyos Puntos Pits vencen en el próximo mes y aún no han sido avisados
+  const puntosPorVencerCount = useMemo(() => {
+    try {
+      return getPuntosPorVencer(puntosRecompensas, reglasPrograma).filter(p => !yaSeAvisoVencimiento(p)).length;
+    } catch (e) { return 0; }
+  }, [puntosRecompensas, reglasPrograma]);
 
   // Note: Master backup seeding for first-visit is handled by getTenantLocalStorage.
   // User data in localStorage is ALWAYS trusted once it exists — never overwritten by static backup.
@@ -1383,6 +1398,7 @@ export default function App() {
     globalActiveSetters.workshopBranding = setWorkshopBranding;
     globalActiveSetters.activeModules = setActiveModules;
     globalActiveSetters.cotizacionesExpress = setCotizacionesExpress;
+    globalActiveSetters.paquetesServicios = setPaquetesServicios;
     globalActiveSetters.regalosPasesReferidos = setRegalosPasesReferidos;
     globalActiveSetters.cotizacionesRepuestos = setCotizacionesRepuestos;
     globalActiveSetters.payrollHistory = setPayrollHistory;
@@ -1431,7 +1447,8 @@ export default function App() {
       regalosPasesReferidos,
       cotizacionesRepuestos,
       payrollHistory,
-      nominaMovimientos
+      nominaMovimientos,
+      paquetesServicios
     };
   }, [
     usuarios,
@@ -1471,7 +1488,8 @@ export default function App() {
     regalosPasesReferidos,
     cotizacionesRepuestos,
     payrollHistory,
-    nominaMovimientos
+    nominaMovimientos,
+    paquetesServicios
   ]);
 
   const globalBroadcastChannel = useRef(null);
@@ -1752,7 +1770,7 @@ export default function App() {
       const getScopedKey = (k) => `${activeTenant}_${k}`;
 
       const cloudDataMap = new Map();
-      const allKeysList = Array.from(new Set([...ARRAY_KEYS, "usuarios", "ordenes", "carwash", "parkingEntries", "parkingHistory", "vehiculosVenta", "workshopInventory", "cafeteriaInventory", "cafeteriaSales", "carwashPresets", "carwashInventory", "carwashConsumption", "tiendaSales", "cuentasPorCobrar", "cuentasPorPagar", "fixedCosts", "clientes", "vehiculos", "compras", "toolsInventory", "accesoriosInventory", "papeleraSistema", "cotizacionesRepuestos", "puntosRecompensas", "catalogoPremios", "historialCanjes", "reglasPrograma", "workshopBranding", "activeModules", "cotizacionesExpress"])).filter(k => k !== "systemSnapshots" && k !== "app_data_backup_snapshot");
+      const allKeysList = Array.from(new Set([...ARRAY_KEYS, "usuarios", "ordenes", "carwash", "parkingEntries", "parkingHistory", "vehiculosVenta", "workshopInventory", "cafeteriaInventory", "cafeteriaSales", "carwashPresets", "carwashInventory", "carwashConsumption", "tiendaSales", "cuentasPorCobrar", "cuentasPorPagar", "fixedCosts", "clientes", "vehiculos", "compras", "toolsInventory", "accesoriosInventory", "papeleraSistema", "cotizacionesRepuestos", "puntosRecompensas", "catalogoPremios", "historialCanjes", "reglasPrograma", "workshopBranding", "activeModules", "cotizacionesExpress", "paquetesServicios"])).filter(k => k !== "systemSnapshots" && k !== "app_data_backup_snapshot");
 
       // Build query keys: always scoped. For lospits, also include old unscoped keys for migration
       // (solo en la primera descarga completa; después ya no hace falta bajar esas copias antiguas).
@@ -2208,6 +2226,12 @@ export default function App() {
 
   useEffect(() => {
     if (!isInitialPullDone) return;
+    setTenantLocalStorage("paquetesServicios", paquetesServicios, tenantId);
+    syncToCloud("paquetesServicios", paquetesServicios);
+  }, [paquetesServicios, isInitialPullDone]);
+
+  useEffect(() => {
+    if (!isInitialPullDone) return;
     setTenantLocalStorage("workshopInventory", workshopInventory, tenantId);
     syncToCloud("workshopInventory", workshopInventory);
   }, [workshopInventory, isInitialPullDone]);
@@ -2576,7 +2600,7 @@ export default function App() {
   }
 
   return (
-    <div style={styles.appContainer}>
+    <div style={styles.appContainer} className="app-container">
       {/* 1. SIDEBAR NAVIGATION */}
       <Sidebar 
         usuarioActual={usuarioActivo} 
@@ -2593,7 +2617,7 @@ export default function App() {
         activeTenantId={tenantId}
         onTenantChange={handleSwitchTenant}
         activeModules={activeModules}
-        badges={{ taller: missingExternalCostCount }}
+        badges={{ taller: missingExternalCostCount, recompensas: userHasPermission(usuarioActivo, "recompensas") ? puntosPorVencerCount : 0 }}
       />
 
       {/* Floating Menu Button for mobile */}
@@ -2603,13 +2627,13 @@ export default function App() {
         title="Menú"
       >
         ☰
-        {missingExternalCostCount > 0 && (
-          <span className="notif-pin notif-pin-floating">{missingExternalCostCount}</span>
+        {(missingExternalCostCount + (userHasPermission(usuarioActivo, "recompensas") ? puntosPorVencerCount : 0)) > 0 && (
+          <span className="notif-pin notif-pin-floating">{missingExternalCostCount + (userHasPermission(usuarioActivo, "recompensas") ? puntosPorVencerCount : 0)}</span>
         )}
       </button>
 
       {/* 2. DYNAMIC CONTENT AREA */}
-      <main style={styles.mainContent}>
+      <main style={styles.mainContent} className="app-main">
         {currentTab === "dashboard" && userHasPermission(usuarioActivo, "dashboard") && (
           <Dashboard 
             ordenes={ordenes} 
@@ -2688,6 +2712,8 @@ export default function App() {
             workshopBranding={workshopBranding}
             cotizacionesExpress={cotizacionesExpress}
             setCotizacionesExpress={setCotizacionesExpress}
+            paquetesServicios={paquetesServicios}
+            setPaquetesServicios={setPaquetesServicios}
           />
         )}
 

@@ -671,7 +671,6 @@ export default function Tienda({
                     className="input-field"
                     value={checkoutNombreFacturacion}
                     onChange={(e) => setCheckoutNombreFacturacion(e.target.value)}
-                    required
                   />
                 </div>
               </div>
