@@ -26,6 +26,7 @@ import {
   Plus
 } from "lucide-react";
 import { formatMoney } from "../utils/storage";
+import { RegistrosNoAutorizados } from "./AutorizacionClienteModal";
 
 const defaultChecklistItems = [
   { id: "wipers", label: "Limpiaparabrisas" },
@@ -1111,6 +1112,16 @@ export default function VehicleHistory({
                             }}>
                               {isTaller ? "🔧 TALLER" : "🧼 CARWASH"}
                             </span>
+                            {isTaller && item.originalOrder?.reparacionNoAutorizada && (
+                              <span style={{ ...styles.typeBadge, color: "#f87171", backgroundColor: "rgba(239,68,68,0.15)" }}>
+                                ❌ NO AUTORIZÓ
+                              </span>
+                            )}
+                            {isTaller && !item.originalOrder?.reparacionNoAutorizada && item.originalOrder?.autorizacionParcial && (
+                              <span style={{ ...styles.typeBadge, color: "#fbbf24", backgroundColor: "rgba(245,158,11,0.15)" }}>
+                                ✂️ PARCIAL
+                              </span>
+                            )}
                             <span style={styles.cardPrice}>{formatMoney(item.total)}</span>
                           </div>
                         </div>
@@ -1137,6 +1148,9 @@ export default function VehicleHistory({
                                   <span>Estado: <strong style={{ color: item.estado === "Entregado" ? "var(--color-success)" : "var(--color-warning)" }}>{item.estado}</strong></span>
                                 </div>
                               </div>
+
+                              {/* Lo cotizado que el cliente no autorizó */}
+                              <RegistrosNoAutorizados orden={item.originalOrder} />
 
                               {/* Action Buttons Row */}
                               <div style={{ display: "flex", gap: "10px", marginTop: "12px", flexWrap: "wrap" }}>

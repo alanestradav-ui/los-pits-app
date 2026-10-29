@@ -34,6 +34,8 @@ import ClientVehiclesModal from "./ClientVehiclesModal";
 import ExpressQuoteModal from "./ExpressQuoteModal";
 import ServicePackagesManager, { aplicarPaqueteAPresupuesto, paqueteDesdePresupuesto, getTotalesPaquete } from "./ServicePackages";
 import { jsPDF } from "jspdf";
+import { AutorizacionClienteModal, RegistrosNoAutorizados } from "./AutorizacionClienteModal";
+import { totalesPresupuesto, filtrarPresupuesto, crearRegistroNoAutorizado } from "../utils/cotizaciones";
 
 const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
 
@@ -450,6 +452,8 @@ export default function Taller({
 
   // Checkout modal states
   const [checkoutOrder, setCheckoutOrder] = useState(null);
+  // Respuesta del cliente al presupuesto: { orden, modo: "total" | "parcial" }
+  const [autorizacionModal, setAutorizacionModal] = useState(null);
   const [checkoutNit, setCheckoutNit] = useState("");
   const [checkoutNombreFacturacion, setCheckoutNombreFacturacion] = useState("");
   const [checkoutPayments, setCheckoutPayments] = useState({
@@ -1700,6 +1704,103 @@ export default function Taller({
   const isWorker = userRolLower === "mecanico" || userRolLower === "mecánico";
   const isAdmin = !usuarioActual || !usuarioActual.rol || userRolLower.includes("admin") || userRolLower.includes("gerente") || userRolLower.includes("jefe");
   const isManager = isAdmin || userRolLower.includes("cajero") || userRolLower.includes("taller");
+
+  // ❌ / ✂️ Respuesta del cliente al presupuesto (no autoriza / autoriza parcialmente)
+  const confirmarAutorizacionCliente = (datos) => {
+    const modal = autorizacionModal;
+    if (!modal?.orden) return;
+    const base = ordenes.find(x => String(x.id) === String(modal.orden.id)) || modal.orden;
+    const ahora = new Date().toISOString();
+    const usuarioNombre = usuarioActual?.nombre || usuarioActual?.user || "";
+    const previos = Array.isArray(base.cotizacionesNoAutorizadas) ? base.cotizacionesNoAutorizadas : [];
+
+    if (datos.modo === "total") {
+      const cobro = Math.max(0, parseFloat(datos.cobroDiagnostico) || 0);
+      const registro = crearRegistroNoAutorizado({
+        tipo: "total",
+        lineas: datos.lineasNoAutorizadas,
+        motivo: datos.motivo,
+        usuario: usuarioNombre,
+        cobroDiagnostico: cobro,
+        totalCotizado: totalesPresupuesto(base.presupuesto).total
+      });
+      const presupuestoDiagnostico = {
+        labor: cobro > 0 ? [{ desc: "Diagnóstico (cliente no autorizó la reparación)", price: cobro, mecanico: base.mecanico || "" }] : [],
+        parts: [], services: [], insumos: [], tools: [],
+        discount: 0, discountType: "percent", discountFixed: 0
+      };
+      let actualizada = {
+        ...base,
+        presupuestoOriginal: base.presupuesto || null,
+        presupuesto: presupuestoDiagnostico,
+        total: cobro,
+        cotizacionesNoAutorizadas: [...previos, registro],
+        reparacionNoAutorizada: true,
+        diagnosticoAutorizado: true,
+        updatedAt: ahora
+      };
+      actualizada.comision = cobro > 0 ? calculateOrderCommission(actualizada) : 0;
+
+      if (cobro > 0) {
+        setOrdenes(prev => (prev || []).map(o => String(o.id) === String(base.id) ? actualizada : o));
+        setAutorizacionModal(null);
+        // Abrir la ventana de cobro para cerrar la orden con el diagnóstico
+        setCheckoutOrder({ ...actualizada, cajeroComisionApplies: actualizada.cajeroComisionApplies === true });
+        setCheckoutNit(actualizada.nit || "C/F");
+        setCheckoutNombreFacturacion(actualizada.nombreFacturacion || "");
+        setCheckoutPayments({ efectivo: "", transferencia: "", cheque: "", tarjeta: "", credito: "" });
+        setSelectedPaymentMethods([]);
+      } else {
+        actualizada = {
+          ...actualizada,
+          estado: "Entregado",
+          formaPago: {},
+          formaPagoDesc: "SIN COBRO - Cliente no autorizó la reparación",
+          cajero: usuarioActual?.user || "",
+          fecha: ahora
+        };
+        setOrdenes(prev => (prev || []).map(o => String(o.id) === String(base.id) ? actualizada : o));
+        setAutorizacionModal(null);
+        alert("La orden se cerró sin cobro. Lo cotizado quedó registrado en el historial del vehículo.");
+      }
+      return;
+    }
+
+    // Autorización parcial
+    const nuevoPresupuesto = filtrarPresupuesto(base.presupuesto, datos.idsAutorizados);
+    const registro = crearRegistroNoAutorizado({
+      tipo: "parcial",
+      lineas: datos.lineasNoAutorizadas,
+      motivo: datos.motivo,
+      usuario: usuarioNombre,
+      totalCotizado: totalesPresupuesto(base.presupuesto).total
+    });
+    const actualizada = {
+      ...base,
+      presupuesto: nuevoPresupuesto,
+      total: totalesPresupuesto(nuevoPresupuesto).total,
+      cotizacionesNoAutorizadas: [...previos, registro],
+      autorizacionParcial: true,
+      diagnosticoAutorizado: true,
+      updatedAt: ahora
+    };
+    actualizada.comision = calculateOrderCommission(actualizada);
+    setOrdenes(prev => (prev || []).map(o => String(o.id) === String(base.id) ? actualizada : o));
+    setAutorizacionModal(null);
+    alert(`Autorización parcial guardada. Nuevo total: ${formatMoney(actualizada.total)}.\nLo no autorizado (${formatMoney(registro.totalNoAutorizado)}) quedó registrado en el historial del vehículo. Ya puedes pasar la orden a "En proceso de reparación".`);
+  };
+
+  const abrirCobroDiagnostico = (o) => {
+    if (!isManager) {
+      alert("Solo el personal administrativo o cajero puede cobrar.");
+      return;
+    }
+    setCheckoutOrder({ ...o, cajeroComisionApplies: o.cajeroComisionApplies === true });
+    setCheckoutNit(o.nit || "C/F");
+    setCheckoutNombreFacturacion(o.nombreFacturacion || "");
+    setCheckoutPayments({ efectivo: "", transferencia: "", cheque: "", tarjeta: "", credito: "" });
+    setSelectedPaymentMethods([]);
+  };
 
   const guardarBilledOrderEdit = (updatedObj) => {
     if (!updatedObj) return;
@@ -5679,6 +5780,40 @@ export default function Taller({
                           )}
                         </div>
                       </div>
+
+                      {/* Respuesta del cliente al presupuesto */}
+                      {isManager && o.total > 0 && !o.reparacionNoAutorizada &&
+                        ["En proceso de diagnóstico y presupuesto", "En espera de autorización"].includes(o.estado) && (
+                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", margin: "8px 0" }}>
+                          <button
+                            id={`btn-no-autoriza-${o.id}`}
+                            type="button"
+                            onClick={() => setAutorizacionModal({ orden: o, modo: "total" })}
+                            style={{ flex: "1 1 140px", minHeight: "40px", borderRadius: "10px", border: "1px solid rgba(239,68,68,0.5)", background: "rgba(239,68,68,0.12)", color: "#f87171", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer" }}
+                          >
+                            ❌ Cliente no autoriza
+                          </button>
+                          <button
+                            id={`btn-autorizacion-parcial-${o.id}`}
+                            type="button"
+                            onClick={() => setAutorizacionModal({ orden: o, modo: "parcial" })}
+                            style={{ flex: "1 1 140px", minHeight: "40px", borderRadius: "10px", border: "1px solid rgba(245,158,11,0.5)", background: "rgba(245,158,11,0.12)", color: "#fbbf24", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer" }}
+                          >
+                            ✂️ Autorización parcial
+                          </button>
+                        </div>
+                      )}
+                      {o.reparacionNoAutorizada && o.estado !== "Entregado" && isManager && (
+                        <button
+                          id={`btn-cobrar-diagnostico-${o.id}`}
+                          type="button"
+                          onClick={() => abrirCobroDiagnostico(o)}
+                          style={{ width: "100%", minHeight: "40px", margin: "8px 0", borderRadius: "10px", border: "1px solid rgba(16,185,129,0.5)", background: "rgba(16,185,129,0.12)", color: "#34d399", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}
+                        >
+                          💵 Cobrar diagnóstico ({formatMoney(o.total)}) y cerrar orden
+                        </button>
+                      )}
+                      <RegistrosNoAutorizados orden={o} compacto />
                       <div style={styles.infoRow}>
                         <span style={styles.infoLabel}>🪙 Comisión (10%):</span>
                         <span style={o.total > 0 ? styles.infoValCom : styles.infoVal}>
@@ -8032,6 +8167,16 @@ export default function Taller({
           </div>
         </div>,
         document.body
+      )}
+
+      {autorizacionModal && (
+        <AutorizacionClienteModal
+          orden={autorizacionModal.orden}
+          modo={autorizacionModal.modo}
+          anticipos={getOrderTotalAnticipos(autorizacionModal.orden)}
+          onCancel={() => setAutorizacionModal(null)}
+          onConfirm={confirmarAutorizacionCliente}
+        />
       )}
 
       {checkoutOrder && createPortal(
