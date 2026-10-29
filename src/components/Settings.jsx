@@ -725,6 +725,7 @@ export default function SettingsComponent({
     const nuevoUsuario = {
       user: usernameClean,
       pass: uPass.trim(),
+      cambioClave: true,
       rol: finalRole,
       permissions: uPermissions,
       salarioBase: parseFloat(uSalarioBase) || 0,
@@ -853,7 +854,11 @@ export default function SettingsComponent({
           // 🔒 La contraseña solo se envía si se escribió una nueva (el servidor la cifra)
           delete actualizado.pass;
           delete actualizado.renombradoDe;
-          if (editPass.trim()) actualizado.pass = editPass.trim();
+          delete actualizado.cambioClave;
+          if (editPass.trim()) {
+            actualizado.pass = editPass.trim();
+            actualizado.cambioClave = true;
+          }
           if (cleanNewUser !== oldName) actualizado.renombradoDe = oldName;
           return actualizado;
         }

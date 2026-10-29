@@ -302,7 +302,7 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null, active
       const deletedUsers = getDeletedUsernames(activeTenant);
       const filterActive = (arr) => (Array.isArray(arr) ? deduplicateUsers(arr) : []).filter(u => {
         const uName = String(u?.user || u?.username || "").toLowerCase().trim();
-        return uName && !deletedUsers.has(uName) && !uName.includes("cristian");
+        return uName && !deletedUsers.has(uName) && !(activeTenant === "lospits" && uName.includes("cristian"));
       });
       const cloudUsers = filterActive(cleanCloud);
       const localUsers = filterActive(cleanLocal);
@@ -318,7 +318,11 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null, active
           mergedUsersMap.set(uKey, existing ? { ...existing, ...u } : u);
         }
       });
-      return Array.from(mergedUsersMap.values());
+      // 🔒 La nube es la referencia: nunca conservar contraseñas locales tras fusionar
+      return Array.from(mergedUsersMap.values()).map(u => {
+        const { pass, passHash, cambioClave, renombradoDe, ...limpio } = u || {};
+        return limpio;
+      });
     }
 
     if (key === "fixedCosts") {
@@ -619,10 +623,10 @@ export default function App() {
     const deletedUsers = getDeletedUsernames(tenantId);
     let localUsers = Array.isArray(val) ? val : [];
 
-    // Filter out deleted users and foreign cristian account
+    // Filter out deleted users and foreign cristian account (solo en Los Pits)
     localUsers = localUsers.filter(u => {
       const uName = String(u?.user || "").toLowerCase().trim();
-      return uName && !deletedUsers.has(uName) && !uName.includes("cristian");
+      return uName && !deletedUsers.has(uName) && !(tenantId === "lospits" && uName.includes("cristian"));
     });
 
     // Fallback ONLY when database/localStorage has no users at all (brand new setup)
@@ -643,8 +647,13 @@ export default function App() {
       const comisionarCarwash = u.comisionarCarwash !== undefined ? u.comisionarCarwash : (u.rol?.toLowerCase() === "lavador" || u.rol?.toLowerCase() === "admin" || u.rol?.toLowerCase() === "cajero");
       const comisionRepuestos = u.comisionRepuestos !== undefined ? u.comisionRepuestos : (u.rol?.toLowerCase() === "jefe de taller" ? 5 : 0);
 
+      // 🔒 Las contraseñas viven solo en el servidor: borrar las copias viejas de este dispositivo
+      const { pass, passHash, ...sinClave } = u;
+      const conservarClave = sinClave.cambioClave && pass;
+
       return {
-        ...u,
+        ...sinClave,
+        ...(conservarClave ? { pass } : {}),
         permissions: updatedPerms,
         comisionarLabor,
         comisionarRepuestos,
