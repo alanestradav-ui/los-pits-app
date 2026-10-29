@@ -93,20 +93,9 @@ export const getActiveTenantId = () => {
   }
 };
 
-import masterBackupData from '../data/masterBackupData.json';
-
-export const restoreMasterBackup = (tenantId = "lospits") => {
-  if (!masterBackupData) return false;
-  const activeTenant = (tenantId || "lospits").toLowerCase().trim();
-  Object.keys(masterBackupData).forEach(key => {
-    if (key === "systemSnapshots" || key === "app_data_backup_snapshot") return;
-    const scopedKey = `${activeTenant}_${key}`;
-    try {
-      localStorage.setItem(scopedKey, JSON.stringify(masterBackupData[key]));
-    } catch (e) {}
-  });
-  return true;
-};
+// 🔒 SEGURIDAD: el respaldo maestro con datos reales ya NO se incluye en la app publicada.
+// Los datos se obtienen únicamente desde la nube con una sesión válida.
+export const restoreMasterBackup = () => false;
 
 export const getTenantLocalStorage = (key, defaultValue, tenantId = null) => {
   const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
@@ -135,16 +124,6 @@ export const getTenantLocalStorage = (key, defaultValue, tenantId = null) => {
       } catch (e) {}
     }
 
-    // 🛡️ FIRST-VISIT SEED: Only restore from master backup when NO data exists at all
-    // (neither scoped nor unscoped key found in localStorage).
-    // NEVER seed heavy systemSnapshots, backup snapshots, or live admin configs like fixedCosts and usuarios!
-    if (key !== "systemSnapshots" && key !== "app_data_backup_snapshot" && key !== "fixedCosts" && key !== "usuarios" && masterBackupData && masterBackupData[key] !== undefined) {
-      const backupVal = masterBackupData[key];
-      try {
-        localStorage.setItem(scopedKey, JSON.stringify(backupVal));
-      } catch (e) {}
-      return backupVal;
-    }
   }
 
   return defaultValue;

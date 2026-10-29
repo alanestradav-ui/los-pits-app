@@ -25,3 +25,9 @@ dist-ssr
 
 .vercel
 .env
+
+# Datos reales: nunca subir al repositorio
+src/data/masterBackupData.json
+recovered_data.json
+*respaldo*.json
+

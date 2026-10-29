@@ -24,6 +24,15 @@ export const getPortalUrl = (query = {}) => {
   const baseUrl = getBaseAppUrl();
   const searchParams = new URLSearchParams();
   searchParams.set("portal", "true");
+  let taller = query.taller;
+  if (!taller) {
+    try {
+      taller = (localStorage.getItem("current_tenant_id") || "lospits").toLowerCase().trim().replace(/"/g, "");
+    } catch (e) {
+      taller = "lospits";
+    }
+  }
+  if (taller) searchParams.set("taller", taller);
   if (query.cliente) searchParams.set("cliente", query.cliente);
   if (query.telefono) searchParams.set("telefono", query.telefono);
   if (query.placa) searchParams.set("placa", query.placa);

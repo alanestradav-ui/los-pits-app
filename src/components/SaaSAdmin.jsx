@@ -13,40 +13,28 @@ import {
   Calendar,
   AlertCircle
 } from "lucide-react";
-import { getLocalStorage, setLocalStorage } from "../utils/storage";
-import { syncKeyToCloud, getSupabaseClient, withTimeout } from "../utils/supabase";
+import { callRpc, getSession } from "../utils/supabase";
+
+const MENSAJES_SAAS = {
+  CODIGO_INVALIDO: "Código inválido. Usa de 2 a 40 letras minúsculas, números o guiones (sin espacios ni guion bajo).",
+  CLAVE_DEBIL: "La contraseña inicial debe tener al menos 8 caracteres.",
+  CODIGO_EN_USO: "Ese código ya tiene datos registrados. Elige otro código.",
+  SIN_PERMISO: "Solo el administrador de la plataforma puede gestionar talleres.",
+  SESION_INVALIDA: "Tu sesión expiró. Vuelve a iniciar sesión."
+};
+const mensajeSaas = (err) => MENSAJES_SAAS[err?.code || err?.message] || ("No se pudo completar la operación: " + (err?.message || "error desconocido"));
+
+const generarClave = () => {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+  const arr = new Uint32Array(12);
+  window.crypto.getRandomValues(arr);
+  return Array.from(arr, n => chars[n % chars.length]).join("");
+};
 
 export default function SaaSAdmin({ activeTenantId, onSwitchTenant }) {
-  const [workshops, setWorkshops] = useState(() => {
-    const saved = getLocalStorage("saas_workshops", null);
-    if (Array.isArray(saved) && saved.length > 0) return saved;
-    return [
-      {
-        id: "lospits",
-        nombre: "Los Pits Auto Center (Matriz)",
-        codigo: "lospits",
-        adminUser: "admin",
-        pass: "1234",
-        plan: "Premium PRO",
-        estado: "activo",
-        fechaRegistro: "2026-01-01",
-        contactoNombre: "Alan Estrada",
-        telefono: "5544-3322"
-      },
-      {
-        id: "pruebas",
-        nombre: "Pruebas Generales (Entorno Staging)",
-        codigo: "pruebas",
-        adminUser: "admin",
-        pass: "1234",
-        plan: "Pruebas / Desarrollo",
-        estado: "activo",
-        fechaRegistro: "2026-01-01",
-        contactoNombre: "Alan Estrada (Pruebas)",
-        telefono: "5544-3322"
-      }
-    ];
-  });
+  const [workshops, setWorkshops] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [guardando, setGuardando] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
@@ -55,98 +43,120 @@ export default function SaaSAdmin({ activeTenantId, onSwitchTenant }) {
   const [newNombre, setNewNombre] = useState("");
   const [newCodigo, setNewCodigo] = useState("");
   const [newAdminUser, setNewAdminUser] = useState("admin");
-  const [newPass, setNewPass] = useState("1234");
-  const [newPlan, setNewPlan] = useState("Premium PRO");
+  const [newPass, setNewPass] = useState(() => generarClave());
+  const [newPlan, setNewPlan] = useState("Piloto");
   const [newContactoNombre, setNewContactoNombre] = useState("");
   const [newTelefono, setNewTelefono] = useState("");
+  const [newVence, setNewVence] = useState("");
 
-  // Persist SaaS Workshops
-  useEffect(() => {
-    setLocalStorage("saas_workshops", workshops);
-    syncKeyToCloud("saas_workshops", workshops);
-  }, [workshops]);
+  const token = () => getSession()?.token || "";
 
-  // Pull latest workshops from Cloud on mount
+  // Cargar talleres desde el servidor
+  const cargarTalleres = async () => {
+    setCargando(true);
+    try {
+      const data = await callRpc("saas_talleres", { p_token: token() }, 15000);
+      setWorkshops(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.warn("[SaaSAdmin] Error cargando talleres:", e);
+      alert(mensajeSaas(e));
+    } finally {
+      setCargando(false);
+    }
+  };
+
   useEffect(() => {
-    const pullWorkshops = async () => {
-      const client = getSupabaseClient();
-      if (!client) return;
-      try {
-        const queryPromise = client.from("app_data").select("value").eq("key", "saas_workshops").maybeSingle();
-        const { data } = await withTimeout(queryPromise, 6000, "Timeout cargando talleres SaaS");
-        if (data && Array.isArray(data.value) && data.value.length > 0) {
-          setWorkshops(data.value);
-        }
-      } catch (e) {
-        console.warn("[SaaSAdmin] Error cargando talleres desde la nube:", e);
-      }
-    };
-    pullWorkshops();
+    cargarTalleres();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleAddWorkshop = (e) => {
+  const handleAddWorkshop = async (e) => {
     e.preventDefault();
-    const cleanCode = newCodigo.toLowerCase().trim().replace(/[^a-z0-9_-]/g, "");
-    if (!cleanCode) {
-      alert("Por favor ingresa un código válido (letras, números y guiones).");
+    const cleanCode = newCodigo.toLowerCase().trim();
+    if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(cleanCode)) {
+      alert(MENSAJES_SAAS.CODIGO_INVALIDO);
       return;
     }
-
-    if (workshops.some(w => w.codigo.toLowerCase() === cleanCode)) {
+    if (workshops.some(w => (w.codigo || "").toLowerCase() === cleanCode)) {
       alert(`El código de taller "${cleanCode}" ya está registrado.`);
       return;
     }
+    if (newPass.trim().length < 8) {
+      alert(MENSAJES_SAAS.CLAVE_DEBIL);
+      return;
+    }
 
-    const newWorkshop = {
-      id: cleanCode,
-      nombre: newNombre.trim() || `Taller ${cleanCode.toUpperCase()}`,
-      codigo: cleanCode,
-      adminUser: newAdminUser.trim() || "admin",
-      pass: newPass.trim() || "1234",
-      plan: newPlan,
-      estado: "activo",
-      fechaRegistro: new Date().toISOString().split("T")[0],
-      contactoNombre: newContactoNombre.trim(),
-      telefono: newTelefono.trim()
-    };
+    const adminUser = newAdminUser.trim().toLowerCase() || "admin";
+    const passInicial = newPass.trim();
+    const nombre = newNombre.trim() || `Taller ${cleanCode.toUpperCase()}`;
 
-    // Initialize default admin user for the new tenant
-    const defaultUserObj = [
-      {
-        user: newWorkshop.adminUser,
-        pass: newWorkshop.pass,
-        rol: "admin",
-        permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"],
-        nombreCompleto: newWorkshop.contactoNombre || "Administrador Taller"
-      }
-    ];
+    setGuardando(true);
+    try {
+      await callRpc("saas_guardar_taller", {
+        p_token: token(),
+        p_datos: {
+          codigo: cleanCode,
+          nombre,
+          plan: newPlan,
+          adminUser,
+          adminPass: passInicial,
+          contactoNombre: newContactoNombre.trim(),
+          telefono: newTelefono.trim(),
+          venceEl: newVence || ""
+        }
+      }, 20000);
 
-    // Persist default admin user for this new tenant
-    setLocalStorage(`${cleanCode}_usuarios`, defaultUserObj);
-    syncKeyToCloud(`${cleanCode}_usuarios`, defaultUserObj);
+      setShowAddModal(false);
+      setNewNombre("");
+      setNewCodigo("");
+      setNewAdminUser("admin");
+      setNewPass(generarClave());
+      setNewContactoNombre("");
+      setNewTelefono("");
+      setNewVence("");
+      await cargarTalleres();
 
-    setWorkshops([newWorkshop, ...workshops]);
-    setShowAddModal(false);
-
-    // Reset Form
-    setNewNombre("");
-    setNewCodigo("");
-    setNewAdminUser("admin");
-    setNewPass("1234");
-    setNewContactoNombre("");
-    setNewTelefono("");
-
-    alert(`¡Taller "${newWorkshop.nombre}" registrado con éxito!\n\nCódigo de Taller: ${cleanCode}\nUsuario: ${newWorkshop.adminUser}\nContraseña: ${newWorkshop.pass}`);
+      alert(`¡Taller "${nombre}" registrado con éxito!\n\nCódigo de Taller: ${cleanCode}\nUsuario: ${adminUser}\nContraseña: ${passInicial}\n\nAnota estos datos y entrégalos al taller de forma privada. La contraseña no se puede volver a ver.`);
+    } catch (err) {
+      alert(mensajeSaas(err));
+    } finally {
+      setGuardando(false);
+    }
   };
 
-  const toggleEstadoTaller = (wId) => {
-    setWorkshops(prev => prev.map(w => {
-      if (w.id === wId) {
-        const nextState = w.estado === "activo" ? "suspendido" : "activo";
-        return { ...w, estado: nextState };
-      }
-      return w;
-    }));
+  const toggleEstadoTaller = async (w) => {
+    if (w.codigo === "lospits") {
+      alert("El taller principal no se puede suspender.");
+      return;
+    }
+    const nextState = w.estado === "activo" ? "suspendido" : "activo";
+    const confirmMsg = nextState === "suspendido"
+      ? `¿Suspender el taller "${w.nombre}"? Sus usuarios no podrán entrar hasta que lo actives de nuevo. Sus datos NO se borran.`
+      : `¿Activar de nuevo el taller "${w.nombre}"?`;
+    if (!window.confirm(confirmMsg)) return;
+    try {
+      await callRpc("saas_guardar_taller", { p_token: token(), p_datos: { codigo: w.codigo, estado: nextState } });
+      await cargarTalleres();
+    } catch (err) {
+      alert(mensajeSaas(err));
+    }
+  };
+
+  const cambiarVencimiento = async (w) => {
+    const actual = w.venceEl || "";
+    const nuevo = window.prompt(`Fecha de vencimiento para "${w.nombre}" (AAAA-MM-DD). Déjalo vacío para quitarla:`, actual);
+    if (nuevo === null) return;
+    const limpio = nuevo.trim();
+    if (limpio && !/^\d{4}-\d{2}-\d{2}$/.test(limpio)) {
+      alert("Formato inválido. Usa AAAA-MM-DD, por ejemplo 2026-12-31.");
+      return;
+    }
+    try {
+      await callRpc("saas_guardar_taller", { p_token: token(), p_datos: { codigo: w.codigo, venceEl: limpio } });
+      await cargarTalleres();
+    } catch (err) {
+      alert(mensajeSaas(err));
+    }
   };
 
   const filteredWorkshops = workshops.filter(w => 
@@ -242,13 +252,24 @@ export default function SaaSAdmin({ activeTenantId, onSwitchTenant }) {
             </tr>
           </thead>
           <tbody>
+            {cargando && (
+              <tr><td colSpan={7} style={{ ...styles.td, textAlign: "center", color: "var(--text-muted)" }}>Cargando talleres...</td></tr>
+            )}
             {filteredWorkshops.map((w) => {
               const isCurrent = activeTenantId === w.codigo;
               return (
                 <tr key={w.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
                   <td style={styles.td}>
                     <div style={{ fontWeight: "700", color: "#fff" }}>{w.nombre}</div>
-                    <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Reg: {w.fechaRegistro}</span>
+                    <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block" }}>Reg: {w.fechaRegistro} · Usuarios: {w.usuarios ?? "-"}</span>
+                    <button
+                      type="button"
+                      onClick={() => cambiarVencimiento(w)}
+                      style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: "0.75rem", color: w.venceEl && w.venceEl < new Date().toISOString().slice(0, 10) ? "#f87171" : "#facc15" }}
+                      title="Cambiar fecha de vencimiento"
+                    >
+                      📅 {w.venceEl ? `Vence: ${w.venceEl}` : "Sin vencimiento"}
+                    </button>
                   </td>
                   <td style={styles.td}>
                     <code style={styles.codeBadge}>{w.codigo}</code>
@@ -280,7 +301,8 @@ export default function SaaSAdmin({ activeTenantId, onSwitchTenant }) {
                   </td>
                   <td style={styles.td}>
                     <button
-                      onClick={() => toggleEstadoTaller(w.id)}
+                      onClick={() => toggleEstadoTaller(w)}
+                      disabled={w.codigo === "lospits"}
                       style={{
                         background: "transparent",
                         border: `1px solid ${w.estado === "activo" ? "#ef4444" : "#10b981"}`,
@@ -353,14 +375,19 @@ export default function SaaSAdmin({ activeTenantId, onSwitchTenant }) {
                   />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <label style={styles.label}>Contraseña Inicial *</label>
-                  <input
-                    type="text"
-                    required
-                    className="input-field"
-                    value={newPass}
-                    onChange={(e) => setNewPass(e.target.value)}
-                  />
+                  <label style={styles.label}>Contraseña Inicial * (mín. 8)</label>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <input
+                      type="text"
+                      required
+                      minLength={8}
+                      className="input-field"
+                      value={newPass}
+                      onChange={(e) => setNewPass(e.target.value)}
+                      style={{ flex: 1 }}
+                    />
+                    <button type="button" className="btn btn-secondary" onClick={() => setNewPass(generarClave())} title="Generar otra contraseña">🎲</button>
+                  </div>
                 </div>
               </div>
 
@@ -394,11 +421,22 @@ export default function SaaSAdmin({ activeTenantId, onSwitchTenant }) {
                   value={newPlan}
                   onChange={(e) => setNewPlan(e.target.value)}
                 >
+                  <option value="Piloto">Piloto (Prueba)</option>
                   <option value="Premium PRO">Premium PRO (Completo)</option>
                   <option value="Standard Taller">Standard Taller</option>
                   <option value="Basic Carwash">Basic Carwash</option>
                   <option value="Demo 15 Días">Prueba Demo (15 Días)</option>
                 </select>
+              </div>
+
+              <div>
+                <label style={styles.label}>Fecha de Vencimiento (opcional)</label>
+                <input
+                  type="date"
+                  className="input-field"
+                  value={newVence}
+                  onChange={(e) => setNewVence(e.target.value)}
+                />
               </div>
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "12px" }}>
@@ -412,8 +450,9 @@ export default function SaaSAdmin({ activeTenantId, onSwitchTenant }) {
                 <button
                   type="submit"
                   className="btn btn-primary"
+                  disabled={guardando}
                 >
-                  Registrar Taller Cliente
+                  {guardando ? "Registrando..." : "Registrar Taller Cliente"}
                 </button>
               </div>
             </form>

@@ -1,169 +1,63 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Wrench, Shield, Lock, User, KeyRound, Loader2, Eye, EyeOff } from "lucide-react";
+import { loginRemoto } from "../utils/supabase";
+import { setLocalStorage } from "../utils/storage";
 
-const getLevenshteinDistance = (a, b) => {
-  const tmp = [];
-  let i, j;
-  for (i = 0; i <= a.length; i++) {
-    tmp[i] = [i];
-  }
-  for (j = 0; j <= b.length; j++) {
-    tmp[0][j] = j;
-  }
-  for (i = 1; i <= a.length; i++) {
-    for (j = 1; j <= b.length; j++) {
-      tmp[i][j] = Math.min(
-        tmp[i - 1][j] + 1,
-        tmp[i][j - 1] + 1,
-        tmp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
-      );
-    }
-  }
-  return tmp[a.length][b.length];
+// Mensajes en español para los códigos que devuelve el servidor
+const MENSAJES_ERROR = {
+  DATOS_INCOMPLETOS: "Por favor ingresa el código de taller, usuario y contraseña.",
+  CREDENCIALES_INVALIDAS: "Usuario, contraseña o código de taller incorrectos.",
+  DEMASIADOS_INTENTOS: "Demasiados intentos fallidos. Por seguridad, espera 15 minutos e inténtalo de nuevo.",
+  TALLER_SUSPENDIDO: "El acceso de este taller está suspendido. Comunícate con soporte de Los Pits App.",
+  SIN_CONEXION: "No hay conexión con el servidor. Revisa tu internet e inténtalo de nuevo."
 };
 
-const matchNameFlexible = (dbName, inputName) => {
-  if (!dbName || !inputName) return false;
-  const dbWords = dbName.toLowerCase().trim().split(/\s+/);
-  const inputWords = inputName.toLowerCase().trim().split(/\s+/);
-
-  if (inputWords.length < dbWords.length) {
-    return inputWords.every(inWord => {
-      return dbWords.some(dbWord => {
-        if (dbWord === inWord) return true;
-        const sortStr = (w) => w.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/z/g, "s").split("").sort().join("");
-        if (sortStr(dbWord) === sortStr(inWord)) return true;
-        return getLevenshteinDistance(dbWord, inWord) <= 2;
-      });
-    });
-  }
-
-  return dbWords.every((dbWord, idx) => {
-    const inWord = inputWords[idx] || "";
-    if (dbWord === inWord) return true;
-    const sortStr = (w) => w.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/z/g, "s").split("").sort().join("");
-    if (sortStr(dbWord) === sortStr(inWord)) return true;
-    if (getLevenshteinDistance(dbWord, inWord) <= 2) return true;
-
-    return inputWords.some(anyInWord => {
-      if (dbWord === anyInWord) return true;
-      if (sortStr(dbWord) === sortStr(anyInWord)) return true;
-      if (getLevenshteinDistance(dbWord, anyInWord) <= 2) return true;
-    });
-  });
-};
-
-export default function Login({ 
-  usuarios = [], 
-  onLogin, 
-  isInitialPullDone = true, 
-  realtimeStatus = "connected",
-  activeTenantId = "lospits",
-  onTenantChange
-}) {
+export default function Login({ onLogin, activeTenantId = "lospits" }) {
   const [tenantCode, setTenantCode] = useState(activeTenantId || "lospits");
   const [user, setUser] = useState("");
   const [pass, setPass] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState("");
+  const [cargando, setCargando] = useState(false);
 
-  // 🔄 Auto-fill credentials after tenant switch reload
-  useEffect(() => {
-    try {
-      const pendingUser = sessionStorage.getItem("pending_login_user");
-      const pendingPass = sessionStorage.getItem("pending_login_pass");
-      if (pendingUser && pendingPass) {
-        setUser(pendingUser);
-        setPass(pendingPass);
-        sessionStorage.removeItem("pending_login_user");
-        sessionStorage.removeItem("pending_login_pass");
-      }
-    } catch (e) {}
-  }, []);
-
-  // 🔒 Real active users from database/storage
-  const activeUsers = Array.isArray(usuarios) ? usuarios : [];
-  const hasAdmin = activeUsers.some(u => String(u?.user || "").toLowerCase().trim() === "admin");
-  const emergencyAdmin = {
-    user: "admin",
-    pass: "1234",
-    rol: "admin",
-    permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"],
-    salarioBase: 15000,
-    nombreCompleto: "Alan Estrada"
-  };
-  const allUsersList = hasAdmin 
-    ? activeUsers 
-    : (activeUsers.length === 0 ? [emergencyAdmin] : [...activeUsers, emergencyAdmin]);
-
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!user.trim() || !pass.trim()) {
-      setError("Por favor ingresa usuario y contraseña.");
+    if (cargando) return;
+    const cleanTenant = (tenantCode || "").toLowerCase().trim().replace(/[^a-z0-9_-]/g, "");
+    if (!cleanTenant || !user.trim() || !pass.trim()) {
+      setError(MENSAJES_ERROR.DATOS_INCOMPLETOS);
       return;
     }
 
-    const cleanTenant = (tenantCode || "lospits").toLowerCase().trim().replace(/[^a-z0-9_-]/g, "");
-    
-    // 🔒 SECURITY: If tenant changed, reload page FIRST so the app re-initializes
-    // with the correct tenant's user list. Do NOT authenticate against stale users.
-    if (onTenantChange && cleanTenant !== activeTenantId) {
-      // Store credentials temporarily so the user doesn't have to re-type after reload
-      try {
-        sessionStorage.setItem("pending_login_user", user.trim());
-        sessionStorage.setItem("pending_login_pass", pass.trim());
-      } catch (e) {}
-      onTenantChange(cleanTenant);
-      return; // Page will reload — authentication will happen on next mount
-    }
-
-    const cleanInput = user.toLowerCase().trim().replace(/[\.\_\-]/g, " ");
-    const cleanPass = pass.trim();
-
-    const encontrado = allUsersList.find((u) => {
-      const uName = (u.user || "").toLowerCase().trim().replace(/[\.\_\-]/g, " ");
-      const uFullName = (u.nombreCompleto || "").toLowerCase().trim().replace(/[\.\_\-]/g, " ");
-      
-      const isPasswordMatch = (u.pass || "").trim() === cleanPass || (u.pass || "").toLowerCase().trim() === cleanPass.toLowerCase();
-
-      if (!isPasswordMatch) return false;
-
-      if (uName === cleanInput || matchNameFlexible(uName, cleanInput)) return true;
-      if (uFullName && (uFullName === cleanInput || matchNameFlexible(uFullName, cleanInput))) return true;
-
-      return false;
-    });
-
-    if (encontrado) {
-      setError("");
-      const liveUser = (Array.isArray(usuarios) && usuarios.find(lu => (lu.user||"").toLowerCase().trim() === (encontrado.user||"").toLowerCase().trim())) || encontrado;
-      onLogin(liveUser);
-    } else {
-      setError("Usuario o contraseña incorrectos. Verifica que el código de taller sea correcto.");
-    }
-  };
-
-  const fillCredentials = (role) => {
-    if (role === "admin") {
-      setUser("admin");
-      setPass("1234");
-    } else if (role === "armando") {
-      setUser("armando avila");
-      setPass("Armando123");
-    } else if (role === "cajero") {
-      setUser("cajero");
-      setPass("1234");
-    } else if (role === "mecanico") {
-      setUser("mecanico");
-      setPass("1234");
-    } else if (role === "lavador") {
-      setUser("lavador");
-      setPass("1234");
-    }
+    setCargando(true);
     setError("");
-  };
+    try {
+      // 🔐 La contraseña se valida en el servidor; la app nunca recibe contraseñas
+      const res = await loginRemoto(cleanTenant, user.trim(), pass.trim());
+      if (!res || !res.ok) {
+        setError(MENSAJES_ERROR[res?.error] || MENSAJES_ERROR.CREDENCIALES_INVALIDAS);
+        setCargando(false);
+        return;
+      }
 
-  const isConnecting = !isInitialPullDone || realtimeStatus === "connecting";
+      const usuario = res.usuario || { user: user.trim() };
+      if (res.taller !== activeTenantId) {
+        // Otro taller: recargar para iniciar la app con los datos de ese taller
+        setLocalStorage("current_tenant_id", res.taller);
+        setLocalStorage(`${res.taller}_usuarioActual`, usuario);
+        window.location.reload();
+        return;
+      }
+      setPass("");
+      onLogin(usuario);
+    } catch (err) {
+      const code = String(err?.message || "");
+      setError(MENSAJES_ERROR[code] || (code.includes("Tiempo de espera") || code.includes("fetch")
+        ? MENSAJES_ERROR.SIN_CONEXION
+        : "No se pudo iniciar sesión. Inténtalo de nuevo en unos segundos."));
+      setCargando(false);
+    }
+  };
 
   return (
     <div style={styles.container}>
@@ -183,91 +77,47 @@ export default function Login({
           </div>
           <h1 style={styles.title}>LOS PITS</h1>
           <p style={styles.subtitle}>SISTEMA DE GESTIÓN INTEGRAL</p>
-          
-          {isConnecting ? (
-            <div style={styles.syncBadge}>
-              <Loader2 size={14} className="animate-spin" />
-              <span>Sincronizando base de datos...</span>
-            </div>
-          ) : (
-            <div style={{ ...styles.syncBadge, backgroundColor: "rgba(16, 185, 129, 0.1)", borderColor: "rgba(16, 185, 129, 0.2)", color: "#10b981" }}>
-              <span style={styles.dot}>●</span>
-              <span>Sincronizado con la nube</span>
-            </div>
-          )}
+          <div style={{ ...styles.syncBadge, backgroundColor: "rgba(16, 185, 129, 0.1)", borderColor: "rgba(16, 185, 129, 0.2)", color: "#10b981" }}>
+            <Lock size={12} />
+            <span>Conexión segura</span>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} style={styles.form}>
-          {error && <div style={styles.error}>{error}</div>}
+        <form onSubmit={handleSubmit} style={styles.form} id="form-inicio-sesion">
+          {error && <div style={styles.error} role="alert">{error}</div>}
 
           <div style={styles.inputGroup}>
-            <label style={styles.label}>🏢 Código de Taller / Empresa</label>
-            <div style={{ display: "flex", gap: "8px", marginBottom: "6px" }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setTenantCode("lospits");
-                  if (onTenantChange) onTenantChange("lospits");
-                }}
-                style={{
-                  flex: 1,
-                  padding: "6px 10px",
-                  fontSize: "0.75rem",
-                  borderRadius: "6px",
-                  border: tenantCode === "lospits" ? "1px solid #3b82f6" : "1px solid rgba(255,255,255,0.1)",
-                  background: tenantCode === "lospits" ? "rgba(59, 130, 246, 0.2)" : "rgba(255,255,255,0.03)",
-                  color: tenantCode === "lospits" ? "#60a5fa" : "#94a3b8",
-                  cursor: "pointer",
-                  fontWeight: "600"
-                }}
-              >
-                🏢 Los Pits (Oficial)
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setTenantCode("pruebas");
-                  if (onTenantChange) onTenantChange("pruebas");
-                }}
-                style={{
-                  flex: 1,
-                  padding: "6px 10px",
-                  fontSize: "0.75rem",
-                  borderRadius: "6px",
-                  border: tenantCode === "pruebas" ? "1px solid #f59e0b" : "1px solid rgba(255,255,255,0.1)",
-                  background: tenantCode === "pruebas" ? "rgba(245, 158, 11, 0.2)" : "rgba(255,255,255,0.03)",
-                  color: tenantCode === "pruebas" ? "#fbbf24" : "#94a3b8",
-                  cursor: "pointer",
-                  fontWeight: "600"
-                }}
-              >
-                🧪 Pruebas Generales
-              </button>
-            </div>
+            <label style={styles.label} htmlFor="login-taller">🏢 Código de Taller / Empresa</label>
             <div style={styles.inputWrapper}>
               <Shield size={18} style={styles.inputIcon} />
               <input
+                id="login-taller"
                 type="text"
-                placeholder="ej: lospits, pruebas..."
+                placeholder="Ej: mitaller"
                 className="input-field"
+                autoCapitalize="none"
+                autoCorrect="off"
                 value={tenantCode}
                 onChange={(e) => setTenantCode(e.target.value)}
                 style={styles.input}
               />
             </div>
             <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "2px" }}>
-              Selecciona o escribe el código de tu taller.
+              Lo recibiste al registrar tu taller.
             </span>
           </div>
 
           <div style={styles.inputGroup}>
-            <label style={styles.label}>Usuario</label>
+            <label style={styles.label} htmlFor="login-usuario">Usuario</label>
             <div style={styles.inputWrapper}>
               <User size={18} style={styles.inputIcon} />
               <input
+                id="login-usuario"
                 type="text"
-                placeholder="Ej. admin, armando avila..."
+                placeholder="Tu usuario"
                 className="input-field"
+                autoCapitalize="none"
+                autoComplete="username"
                 value={user}
                 onChange={(e) => setUser(e.target.value)}
                 style={styles.input}
@@ -276,32 +126,24 @@ export default function Login({
           </div>
 
           <div style={styles.inputGroup}>
-            <label style={styles.label}>Contraseña</label>
+            <label style={styles.label} htmlFor="login-clave">Contraseña</label>
             <div style={styles.inputWrapper}>
               <Lock size={18} style={styles.inputIcon} />
               <input
+                id="login-clave"
                 type={showPass ? "text" : "password"}
-                placeholder="••••"
+                placeholder="••••••••"
                 className="input-field"
+                autoComplete="current-password"
                 value={pass}
                 onChange={(e) => setPass(e.target.value)}
                 style={{ ...styles.input, paddingRight: "40px" }}
               />
               <button
                 type="button"
+                id="login-ver-clave"
                 onClick={() => setShowPass(!showPass)}
-                style={{
-                  position: "absolute",
-                  right: "12px",
-                  background: "none",
-                  border: "none",
-                  color: "#94a3b8",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: "4px"
-                }}
+                style={styles.eyeBtn}
                 title={showPass ? "Ocultar contraseña" : "Ver contraseña"}
               >
                 {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -309,50 +151,15 @@ export default function Login({
             </div>
           </div>
 
-          <button type="submit" className="btn btn-primary" style={styles.submitBtn}>
-            {isConnecting ? (
-              <Loader2 size={18} className="animate-spin" />
-            ) : (
-              <KeyRound size={18} />
-            )}
-            {isConnecting ? "Sincronizando..." : "Ingresar al Sistema"}
+          <button type="submit" id="login-ingresar" className="btn btn-primary" style={styles.submitBtn} disabled={cargando}>
+            {cargando ? <Loader2 size={18} className="animate-spin" /> : <KeyRound size={18} />}
+            {cargando ? "Verificando..." : "Ingresar al Sistema"}
           </button>
         </form>
 
-        <div style={styles.demoUsersSection}>
-          <h4 style={styles.demoTitle}>Acceso Rápido para Pruebas:</h4>
-          <div style={styles.demoButtonsContainer}>
-            <button 
-              type="button" 
-              onClick={() => fillCredentials("admin")} 
-              style={{ ...styles.demoBtn, borderColor: "#3b82f6" }}
-            >
-              🔑 Admin
-            </button>
-            <button 
-              type="button" 
-              onClick={() => fillCredentials("cajero")} 
-              style={{ ...styles.demoBtn, borderColor: "#06b6d4" }}
-            >
-              💳 Cajero
-            </button>
-            <button 
-              type="button" 
-              onClick={() => fillCredentials("mecanico")} 
-              style={{ ...styles.demoBtn, borderColor: "#f59e0b" }}
-            >
-              🔧 Mecánico
-            </button>
-            <button 
-              type="button" 
-              onClick={() => fillCredentials("lavador")} 
-              style={{ ...styles.demoBtn, borderColor: "#a855f7" }}
-            >
-              🧼 Lavador
-            </button>
-          </div>
-          <p style={styles.demoHint}>Todos usan la contraseña: <strong>1234</strong></p>
-        </div>
+        <p style={styles.hint}>
+          ¿Olvidaste tu contraseña? Pide al administrador de tu taller que te asigne una nueva desde Configuración.
+        </p>
       </div>
     </div>
   );
@@ -426,10 +233,6 @@ const styles = {
     marginTop: "12px",
     animation: "fadeIn 0.3s ease-out",
   },
-  dot: {
-    fontSize: "0.6rem",
-    marginRight: "2px",
-  },
   form: {
     display: "flex",
     flexDirection: "column",
@@ -470,47 +273,28 @@ const styles = {
   input: {
     paddingLeft: "42px",
   },
+  eyeBtn: {
+    position: "absolute",
+    right: "12px",
+    background: "none",
+    border: "none",
+    color: "#94a3b8",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "4px"
+  },
   submitBtn: {
     marginTop: "10px",
     width: "100%",
   },
-  demoUsersSection: {
-    marginTop: "30px",
-    paddingTop: "20px",
+  hint: {
+    marginTop: "24px",
+    paddingTop: "16px",
     borderTop: "1px solid rgba(255, 255, 255, 0.08)",
-  },
-  demoTitle: {
-    fontSize: "0.85rem",
-    color: "var(--text-muted)",
-    marginBottom: "12px",
-    textAlign: "left",
-    fontWeight: "600",
-  },
-  demoButtonsContainer: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, 1fr)",
-    gap: "8px",
-    marginBottom: "10px",
-  },
-  demoBtn: {
-    background: "rgba(255, 255, 255, 0.02)",
-    border: "1px solid rgba(255, 255, 255, 0.08)",
-    borderRadius: "8px",
-    padding: "8px 12px",
-    color: "#fff",
-    fontSize: "0.85rem",
-    fontWeight: "500",
-    cursor: "pointer",
-    transition: "all 0.2s ease",
-    textAlign: "left",
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-  },
-  demoHint: {
     fontSize: "0.75rem",
     color: "var(--text-muted)",
     textAlign: "center",
   },
 };
-

@@ -50,7 +50,7 @@ import { formatMoney } from "../utils/storage";
 import { DEFAULT_BRANDING, getCleanBranding } from "../utils/branding";
 import BrandingPaletteEditor from "./BrandingPaletteEditor";
 import { ALL_AVAILABLE_MODULES, DEFAULT_ACTIVE_MODULES, MODULE_PRESETS, isModuleActive } from "../utils/modulesConfig";
-import { getSupabaseClient, resetSupabaseClient, syncKeyToCloud, testSupabaseConnection } from "../utils/supabase";
+import { getSupabaseClient, resetSupabaseClient, syncKeyToCloud, testSupabaseConnection, cloudDelete } from "../utils/supabase";
 import PapeleraModal from "./PapeleraModal";
 import { createBackup, exportBackupToFile, restoreFromBackup, getBackupsList } from "../services/backupService";
 import { getTrashItems, softDelete as trashSoftDelete } from "../services/trashService";
@@ -772,7 +772,7 @@ export default function SettingsComponent({
   const handleEditUserClick = (userObj) => {
     setEditingUser(userObj);
     setEditUserHandle(userObj.user || "");
-    setEditPass(userObj.pass || "");
+    setEditPass("");
     setShowEditPass(false);
     
     const predefinedRoles = ["admin", "cajero", "mecanico", "lavador", "jefe de taller"];
@@ -826,13 +826,13 @@ export default function SettingsComponent({
       return;
     }
 
+    const oldName = editingUser.user.toLowerCase().trim();
     setUsuarios(
       usuarios.map((u) => {
-        if (u.user.toLowerCase().trim() === editingUser.user.toLowerCase().trim()) {
-          return {
+        if (u.user.toLowerCase().trim() === oldName) {
+          const actualizado = {
             ...u,
             user: cleanNewUser,
-            pass: editPass.trim(),
             rol: finalRole,
             permissions: editPermissions,
             salarioBase: parseFloat(editSalarioBase) || 0,
@@ -850,6 +850,12 @@ export default function SettingsComponent({
             fechaIngreso: editFechaIngreso,
             fechaNacimiento: editFechaNacimiento
           };
+          // 🔒 La contraseña solo se envía si se escribió una nueva (el servidor la cifra)
+          delete actualizado.pass;
+          delete actualizado.renombradoDe;
+          if (editPass.trim()) actualizado.pass = editPass.trim();
+          if (cleanNewUser !== oldName) actualizado.renombradoDe = oldName;
+          return actualizado;
         }
         return u;
       })
@@ -930,16 +936,15 @@ export default function SettingsComponent({
     }
 
     try {
-      // Attempt a test query
-      const { error } = await client.from('app_data').select('*').limit(1);
-      if (error) throw error;
+      const res = await testSupabaseConnection();
+      if (!res.ok) throw new Error(res.message);
 
       setConnectionStatus("connected");
       alert("¡Conexión establecida con éxito con Supabase! La página se recargará para iniciar la sincronización.");
       window.location.reload();
     } catch (err) {
       console.error("Supabase test error:", err);
-      alert("Error de conexión: No se pudo acceder a la tabla 'app_data'. Asegúrate de haber ejecutado el script SQL en la consola de Supabase o que las credenciales sean correctas.\n\nDetalle: " + err.message);
+      alert("Error de conexión con el servidor.\n\nDetalle: " + err.message);
       localStorage.removeItem("supabase_url");
       localStorage.removeItem("supabase_key");
       resetSupabaseClient();
@@ -1047,7 +1052,6 @@ export default function SettingsComponent({
 
         for (const [key, value] of Object.entries(collections)) {
           await syncKeyToCloud(key, value);
-          await syncKeyToCloud(`lospits_${key}`, value);
         }
 
         alert(`¡Todos tus datos locales se subieron con éxito a la nube (${ordenes?.length || 0} órdenes)! Los demás dispositivos ya pueden conectarse y verlos.`);
@@ -1981,16 +1985,14 @@ export default function SettingsComponent({
                         "cuentasPorCobrar", "cuentasPorPagar"
                       ];
                       
-                      const client = getSupabaseClient();
-                      if (client) {
-                        try {
-                          await client.from('app_data').delete().in('key', keysToDelete);
-                        } catch (err) {
-                          console.error("Error deleting cloud data:", err);
-                        }
+                      const scopedKeys = keysToDelete.map(k => `${tenantId}_${k}`);
+                      try {
+                        await cloudDelete(scopedKeys);
+                      } catch (err) {
+                        console.error("Error deleting cloud data:", err);
                       }
                       
-                      keysToDelete.forEach(key => localStorage.removeItem(key));
+                      scopedKeys.forEach(key => localStorage.removeItem(key));
                       alert("Datos de prueba eliminados. La aplicación se recargará ahora.");
                       window.location.reload();
                     }
@@ -3535,13 +3537,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.app_data;`}
                   <button
                     type="button"
                     onClick={() => {
-                      if (window.confirm("¿Deseas restaurar la base de datos maestra completa de Los Pits (19 Órdenes, 51 Carwash, 103 Clientes, 93 Vehículos, Inventario y Finanzas)?")) {
-                        if (restoreMasterBackup) {
-                          restoreMasterBackup(tenantId);
-                          alert("¡Base de datos maestra restaurada con éxito! La página se recargará para aplicar los cambios.");
-                          window.location.reload();
-                        }
-                      }
+                      alert("🔒 Por seguridad, la copia maestra ya no viene incluida en la aplicación. Usa \"Importar Respaldo JSON\" o la sincronización en la nube.");
                     }}
                     className="btn"
                     style={{ backgroundColor: "rgba(234, 179, 8, 0.2)", color: "#facc15", border: "1px solid rgba(234, 179, 8, 0.4)", fontWeight: "800", display: "flex", alignItems: "center", gap: "6px" }}
@@ -3794,16 +3790,15 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.app_data;`}
                   />
                 </div>
                 <div style={{ ...styles.inputGroup, flex: 1, minWidth: "200px" }}>
-                  <label style={styles.label}>Contraseña *</label>
+                  <label style={styles.label}>Nueva contraseña</label>
                   <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
                     <input
                       type={showEditPass ? "text" : "password"}
-                      placeholder="••••"
+                      placeholder="Dejar vacío para no cambiar"
                       className="input-field"
                       value={editPass}
                       onChange={(e) => setEditPass(e.target.value)}
                       style={{ paddingRight: "40px", width: "100%" }}
-                      required
                     />
                     <button
                       type="button"

@@ -27,8 +27,7 @@ import { DEFAULT_CATALOGO_PREMIOS } from "./utils/wallet";
 import { DEFAULT_BRANDING, getCleanBranding, setActiveBranding } from "./utils/branding";
 import { DEFAULT_ACTIVE_MODULES, isModuleActive } from "./utils/modulesConfig";
 import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocalStorage, getActiveTenantId, restoreMasterBackup, purgeStorageBloat, getDeletedUsernames, addDeletedUsername, removeDeletedUsername, getDeletedFixedCosts, addDeletedFixedCost, removeDeletedFixedCost, getTombMap, saveTombMap, mergeTombMaps, normalizeTombMap } from "./utils/storage";
-import masterBackupData from "./data/masterBackupData.json";
-import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout, processOfflineQueue, cloudKeyVersions } from "./utils/supabase";
+import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout, processOfflineQueue, cloudKeyVersions, getSessionForTenant, getSession, clearSession, logoutRemoto, cloudGet, cloudVersions, isSuperAdminSession, removeFromOfflineQueue } from "./utils/supabase";
 import { getMissingExternalCosts } from "./utils/workshopCalc";
 import { getPuntosPorVencer, yaSeAvisoVencimiento } from "./utils/loyaltyExpiry";
 import { initHourlyBackupScheduler, checkAndCreateHourlyBackup } from "./services/backupService";
@@ -630,7 +629,7 @@ export default function App() {
     if (localUsers.length === 0) {
       if (tenantId === "lospits") {
         localUsers = [
-          { user: "admin", pass: "1234", rol: "admin", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"], salarioBase: 15000, comisionTaller: 10, comisionCarwash: 5, comisionarLabor: true, comisionarRepuestos: true, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Alan Estrada" }
+          { user: "admin", rol: "admin", permissions: ["dashboard", "taller", "carwash", "parqueo", "bodega", "cafeteria", "finanzas", "repuestosFaltantes", "configuracion", "historial", "tienda", "cuentas", "vehiculosVenta", "clientesVehiculos", "compras", "accesorios"], salarioBase: 15000, comisionTaller: 10, comisionCarwash: 5, comisionarLabor: true, comisionarRepuestos: true, comisionarCarwash: true, comisionRepuestos: 5, nombreCompleto: "Alan Estrada" }
         ];
       }
     }
@@ -679,9 +678,15 @@ export default function App() {
 
   // 🔑 LOGIN STATES
   const [usuarioActual, setUsuarioActual] = useState(() => {
+    // 🔐 Sin una sesión válida emitida por el servidor no hay usuario activo (se pide iniciar sesión)
+    const serverSession = getSessionForTenant(tenantId);
+    if (!serverSession) return null;
     // 🔒 Read session scoped by tenant to prevent cross-tenant session leaks
     const scopedSessionKey = `${tenantId}_usuarioActual`;
     let saved = getLocalStorage(scopedSessionKey, null);
+    if (!saved || String(saved.user || "").toLowerCase().trim() !== String(serverSession.usuario?.user || "").toLowerCase().trim()) {
+      saved = serverSession.usuario || null;
+    }
     // One-time migration: if scoped key doesn't exist, try unscoped key for lospits only
     if (!saved && tenantId === "lospits") {
       saved = getLocalStorage("usuarioActual", null);
@@ -1026,23 +1031,14 @@ export default function App() {
   });
   // Load puntosRecompensas from Supabase on initial mount if not present locally
   useEffect(() => {
-    if (puntosRecompensas.length === 0) {
+    if (puntosRecompensas.length === 0 && getSessionForTenant(tenantId)) {
       (async () => {
         try {
-          const client = getSupabaseClient();
-          if (!client) return;
           const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
           // For pruebas tenant, the key is prefixed; for lospits it's the base key
           const cloudKey = activeTenant === "lospits" ? "puntosRecompensas" : `${activeTenant}_puntosRecompensas`;
-          const { data, error } = await client
-            .from('app_data')
-            .select('value')
-            .eq('key', cloudKey)
-            .single();
-          if (error) {
-            console.error(`Error fetching ${cloudKey} from cloud:`, error);
-            return;
-          }
+          const rows = await cloudGet([cloudKey]);
+          const data = rows[0];
           if (data && Array.isArray(data.value) && data.value.length > 0) {
             setPuntosRecompensas(data.value);
             setTenantLocalStorage("puntosRecompensas", data.value, tenantId);
@@ -1359,6 +1355,9 @@ export default function App() {
   const [isInitialPullDone, setIsInitialPullDone] = useState(globalSyncFlags.isInitialPullDone);
   const stateRef = useRef(null);
   const [realtimeStatus, setRealtimeStatus] = useState("connecting");
+  // 🔐 Cambia cada vez que se inicia sesión para disparar la descarga y el canal en tiempo real
+  const [sessionVersion, setSessionVersion] = useState(0);
+  const sessionExpiredNotified = useRef(false);
 
   // Register active state setters on every render/mount so async callbacks target the correct instance
   useEffect(() => {
@@ -1609,10 +1608,7 @@ export default function App() {
       // 🚀 Si ya tenemos esta versión exacta, no descargar nada
       if (knownVersion && cloudKeyVersions[targetKey] === knownVersion) return;
 
-      const queryPromise = client
-        .from('app_data')
-        .select('key, value, updated_at')
-        .eq('key', targetKey);
+      const queryPromise = cloudGet([targetKey], 15000).then(rows => ({ data: rows, error: null }));
       
       const { data, error } = await withTimeout(queryPromise, 15000, `Timeout en fetch de ${targetKey}`);
       if (error || !data || data.length === 0) return;
@@ -1746,8 +1742,8 @@ export default function App() {
     }
     
     const client = getSupabaseClient();
-    if (!client) {
-      globalSyncFlags.isInitialPullSucceeded = true;
+    if (!client || !getSessionForTenant(tenantId)) {
+      // 🔐 Sin sesión no se descarga nada: la app muestra el inicio de sesión con los datos locales intactos
       globalSyncFlags.isInitialPullDone = true;
       const activeSetInitialPullDone = globalActiveSetters.setIsInitialPullDone || setIsInitialPullDone;
       const activeSetRealtimeStatus = globalActiveSetters.setRealtimeStatus || setRealtimeStatus;
@@ -1792,7 +1788,7 @@ export default function App() {
       let keysToFetch = scopedQueryKeys;
       if (!isFullPull) {
         const metaRes = await withTimeout(
-          client.from('app_data').select('key, updated_at').in('key', scopedQueryKeys),
+          cloudVersions(scopedQueryKeys, 10000).then(rows => ({ data: rows, error: null })),
           10000,
           'Timeout consultando versiones'
         );
@@ -1814,10 +1810,7 @@ export default function App() {
       for (let i = 0; i < keysToFetch.length; i += chunkSize) {
         const chunk = keysToFetch.slice(i, i + chunkSize);
         batchChunks.push(chunk);
-        const queryPromise = client
-          .from('app_data')
-          .select('key, value, updated_at')
-          .in('key', chunk);
+        const queryPromise = cloudGet(chunk, 20000).then(rows => ({ data: rows, error: null }));
         promises.push(withTimeout(queryPromise, 20000, `Timeout en lote`));
       }
 
@@ -1934,6 +1927,18 @@ export default function App() {
         pendingUpdates.forEach(({ setter, value }) => setter(value));
       }
 
+      // 🛡️ En una descarga completa, la fusión local + nube ya subió los cambios de este equipo.
+      // Se quitan de la cola offline esas llaves para que una copia vieja no sobrescriba la fusión.
+      if (isFullPull) {
+        allKeysList.forEach(baseKey => {
+          const sk = getScopedKey(baseKey);
+          if (!failedBatchKeys.has(sk)) {
+            removeFromOfflineQueue(sk);
+            if (activeTenant === "lospits") removeFromOfflineQueue(baseKey);
+          }
+        });
+      }
+
       // Procesar cualquier operación pendiente en la cola offline
       processOfflineQueue();
 
@@ -2000,6 +2005,37 @@ export default function App() {
     };
   }, []);
 
+  // 🔐 Después de iniciar sesión: descarga completa y fusión con los datos locales
+  useEffect(() => {
+    if (sessionVersion > 0) {
+      globalSyncFlags.isPullRunning = false;
+      forcePullFromCloud(true);
+    }
+  }, [sessionVersion]);
+
+  // 🔐 Sesión vencida, revocada o taller suspendido: volver al inicio de sesión (sin borrar datos)
+  useEffect(() => {
+    const onExpired = (ev) => {
+      const code = ev?.detail?.code;
+      clearSession();
+      try {
+        localStorage.removeItem(`${tenantId}_usuarioActual`);
+        localStorage.removeItem("usuarioActual");
+      } catch (e) {}
+      setUsuarioActual(null);
+      if (!sessionExpiredNotified.current) {
+        sessionExpiredNotified.current = true;
+        setTimeout(() => {
+          alert(code === "TALLER_SUSPENDIDO"
+            ? "El acceso de este taller está suspendido. Comunícate con soporte de Los Pits App."
+            : "Tu sesión venció o fue cerrada. Vuelve a iniciar sesión. Tus datos están a salvo.");
+        }, 50);
+      }
+    };
+    window.addEventListener("pits-sesion-expirada", onExpired);
+    return () => window.removeEventListener("pits-sesion-expirada", onExpired);
+  }, [tenantId]);
+
   // ⏰ HOURLY BACKUP SCHEDULER & AUTO-PURGE TRASH ENGINE
   useEffect(() => {
     autoPurgeTrash();
@@ -2012,84 +2048,17 @@ export default function App() {
   // Subscribe to Realtime Postgres changes + Instant Broadcast Channel once initial pull is complete
   useEffect(() => {
     const client = getSupabaseClient();
-    if (!client || !isInitialPullDone) return;
+    const syncSession = getSessionForTenant(tenantId);
+    if (!client || !isInitialPullDone || !syncSession) return;
 
     const activeTenant = (tenantId || "lospits").toLowerCase().trim();
+    // 🔐 Canal exclusivo del taller (incluye un código secreto entregado al iniciar sesión)
+    const channelName = `sync-${activeTenant}-${syncSession.canal || "general"}`;
 
     const channel = client
-      .channel('schema-db-changes')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'app_data' },
-        (payload) => {
-          if (!payload.new) return;
-          const { key, value } = payload.new;
-          if (!key) return;
-
-          // 🔒 TENANT ISOLATION GUARD: Parse tenant and baseKey from key
-          let eventTenant = "lospits";
-          let baseKey = key;
-
-          if (key.includes("_")) {
-            const parts = key.split("_");
-            const possibleTenant = parts[0].toLowerCase().trim();
-            const restKey = parts.slice(1).join("_");
-            if (restKey) {
-              eventTenant = possibleTenant;
-              baseKey = restKey;
-            }
-          }
-
-          // 🛑 IF EVENT IS FOR A DIFFERENT TENANT, IGNORE IMMEDIATELY!
-          if (eventTenant !== activeTenant) {
-            return;
-          }
-
-          const eventVersion = Date.parse(payload.new.updated_at) || null;
-
-          // 🚀 Registros grandes (ej. órdenes > 1MB) llegan SIN el valor por el límite del websocket.
-          // En ese caso se descarga la llave directamente en lugar de ignorar el cambio.
-          // También el registro de eliminaciones se procesa por la ruta de descarga directa.
-          if (value === null || value === undefined || baseKey.startsWith("deleted_")) {
-            debouncedFetchFromBroadcast(key, eventVersion);
-            return;
-          }
-          if (eventVersion) cloudKeyVersions[key] = eventVersion;
-
-          let sanitizedValue = safeParseJSON(value);
-          
-          if (ARRAY_KEYS.includes(baseKey)) {
-            sanitizedValue = filterOutMockItems(baseKey, sanitizedValue);
-            if (baseKey === "usuarios") {
-              sanitizedValue = deduplicateUsers(sanitizedValue);
-            }
-            if (!Array.isArray(sanitizedValue)) {
-              if (sanitizedValue && typeof sanitizedValue === "object") {
-                sanitizedValue = Object.values(sanitizedValue);
-              } else {
-                return;
-              }
-            }
-          }
-
-          const currentLocalVal = getLatestLocalValue(baseKey);
-
-          const mergedValue = mergeCollections(baseKey, currentLocalVal, sanitizedValue, null, activeTenant);
-          const mergedValStr = JSON.stringify(mergedValue);
-          const localValStr = stateRef.current ? JSON.stringify(stateRef.current[baseKey]) : "";
-
-          if (localValStr === mergedValStr) {
-            return; // No actual change, skip to avoid loop
-          }
-
-          const activeSetter = globalActiveSetters[baseKey];
-          if (activeSetter) {
-            globalLastSynced[key] = mergedValStr;
-            activeSetter(mergedValue);
-            setTenantLocalStorage(baseKey, mergedValue, activeTenant);
-          }
-        }
-      )
+      .channel(channelName)
+      // 🔐 Ya no se escucha la tabla directamente (está cerrada al acceso público).
+      // Los cambios llegan por el aviso 'app_key_changed' de este canal privado y por el sondeo cada 5 s.
       .on(
         'broadcast',
         { event: 'app_key_changed' },
@@ -2135,7 +2104,7 @@ export default function App() {
     return () => {
       client.removeChannel(channel);
     };
-  }, [isInitialPullDone, tenantId]);
+  }, [isInitialPullDone, tenantId, sessionVersion]);
 
   useEffect(() => {
     if (!isInitialPullDone) return;
@@ -2521,8 +2490,9 @@ export default function App() {
     return false;
   };
 
-  // Auth Operations
+  // Auth Operations (Login.jsx ya validó usuario y contraseña en el servidor)
   const handleLogin = (userObj) => {
+    sessionExpiredNotified.current = false;
     let cleanUserObj = userObj;
     if (userObj && (userObj.user || "").toLowerCase().trim() === "armando avila") {
       if (Array.isArray(userObj.permissions)) {
@@ -2543,9 +2513,13 @@ export default function App() {
         setCurrentTab("dashboard");
       }
     }
+    // 🔐 Descargar y fusionar los datos del taller con la nueva sesión
+    setSessionVersion(v => v + 1);
   };
 
   const handleLogout = () => {
+    // 🔐 Cierra la sesión en el servidor. Los datos guardados en el equipo NO se borran.
+    logoutRemoto();
     setUsuarioActual(null);
     // 🔒 Clear tenant-scoped session key
     const scopedSessionKey = `${tenantId}_usuarioActual`;
@@ -2569,17 +2543,19 @@ export default function App() {
   })();
 
   if (isPublicPortalView) {
+    // 🔐 El portal público NO recibe los datos del taller: consulta al servidor solo el cliente buscado
     return (
       <CustomerPortal 
-        puntosRecompensas={puntosRecompensas}
-        setPuntosRecompensas={setPuntosRecompensas}
-        ordenes={ordenes}
-        carwash={carwash}
-        clientes={clientes}
-        vehiculos={vehiculos}
-        catalogoPremios={catalogoPremios}
-        regalosPasesReferidos={regalosPasesReferidos}
-        setRegalosPasesReferidos={setRegalosPasesReferidos}
+        modoPublico={true}
+        tallerPublico={(() => {
+          try {
+            const p = new URLSearchParams(window.location.search);
+            const t = (p.get("taller") || p.get("tenant") || tenantId || "lospits").toLowerCase().trim().replace(/[^a-z0-9-]/g, "");
+            return t || "lospits";
+          } catch (e) {
+            return "lospits";
+          }
+        })()}
         onClose={null}
       />
     );
@@ -2589,12 +2565,8 @@ export default function App() {
   if (!usuarioActual) {
     return (
       <Login 
-        usuarios={usuarios} 
         onLogin={handleLogin} 
-        isInitialPullDone={isInitialPullDone} 
-        realtimeStatus={realtimeStatus} 
         activeTenantId={tenantId}
-        onTenantChange={handleSwitchTenant}
       />
     );
   }
@@ -2615,7 +2587,7 @@ export default function App() {
         realtimeStatus={realtimeStatus}
         handleForceSyncMobile={forcePullFromCloud}
         activeTenantId={tenantId}
-        onTenantChange={handleSwitchTenant}
+        onTenantChange={isSuperAdminSession() ? handleSwitchTenant : null}
         activeModules={activeModules}
         badges={{ taller: missingExternalCostCount, recompensas: userHasPermission(usuarioActivo, "recompensas") ? puntosPorVencerCount : 0 }}
       />
@@ -3061,7 +3033,7 @@ export default function App() {
           />
         )}
 
-        {currentTab === "saasAdmin" && (usuarioActivo?.user || "").toLowerCase().trim() === "admin" && (
+        {currentTab === "saasAdmin" && isSuperAdminSession() && (
           <SaaSAdmin 
             activeTenantId={tenantId}
             onSwitchTenant={handleSwitchTenant}

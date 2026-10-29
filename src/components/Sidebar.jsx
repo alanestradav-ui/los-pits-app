@@ -28,7 +28,7 @@ import {
   Smartphone,
   CalendarClock
 } from "lucide-react";
-import { testSupabaseConnection } from "../utils/supabase";
+import { testSupabaseConnection, isSuperAdminSession } from "../utils/supabase";
 import { isModuleActive, DEFAULT_ACTIVE_MODULES } from "../utils/modulesConfig";
 
 export default function Sidebar({ 
@@ -197,6 +197,11 @@ export default function Sidebar({
   // Sync menu list with permissions and saved order
   useEffect(() => {
     const visible = menuItems.filter(item => {
+      // 🔐 Panel SaaS: solo el administrador de la plataforma (validado por el servidor al iniciar sesión)
+      if (item.id === "saasAdmin" && !isSuperAdminSession()) {
+        return false;
+      }
+
       // 0. WORKSHOP ACTIVE MODULES FILTER: If the workshop disabled this module, hide it from the sidebar!
       if (!isModuleActive(item.id, activeModules)) {
         return false;

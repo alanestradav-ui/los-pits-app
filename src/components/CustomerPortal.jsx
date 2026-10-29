@@ -21,6 +21,17 @@ import {
 } from "lucide-react";
 import { formatMoney } from "../utils/storage";
 import { generateAppleWalletPassData, generateGoogleWalletPassUrl, generateGiftPassQR, getPortalUrl, DEFAULT_CATALOGO_PREMIOS } from "../utils/wallet";
+import { callRpc } from "../utils/supabase";
+
+const MENSAJES_PORTAL = {
+  NO_ENCONTRADO: "No encontramos ningún cliente con ese teléfono o placa. Verifica el dato e intenta de nuevo.",
+  DATO_INVALIDO: "Ingresa tu número de teléfono (8 dígitos) o la placa completa de tu vehículo.",
+  TALLER_NO_DISPONIBLE: "Este portal no está disponible en este momento.",
+  DEMASIADAS_CONSULTAS: "Demasiadas consultas seguidas. Espera unos minutos e intenta de nuevo.",
+  PUNTOS_INSUFICIENTES: "No tienes puntos suficientes para este servicio.",
+  PREMIO_NO_EXISTE: "Este servicio ya no está disponible."
+};
+const mensajePortal = (code) => MENSAJES_PORTAL[code] || "No se pudo completar la consulta. Revisa tu conexión e intenta de nuevo.";
 
 export default function CustomerPortal({
   puntosRecompensas = [],
@@ -32,7 +43,9 @@ export default function CustomerPortal({
   catalogoPremios = [],
   regalosPasesReferidos = [],
   setRegalosPasesReferidos,
-  onClose
+  onClose,
+  modoPublico = false,
+  tallerPublico = "lospits"
 }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [activeCliente, setActiveCliente] = useState(null);
@@ -42,6 +55,11 @@ export default function CustomerPortal({
   const [invitadoTelefono, setInvitadoTelefono] = useState("");
   const [generatedGift, setGeneratedGift] = useState(null);
   const [activeTab, setActiveTab] = useState("wallet"); // 'wallet', 'estado', 'historial', 'regalos'
+  // 🔐 Modo público: datos que devuelve el servidor solo para el cliente consultado
+  const [remoto, setRemoto] = useState({ ordenes: [], carwash: [], regalos: [], premios: [] });
+  const [buscando, setBuscando] = useState(false);
+  const [errorBusqueda, setErrorBusqueda] = useState("");
+  const [donando, setDonando] = useState(false);
 
   // Pre-load from URL query if available
   useEffect(() => {
@@ -53,9 +71,43 @@ export default function CustomerPortal({
         buscarCliente(query);
       }
     } catch (e) {}
-  }, [puntosRecompensas, clientes, ordenes]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, modoPublico ? [] : [puntosRecompensas, clientes, ordenes]);
+
+  const buscarClienteRemoto = async (queryStr) => {
+    const dato = String(queryStr || "").trim();
+    if (!dato) return;
+    setBuscando(true);
+    setErrorBusqueda("");
+    try {
+      const res = await callRpc("portal_consultar", { p_taller: tallerPublico, p_dato: dato }, 20000);
+      if (!res || !res.ok) {
+        setErrorBusqueda(mensajePortal(res?.error));
+        return;
+      }
+      setRemoto({
+        ordenes: Array.isArray(res.ordenes) ? res.ordenes : [],
+        carwash: Array.isArray(res.carwash) ? res.carwash : [],
+        regalos: Array.isArray(res.regalos) ? res.regalos : [],
+        premios: Array.isArray(res.premios) ? res.premios : []
+      });
+      setActiveCliente({
+        nombre: res.cliente?.nombre || "Cliente",
+        telefono: res.cliente?.telefono || "",
+        puntos: parseInt(res.cliente?.puntos) || 0
+      });
+    } catch (err) {
+      setErrorBusqueda(mensajePortal(err?.code || (String(err?.message || "").includes("DEMASIADAS_CONSULTAS") ? "DEMASIADAS_CONSULTAS" : "")));
+    } finally {
+      setBuscando(false);
+    }
+  };
 
   const buscarCliente = (queryStr) => {
+    if (modoPublico) {
+      buscarClienteRemoto(queryStr);
+      return;
+    }
     const q = String(queryStr || "").toLowerCase().trim();
     if (!q) return;
 
@@ -99,24 +151,28 @@ export default function CustomerPortal({
   };
 
   // Find active orders in workshop or carwash for this client
-  const activeOrders = activeCliente ? ordenes.filter(o => {
+  // (en modo público el servidor ya devuelve solo lo del cliente consultado)
+  const activeOrders = !activeCliente ? [] : modoPublico ? remoto.ordenes : ordenes.filter(o => {
     const t = String(o.telefono || "").toLowerCase().trim();
     const c = String(o.cliente || "").toLowerCase().trim();
     const targetT = String(activeCliente.telefono).toLowerCase().trim();
     const targetC = String(activeCliente.nombre).toLowerCase().trim();
     return (t && targetT && t === targetT) || (c && targetC && c.includes(targetC)) || (targetT && String(o.vehiculo).toLowerCase().includes(targetT));
-  }) : [];
+  });
 
-  const activeCarwash = activeCliente ? carwash.filter(cw => {
+  const activeCarwash = !activeCliente ? [] : modoPublico ? remoto.carwash : carwash.filter(cw => {
     const t = String(cw.telefono || "").toLowerCase().trim();
     const c = String(cw.cliente || "").toLowerCase().trim();
     const targetT = String(activeCliente.telefono).toLowerCase().trim();
     const targetC = String(activeCliente.nombre).toLowerCase().trim();
     return (t && targetT && t === targetT) || (c && targetC && c.includes(targetC));
-  }) : [];
+  });
+
+  const listaRegalos = modoPublico ? remoto.regalos : regalosPasesReferidos;
 
   // Synchronized catalog matching LoyaltyRewards
-  const rawList = Array.isArray(catalogoPremios) && catalogoPremios.length > 0 ? catalogoPremios : DEFAULT_CATALOGO_PREMIOS;
+  const catalogoFuente = modoPublico ? remoto.premios : catalogoPremios;
+  const rawList = Array.isArray(catalogoFuente) && catalogoFuente.length > 0 ? catalogoFuente : DEFAULT_CATALOGO_PREMIOS;
   const premiosList = rawList.map(p => ({
     id: p.id,
     nombre: p.nombre || p.titulo || "Servicio Los Pits",
@@ -140,10 +196,38 @@ export default function CustomerPortal({
     setShowGiftModal(true);
   };
 
-  const handleConfirmarDonacion = (e) => {
+  const handleConfirmarDonacion = async (e) => {
     e.preventDefault();
     if (!selectedPremio || !activeCliente) return;
     const ptsReq = selectedPremio.puntos;
+
+    if (modoPublico) {
+      // 🔐 El servidor valida el saldo y descuenta los puntos
+      if (donando) return;
+      setDonando(true);
+      try {
+        const res = await callRpc("portal_donar", {
+          p_taller: tallerPublico,
+          p_telefono: activeCliente.telefono,
+          p_premio_id: String(selectedPremio.id),
+          p_invitado_nombre: invitadoNombre.trim(),
+          p_invitado_telefono: invitadoTelefono.trim()
+        }, 20000);
+        if (!res || !res.ok) {
+          alert(mensajePortal(res?.error));
+          if (res?.puntos !== undefined) setActiveCliente(prev => ({ ...prev, puntos: parseInt(res.puntos) || 0 }));
+          return;
+        }
+        setRemoto(prev => ({ ...prev, regalos: [res.regalo, ...(prev.regalos || [])] }));
+        setGeneratedGift(res.regalo);
+        setActiveCliente(prev => ({ ...prev, puntos: parseInt(res.puntos) || 0 }));
+      } catch (err) {
+        alert(mensajePortal(err?.code));
+      } finally {
+        setDonando(false);
+      }
+      return;
+    }
 
     const newGift = generateGiftPassQR({
       clienteDonanteTelefono: activeCliente.telefono,
@@ -182,7 +266,7 @@ export default function CustomerPortal({
 
   const handleShareWhatsApp = (gift) => {
     if (!gift) return;
-    const giftUrl = getPortalUrl({ qr: gift.codigoQR });
+    const giftUrl = getPortalUrl({ qr: gift.codigoQR, taller: modoPublico ? tallerPublico : undefined });
     const msg = `🎁 ¡Hola ${gift.invitadoNombre || ''}! Te he regalado un servicio de *${gift.servicioNombre}* en *Los Pits Taller & Carwash*. Presenta este código QR en recepción para disfrutarlo gratis: *${gift.codigoQR}*. Ver pase digital: ${giftUrl}`;
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, "_blank");
   };
@@ -233,12 +317,13 @@ export default function CustomerPortal({
             <span>Bienvenido a Los Pits</span>
           </div>
           <h2 style={styles.heroTitle}>Consulta tus Puntos Pits e Historial de Vehículo</h2>
-          <p style={styles.heroSub}>Ingresa tu número de teléfono, nombre o placa para ver tu pase digital e historial técnico.</p>
+          <p style={styles.heroSub}>{modoPublico ? "Ingresa tu número de teléfono o la placa de tu vehículo para ver tu pase digital e historial técnico." : "Ingresa tu número de teléfono, nombre o placa para ver tu pase digital e historial técnico."}</p>
 
           <form onSubmit={handleSearchSubmit} style={styles.searchForm}>
             <div style={styles.searchInputWrapper}>
               <Search size={20} color="#9ca3af" />
               <input
+                id="portal-busqueda"
                 type="text"
                 placeholder="Ej. 55443322 o P-420DSK..."
                 value={searchTerm}
@@ -246,10 +331,13 @@ export default function CustomerPortal({
                 style={styles.searchInput}
               />
             </div>
-            <button type="submit" className="btn btn-primary" style={styles.searchBtn}>
-              Consultar Portal
+            <button id="portal-consultar" type="submit" className="btn btn-primary" style={styles.searchBtn} disabled={buscando}>
+              {buscando ? "Consultando..." : "Consultar Portal"}
             </button>
           </form>
+          {errorBusqueda && (
+            <p style={{ color: "#f87171", marginTop: "12px", fontSize: "0.9rem", fontWeight: 600 }}>{errorBusqueda}</p>
+          )}
 
           <div style={styles.heroFeaturesRow}>
             <div style={styles.featurePill}>
@@ -510,11 +598,11 @@ export default function CustomerPortal({
               </div>
 
               {/* LIST OF GENERATED GIFTS */}
-              {Array.isArray(regalosPasesReferidos) && regalosPasesReferidos.length > 0 && (
+              {Array.isArray(listaRegalos) && listaRegalos.length > 0 && (
                 <div style={{ marginTop: "30px" }}>
                   <h4 style={styles.sectionTitle}>Tus Pases de Regalo Generados</h4>
                   <div style={styles.giftsList}>
-                    {regalosPasesReferidos.map(g => (
+                    {listaRegalos.map(g => (
                       <div key={g.id} style={styles.giftCardItem}>
                         <div>
                           <span style={styles.giftBadge}>{g.servicioNombre}</span>
