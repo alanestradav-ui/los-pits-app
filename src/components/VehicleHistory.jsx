@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { leerEncargoMovil, borrarEncargosMovil } from "../utils/movil";
 import { createPortal } from "react-dom";
 import { 
   Search, 
@@ -349,7 +350,8 @@ export default function VehicleHistory({
   cuentasPorPagar = [],
   setCuentasPorPagar
 }) {
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(() => leerEncargoMovil("buscar_historial") || "");
+  useEffect(() => { borrarEncargosMovil(["buscar_historial"]); }, []);
   const [selectedPlaca, setSelectedPlaca] = useState(null);
   const [expandedOrders, setExpandedOrders] = useState({});
   const [expandedFinancials, setExpandedFinancials] = useState({});

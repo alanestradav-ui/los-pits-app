@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { leerEncargoMovil, borrarEncargosMovil } from "../utils/movil";
 import { 
   Users, 
   Car, 
@@ -80,7 +81,8 @@ export default function ClientesVehiculos({
   const [activeSubTab, setActiveSubTab] = useState("clientes");
   
   // Search states
-  const [searchClient, setSearchClient] = useState("");
+  const [searchClient, setSearchClient] = useState(() => leerEncargoMovil("buscar_clientesVehiculos") || "");
+  useEffect(() => { borrarEncargosMovil(["buscar_clientesVehiculos"]); }, []);
   const [searchVehicle, setSearchVehicle] = useState("");
   
   // Client form states

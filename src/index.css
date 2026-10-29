@@ -501,9 +501,11 @@ p {
     height: auto;
   }
 
-  /* Encabezados y filas de botones: se acomodan en varias líneas en lugar de salirse */
-  .app-main [style*="display: flex"][style*="justify-content: space-between"],
-  .app-main [style*="display: flex"][style*="gap"] {
+  /* Encabezados y filas de botones: se acomodan en varias líneas en lugar de salirse.
+     (No aplica a contenedores en columna: con altura fija, el ajuste mandaba el contenido
+     a una segunda columna fuera de la pantalla y el Taller / Carwash se veían vacíos.) */
+  .app-main [style*="display: flex"][style*="justify-content: space-between"]:not([style*="flex-direction: column"]),
+  .app-main [style*="display: flex"][style*="gap"]:not([style*="flex-direction: column"]) {
     flex-wrap: wrap;
   }
 
@@ -543,7 +545,7 @@ p {
   [style*="position: fixed"][style*="z-index"][style*="justify-content: center"] > * * {
     max-width: 100%;
   }
-  [style*="position: fixed"][style*="z-index"][style*="justify-content: center"] [style*="display: flex"] {
+  [style*="position: fixed"][style*="z-index"][style*="justify-content: center"] [style*="display: flex"]:not([style*="flex-direction: column"]) {
     flex-wrap: wrap;
   }
 
@@ -599,3 +601,190 @@ p {
 }
 
 
+
+/* ==========================================================================
+   📱 NAVEGACIÓN MÓVIL (barra inferior, menú "Más", inicio "Hoy")
+   Todo está oculto en PC; solo aparece en pantallas de celular.
+   ========================================================================== */
+.barra-inferior-movil { display: none; }
+
+@media (max-width: 768px) {
+  .barra-inferior-movil {
+    display: flex;
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 1500;
+    height: calc(64px + env(safe-area-inset-bottom, 0px));
+    padding: 0 4px env(safe-area-inset-bottom, 0px);
+    background: rgba(12, 15, 22, 0.94);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.45);
+  }
+  .barra-inferior-item {
+    flex: 1;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    background: none; border: none; color: #8b93a3;
+    font-family: var(--font-sans); font-size: 0.68rem; font-weight: 600;
+    cursor: pointer; padding: 6px 0; position: relative;
+    -webkit-tap-highlight-color: transparent;
+    transition: color 0.2s ease;
+  }
+  .barra-inferior-item.activo { color: #fff; }
+  .barra-inferior-item.activo .barra-inferior-icono {
+    background: linear-gradient(135deg, rgba(59,130,246,0.35), rgba(168,85,247,0.25));
+    color: #93c5fd;
+  }
+  .barra-inferior-icono {
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+    width: 52px; height: 30px; border-radius: 16px;
+    transition: background 0.25s ease, transform 0.15s ease;
+  }
+  .barra-inferior-item:active .barra-inferior-icono { transform: scale(0.9); }
+
+  /* En celular el botón flotante y el menú lateral se reemplazan por la barra inferior */
+  .con-barra-movil .mobile-fab-menu { display: none !important; }
+  .con-barra-movil .app-main > * { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important; }
+}
+
+.barra-inferior-badge {
+  position: absolute; top: -5px; right: 4px;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 9px; background: #ef4444; color: #fff;
+  font-size: 10px; font-weight: 800; line-height: 18px; text-align: center;
+  box-shadow: 0 0 0 2px #0c0f16;
+}
+
+/* Menú "Más" a pantalla completa */
+.menu-mas-movil {
+  position: fixed; inset: 0; z-index: 1400;
+  background: radial-gradient(circle at 20% 0%, rgba(59,130,246,0.14), transparent 55%), #0a0c10;
+  display: flex; flex-direction: column;
+  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  animation: menuMasEntrada 0.22s ease-out;
+}
+@keyframes menuMasEntrada { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+.menu-mas-cabecera { display: flex; justify-content: space-between; align-items: center; padding: 18px 16px 10px; gap: 10px; }
+.menu-mas-cerrar {
+  width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); color: #fff; cursor: pointer;
+}
+.menu-mas-buscador, .inicio-buscador {
+  display: flex; align-items: center; gap: 10px;
+  margin: 4px 16px 12px; padding: 0 14px; height: 50px;
+  border-radius: 14px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.09);
+}
+.inicio-buscador { margin: 0 0 10px; }
+.menu-mas-buscador input, .inicio-buscador input {
+  flex: 1; min-width: 0; background: none; border: none; outline: none;
+  color: #fff; font-family: var(--font-sans); font-size: 16px;
+}
+.menu-mas-contenido { flex: 1; overflow-y: auto; padding: 4px 16px 20px; overscroll-behavior: contain; }
+.menu-mas-grupo { margin: 0 0 10px; font-size: 0.74rem !important; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+.menu-mas-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 6px; }
+.menu-mas-tile {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  background: none; border: none; padding: 4px 0; cursor: pointer; color: #e5e7eb;
+  -webkit-tap-highlight-color: transparent;
+}
+.menu-mas-tile-icono {
+  position: relative; width: 56px; height: 56px; border-radius: 18px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(255,255,255,0.06);
+  transition: transform 0.15s ease;
+}
+.menu-mas-tile:active .menu-mas-tile-icono { transform: scale(0.9); }
+.menu-mas-tile.activo .menu-mas-tile-icono { box-shadow: 0 0 0 2px #3b82f6; }
+.menu-mas-tile-texto { font-size: 0.72rem; font-weight: 600; text-align: center; line-height: 1.2; }
+
+/* Inicio "Hoy" */
+.inicio-resultados {
+  margin: -4px 0 12px; border-radius: 14px; overflow: hidden;
+  background: rgba(16,19,26,0.98); border: 1px solid rgba(255,255,255,0.09);
+}
+.inicio-resultado {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; background: none; border: none; border-bottom: 1px solid rgba(255,255,255,0.05);
+  cursor: pointer; min-height: 56px;
+}
+.inicio-resultado:last-child { border-bottom: none; }
+.inicio-acciones { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px; }
+.inicio-accion {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
+  min-height: 96px; padding: 14px; border-radius: 18px; cursor: pointer;
+  color: #fff; font-family: var(--font-sans); font-weight: 800; font-size: 0.95rem;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--accion-color) 26%, transparent), rgba(255,255,255,0.03));
+  border: 1px solid color-mix(in srgb, var(--accion-color) 45%, transparent);
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.15s ease;
+}
+.inicio-accion:active { transform: scale(0.97); }
+.inicio-accion-icono {
+  position: relative; width: 44px; height: 44px; border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accion-color); color: #fff;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--accion-color) 45%, transparent);
+}
+.inicio-chips { display: flex; gap: 8px; overflow-x: auto; margin-top: 14px; padding-bottom: 4px; flex-wrap: nowrap !important; scrollbar-width: none; }
+.inicio-chips::-webkit-scrollbar { display: none; }
+.inicio-chip {
+  flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  min-width: 92px; padding: 12px; border-radius: 14px; cursor: pointer;
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+  font-family: var(--font-sans);
+}
+.inicio-chip-ventas {
+  min-width: 150px; cursor: default;
+  background: linear-gradient(135deg, rgba(16,185,129,0.25), rgba(6,182,212,0.12));
+  border-color: rgba(16,185,129,0.4);
+}
+.inicio-orden {
+  width: 100%; display: flex; align-items: center; gap: 12px;
+  padding: 12px; border-radius: 14px; cursor: pointer; min-height: 64px;
+  background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.07);
+  font-family: var(--font-sans);
+}
+.inicio-orden-placa {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px;
+  padding: 6px 8px; border-radius: 8px; min-width: 76px; justify-content: center;
+  background: rgba(59,130,246,0.15); color: #93c5fd;
+  font-family: var(--font-display); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em;
+}
+.inicio-estado { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 999px; font-size: 0.68rem; font-weight: 800; }
+.inicio-vacio { padding: 16px; border-radius: 14px; text-align: center; color: var(--text-muted); font-size: 0.86rem; background: rgba(255,255,255,0.03); border: 1px dashed rgba(255,255,255,0.1); }
+
+/* Hoja que sube desde abajo */
+.hoja-movil-fondo {
+  position: fixed; inset: 0; z-index: 2500;
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  display: flex; align-items: flex-end;
+}
+.hoja-movil {
+  width: 100%; max-height: 85vh; display: flex; flex-direction: column;
+  padding: 10px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+  border-radius: 22px 22px 0 0; background: #121620; border-top: 1px solid rgba(255,255,255,0.1);
+  animation: hojaSube 0.25s ease-out;
+}
+.hoja-movil-asa { width: 44px; height: 5px; border-radius: 3px; background: rgba(255,255,255,0.2); margin: 0 auto 12px; }
+@keyframes hojaSube { from { transform: translateY(100%); } to { transform: none; } }
+
+/* Botón "Nueva orden / Nuevo lavado" que reemplaza al formulario largo en celular */
+.boton-nuevo-movil {
+  width: 100%; min-height: 56px; border-radius: 16px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  font-family: var(--font-sans); font-size: 1rem; font-weight: 800; color: #fff;
+  background: linear-gradient(135deg, #3b82f6, #6366f1); border: none;
+  box-shadow: 0 8px 24px rgba(59,130,246,0.35);
+}
+
+/* Contenedor del inicio "Hoy" (se desplaza dentro del área principal) */
+.inicio-movil {
+  flex: 1;
+  height: 100%;
+  overflow-y: auto;
+  padding: 18px 14px;
+  -webkit-overflow-scrolling: touch;
+}

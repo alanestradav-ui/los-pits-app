@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
+import { tomarEncargoMovil } from "../utils/movil";
 import { 
   Calendar, 
   CalendarCheck, 
@@ -71,6 +72,8 @@ export default function Citas({
 
   // Modal States
   const [isNewCitaOpen, setIsNewCitaOpen] = useState(false);
+  // 📱 Inicio → "Agendar cita" abre directamente el formulario
+  useEffect(() => { if (tomarEncargoMovil("nueva_cita") === "1") setIsNewCitaOpen(true); }, []);
   const [editingCita, setEditingCita] = useState(null);
   const [reminderModalCita, setReminderModalCita] = useState(null);
   const [clientVehiclesModalData, setClientVehiclesModalData] = useState({

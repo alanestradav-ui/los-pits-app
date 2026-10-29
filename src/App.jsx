@@ -23,6 +23,9 @@ import LoyaltyRewards from "./components/LoyaltyRewards";
 import CustomerPortal from "./components/CustomerPortal";
 import SaaSAdmin from "./components/SaaSAdmin";
 import Citas from "./components/Citas";
+import InicioMovil from "./components/movil/InicioMovil";
+import { BarraInferiorMovil, MenuMasMovil, modulosPermitidos } from "./components/movil/NavegacionMovil";
+import { useEsMovil } from "./utils/movil";
 import { DEFAULT_CATALOGO_PREMIOS } from "./utils/wallet";
 import { DEFAULT_BRANDING, getCleanBranding, setActiveBranding } from "./utils/branding";
 import { DEFAULT_ACTIVE_MODULES, isModuleActive } from "./utils/modulesConfig";
@@ -748,6 +751,21 @@ export default function App() {
     return "dashboard";
   });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // 📱 Navegación de celular (barra inferior + menú "Más"). En PC no cambia nada.
+  const esMovil = useEsMovil();
+  const [menuMasAbierto, setMenuMasAbierto] = useState(false);
+  const inicioMovilAplicado = useRef(false);
+  useEffect(() => {
+    if (esMovil && !inicioMovilAplicado.current) {
+      inicioMovilAplicado.current = true;
+      if (currentTab === "dashboard") setCurrentTab("inicio");
+    }
+    if (!esMovil) {
+      setMenuMasAbierto(false);
+      if (currentTab === "inicio") setCurrentTab("dashboard");
+    }
+  }, [esMovil]);
 
   useEffect(() => {
     try {
@@ -2472,7 +2490,7 @@ export default function App() {
 
   // If the active module is disabled by the workshop, seamlessly route back to Dashboard
   useEffect(() => {
-    if (currentTab && currentTab !== "dashboard" && currentTab !== "configuracion" && currentTab !== "saasAdmin" && currentTab !== "pantalla" && currentTab !== "portal") {
+    if (currentTab && currentTab !== "dashboard" && currentTab !== "inicio" && currentTab !== "configuracion" && currentTab !== "saasAdmin" && currentTab !== "pantalla" && currentTab !== "portal") {
       if (!isModuleActive(currentTab, activeModules)) {
         setCurrentTab("dashboard");
       }
@@ -2519,7 +2537,7 @@ export default function App() {
       } else if (cleanUserObj.rol === "lavador") {
         setCurrentTab("carwash");
       } else {
-        setCurrentTab("dashboard");
+        setCurrentTab(esMovil ? "inicio" : "dashboard");
       }
     }
     // 🔐 Descargar y fusionar los datos del taller con la nueva sesión
@@ -2581,7 +2599,7 @@ export default function App() {
   }
 
   return (
-    <div style={styles.appContainer} className="app-container">
+    <div style={styles.appContainer} className={`app-container${esMovil ? " con-barra-movil" : ""}`}>
       {/* 1. SIDEBAR NAVIGATION */}
       <Sidebar 
         usuarioActual={usuarioActivo} 
@@ -2602,6 +2620,7 @@ export default function App() {
       />
 
       {/* Floating Menu Button for mobile */}
+      {!esMovil && (
       <button 
         onClick={() => setIsSidebarOpen(!isSidebarOpen)}
         className="mobile-fab-menu"
@@ -2612,9 +2631,65 @@ export default function App() {
           <span className="notif-pin notif-pin-floating">{missingExternalCostCount + (userHasPermission(usuarioActivo, "recompensas") ? puntosPorVencerCount : 0)}</span>
         )}
       </button>
+      )}
+
+      {/* 📱 Barra inferior y menú "Más" (solo celular) */}
+      {esMovil && (() => {
+        const puede = (id) => userHasPermission(usuarioActivo, id);
+        const permitidos = modulosPermitidos(puede, activeModules);
+        const badgesMovil = { taller: missingExternalCostCount, recompensas: puede("recompensas") ? puntosPorVencerCount : 0 };
+        const navegar = (id) => {
+          setMenuMasAbierto(false);
+          setIsSidebarOpen(false);
+          setCurrentTab(id);
+        };
+        return (
+          <>
+            <BarraInferiorMovil
+              currentTab={currentTab}
+              onNavegar={navegar}
+              onAbrirMas={() => setMenuMasAbierto(v => !v)}
+              menuAbierto={menuMasAbierto}
+              permitidos={permitidos}
+              badges={badgesMovil}
+            />
+            {menuMasAbierto && (
+              <MenuMasMovil
+                permitidos={permitidos}
+                currentTab={currentTab}
+                onNavegar={navegar}
+                onCerrar={() => setMenuMasAbierto(false)}
+                usuario={usuarioActivo}
+                onLogout={() => { setMenuMasAbierto(false); handleLogout(); }}
+                realtimeStatus={realtimeStatus}
+                onSincronizar={() => { setMenuMasAbierto(false); forcePullFromCloud(true); }}
+                badges={badgesMovil}
+                nombreTaller={workshopBranding?.nombreEmpresa}
+              />
+            )}
+          </>
+        );
+      })()}
 
       {/* 2. DYNAMIC CONTENT AREA */}
       <main style={styles.mainContent} className="app-main">
+        {currentTab === "inicio" && (
+          <InicioMovil
+            ordenes={ordenes}
+            carwash={carwash}
+            citas={citas}
+            clientes={clientes}
+            vehiculos={vehiculos}
+            usuario={usuarioActivo}
+            puede={(id) => userHasPermission(usuarioActivo, id) && (id === "dashboard" || isModuleActive(id, activeModules))}
+            onNavegar={(id) => { setMenuMasAbierto(false); setCurrentTab(id); }}
+            verMontos={(() => {
+              const r = String(usuarioActivo?.rol || "").toLowerCase();
+              return String(usuarioActivo?.user || "").toLowerCase().trim() === "admin" || /admin|cajer|gerente|jefe/.test(r);
+            })()}
+            nombreTaller={workshopBranding?.nombreEmpresa}
+          />
+        )}
         {currentTab === "dashboard" && userHasPermission(usuarioActivo, "dashboard") && (
           <Dashboard 
             ordenes={ordenes} 

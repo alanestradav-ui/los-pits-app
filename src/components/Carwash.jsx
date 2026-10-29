@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { 
   Car, 
@@ -22,6 +22,7 @@ import { findVehiclesForClient } from "../utils/vehicleHelpers";
 import { DEFAULT_BRANDING, getCleanBranding, drawCanvasHeader, applyDocumentTheme } from "../utils/branding";
 import ClientVehiclesModal from "./ClientVehiclesModal";
 import { jsPDF } from "jspdf";
+import { useEsMovil, leerEncargoMovil, borrarEncargosMovil } from "../utils/movil";
 
 const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
 
@@ -130,7 +131,11 @@ export default function Carwash({
   const [inputAccessoryDesc, setInputAccessoryDesc] = useState("");
   const [inputAccessoryQty, setInputAccessoryQty] = useState("1");
   const [showAccessorySuggestions, setShowAccessorySuggestions] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(() => leerEncargoMovil("buscar_carwash") || "");
+  // 📱 En celular el formulario de nuevo lavado se abre con un botón (o desde Inicio → "Nuevo lavado")
+  const esMovil = useEsMovil();
+  const [formMovilAbierto, setFormMovilAbierto] = useState(() => leerEncargoMovil("nuevo_lavado") === "1");
+  useEffect(() => { borrarEncargosMovil(["buscar_carwash", "nuevo_lavado"]); }, []);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedFullPhoto, setSelectedFullPhoto] = useState(null);
   const [nit, setNit] = useState("");
@@ -1616,11 +1621,21 @@ export default function Carwash({
         <div className={isManager ? "responsive-carwash-grid" : ""} style={isManager ? undefined : styles.workerGrid}>
         
         {/* Left Column: Create Wash Job (Only for Admin/Cajero) */}
-        {isManager && (
+        {isManager && esMovil && !formMovilAbierto && (
+          <button id="carwash-nuevo-lavado-movil" type="button" className="boton-nuevo-movil" style={{ background: "linear-gradient(135deg, #06b6d4, #a855f7)" }} onClick={() => setFormMovilAbierto(true)}>
+            <Plus size={22} /> Registrar nuevo lavado
+          </button>
+        )}
+        {isManager && (!esMovil || formMovilAbierto) && (
           <div className="glass-panel" style={styles.formCard}>
             <div style={styles.formHeader}>
               <Plus size={20} color="var(--color-secondary)" />
               <h3 style={styles.formTitle}>Registrar Nuevo Lavado</h3>
+              {esMovil && (
+                <button type="button" onClick={() => setFormMovilAbierto(false)} style={{ marginLeft: "auto", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "#fff", borderRadius: "10px", padding: "6px 12px", fontWeight: 700 }}>
+                  Cerrar
+                </button>
+              )}
             </div>
             
             <form onSubmit={registrarLavado} style={styles.form}>

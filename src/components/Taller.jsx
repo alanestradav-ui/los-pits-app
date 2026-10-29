@@ -36,6 +36,7 @@ import ServicePackagesManager, { aplicarPaqueteAPresupuesto, paqueteDesdePresupu
 import { jsPDF } from "jspdf";
 import { AutorizacionClienteModal, RegistrosNoAutorizados } from "./AutorizacionClienteModal";
 import { totalesPresupuesto, filtrarPresupuesto, crearRegistroNoAutorizado } from "../utils/cotizaciones";
+import { useEsMovil, leerEncargoMovil, borrarEncargosMovil } from "../utils/movil";
 
 const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
 
@@ -1685,7 +1686,11 @@ export default function Taller({
   };
   
   const [selectedFullPhoto, setSelectedFullPhoto] = useState(null);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(() => leerEncargoMovil("buscar_taller") || "");
+  // 📱 En celular el formulario de nueva orden se abre con un botón (o desde Inicio → "Nueva orden")
+  const esMovil = useEsMovil();
+  const [formMovilAbierto, setFormMovilAbierto] = useState(() => leerEncargoMovil("nueva_orden") === "1");
+  useEffect(() => { borrarEncargosMovil(["buscar_taller", "nueva_orden"]); }, []);
 
   const partSuggestions = inputPartDesc.trim()
     ? [
@@ -4710,11 +4715,21 @@ export default function Taller({
       <div style={isManager ? styles.managerGrid : styles.workerGrid}>
         
         {/* Left Column: Create Order Form (Only for Admin/Cajero) */}
-        {isManager && (
+        {isManager && esMovil && !formMovilAbierto && (
+          <button id="taller-nueva-orden-movil" type="button" className="boton-nuevo-movil" onClick={() => setFormMovilAbierto(true)}>
+            <Plus size={22} /> Nueva orden de reparación
+          </button>
+        )}
+        {isManager && (!esMovil || formMovilAbierto) && (
           <div className="glass-panel" style={styles.formCard}>
             <div style={styles.formHeader}>
               <Plus size={20} color="var(--color-primary)" />
               <h3 style={styles.formTitle}>Nueva Orden de Reparación</h3>
+              {esMovil && (
+                <button type="button" onClick={() => setFormMovilAbierto(false)} style={{ marginLeft: "auto", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "#fff", borderRadius: "10px", padding: "6px 12px", fontWeight: 700 }}>
+                  Cerrar
+                </button>
+              )}
             </div>
 
             {ingresoExitosoMsg && (
