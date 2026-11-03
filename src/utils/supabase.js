@@ -1,6 +1,24 @@
 // src/utils/supabase.js
 import { createClient } from '@supabase/supabase-js';
 
+// 🛡️ PROTECCIÓN CONTRA PÉRDIDA DE DATOS
+// Listas donde los registros solo se eliminan pasando por la Papelera. Antes de guardarlas,
+// si el servidor tiene una versión que este equipo no ha visto, se descarga y se FUSIONA
+// (nunca se sobrescribe a ciegas). Así, un equipo con datos viejos (o la cola sin conexión con
+// una copia antigua) ya no puede borrar órdenes, lavados ni clientes de los demás equipos.
+const LLAVES_PROTEGIDAS = [
+  "ordenes", "carwash", "clientes", "vehiculos", "parkinghistory", "cafeteriasales", "tiendasales",
+  "compras", "cuentasporcobrar", "cuentasporpagar", "citas", "cotizacionesexpress", "puntosrecompensas",
+  "historialcanjes", "payrollhistory", "nominamovimientos"
+];
+let fusionNube = null;
+let alFusionarNube = null;
+/** La app registra aquí su función de fusión (local + nube) y qué hacer con el resultado */
+export const registrarFusionNube = (fusion, alFusionar) => {
+  fusionNube = fusion;
+  alFusionarNube = alFusionar;
+};
+
 const DEFAULT_SUPABASE_URL = 'https://mrpdkjhmzioyygictjua.supabase.co';
 const DEFAULT_SUPABASE_KEY = 'sb_publishable_0kZjBWa7tBuHTCXIzEYKTA_3QusIMTf';
 
@@ -333,6 +351,33 @@ export const syncKeyToCloud = async (rawKey, value) => {
   const baseKeyLower = key.replace(/^[a-z]+_/, '').toLowerCase();
   const isOrdersKey = baseKeyLower === 'ordenes';
   const isCarwashKey = baseKeyLower === 'carwash';
+
+  // 🛡️ Fusionar con la versión del servidor antes de guardar (ver LLAVES_PROTEGIDAS)
+  if (fusionNube && Array.isArray(cleanVal) && LLAVES_PROTEGIDAS.includes(baseKeyLower)) {
+    try {
+      const versiones = await cloudVersions([key], 10000);
+      const verNube = versiones && versiones[0] ? (Date.parse(versiones[0].updated_at) || 0) : 0;
+      if (verNube && cloudKeyVersions[key] !== verNube) {
+        const filas = await cloudGet([key], 30000);
+        if (filas && filas[0]) {
+          const fusionado = fusionNube(baseKeyLower, cleanVal, filas[0].value, key);
+          if (Array.isArray(fusionado)) {
+            value = fusionado;
+            if (alFusionarNube) {
+              try { alFusionarNube(key, baseKeyLower, fusionado); } catch (e) { /* solo actualiza la pantalla */ }
+            }
+          }
+          cloudKeyVersions[key] = Date.parse(filas[0].updated_at) || verNube;
+        }
+      }
+    } catch (errFusion) {
+      // Sin poder comparar con el servidor NO se escribe (se reintenta después)
+      console.warn(`[Sync] No se pudo verificar "${key}" en el servidor antes de guardar; se reintentará.`, errFusion?.message);
+      if (errFusion?.code && AUTH_ERRORS.includes(errFusion.code)) return false;
+      addToOfflineQueue(key, cleanVal);
+      return false;
+    }
+  }
 
   const sanitizePayload = (data) => {
     const parsed = safeParseJSON(data);

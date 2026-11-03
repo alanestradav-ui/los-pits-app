@@ -30,7 +30,7 @@ import { DEFAULT_CATALOGO_PREMIOS } from "./utils/wallet";
 import { DEFAULT_BRANDING, getCleanBranding, setActiveBranding } from "./utils/branding";
 import { DEFAULT_ACTIVE_MODULES, isModuleActive } from "./utils/modulesConfig";
 import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocalStorage, getActiveTenantId, restoreMasterBackup, purgeStorageBloat, getDeletedUsernames, addDeletedUsername, removeDeletedUsername, getDeletedFixedCosts, addDeletedFixedCost, removeDeletedFixedCost, getTombMap, saveTombMap, mergeTombMaps, normalizeTombMap } from "./utils/storage";
-import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout, processOfflineQueue, cloudKeyVersions, getSessionForTenant, getSession, clearSession, logoutRemoto, cloudGet, cloudVersions, isSuperAdminSession, removeFromOfflineQueue } from "./utils/supabase";
+import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout, processOfflineQueue, cloudKeyVersions, getSessionForTenant, getSession, clearSession, logoutRemoto, cloudGet, cloudVersions, isSuperAdminSession, removeFromOfflineQueue, registrarFusionNube } from "./utils/supabase";
 import { getMissingExternalCosts } from "./utils/workshopCalc";
 import { getPuntosPorVencer, yaSeAvisoVencimiento } from "./utils/loyaltyExpiry";
 import { initHourlyBackupScheduler, checkAndCreateHourlyBackup } from "./services/backupService";
@@ -591,7 +591,25 @@ const mergeCollections = (key, localValRaw, cloudValRaw, trashRaw = null, active
   return cleanCloud;
 };
 
+// 🛡️ PROTECCIÓN CONTRA PÉRDIDA DE DATOS: antes de guardar una lista protegida, si el servidor
+// tiene cambios que este equipo no ha visto, se fusionan (unión por id, gana el más reciente)
+// en lugar de sobrescribir. El resultado se refleja también en la pantalla y en este equipo.
+const llaveBaseDesdeMinusculas = (baseLower) =>
+  ARRAY_KEYS.find(k => k.toLowerCase() === baseLower) || baseLower;
 
+registrarFusionNube(
+  (baseLower, valorLocal, valorNube) => {
+    const bk = llaveBaseDesdeMinusculas(baseLower);
+    return mergeCollections(bk, valorLocal, valorNube, null, getActiveTenantId());
+  },
+  (key, baseLower, fusionado) => {
+    const bk = llaveBaseDesdeMinusculas(baseLower);
+    globalLastSynced[key] = JSON.stringify(fusionado);
+    try { setTenantLocalStorage(bk, fusionado, getActiveTenantId()); } catch (e) { /* cuota llena */ }
+    const setter = globalActiveSetters[bk];
+    if (typeof setter === "function") setter(fusionado);
+  }
+);
 
 export default function App() {
   const isTenantSwitchingRef = useRef(false);
