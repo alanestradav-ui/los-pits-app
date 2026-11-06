@@ -1187,6 +1187,46 @@ export default function App() {
     } catch (e) { return 0; }
   }, [puntosRecompensas, reglasPrograma]);
 
+  // 🔔 Cuentas por cobrar / pagar cuya fecha programada de cobro o pago es HOY o ya pasó (con saldo pendiente)
+  const cuentasVencidasLista = useMemo(() => {
+    try {
+      const d = new Date();
+      const hoy = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const vencida = (c) => c && c.fechaVencimiento && String(c.fechaVencimiento).slice(0, 10) <= hoy && (parseFloat(c.saldo) || 0) > 0.009;
+      return [
+        ...(Array.isArray(cuentasPorCobrar) ? cuentasPorCobrar : []).filter(vencida).map(c => ({ ...c, _tipo: "cobrar" })),
+        ...(Array.isArray(cuentasPorPagar) ? cuentasPorPagar : []).filter(vencida).map(c => ({ ...c, _tipo: "pagar" }))
+      ];
+    } catch (e) { return []; }
+  }, [cuentasPorCobrar, cuentasPorPagar]);
+  const cuentasVencidasCount = cuentasVencidasLista.length;
+
+  // 🔔 Notificación del navegador (una vez al día por cuenta) cuando llega la fecha de cobro / pago
+  useEffect(() => {
+    if (!usuarioActual || cuentasVencidasLista.length === 0) return;
+    if (!userHasPermission(usuarioActual, "cuentas")) return;
+    try {
+      const d = new Date();
+      const hoy = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const claveAviso = `${tenantId}_avisos_cuentas_${hoy}`;
+      const avisados = new Set(JSON.parse(localStorage.getItem(claveAviso) || "[]"));
+      const nuevas = cuentasVencidasLista.filter(c => !avisados.has(`${c._tipo}_${c.id}`));
+      if (nuevas.length === 0) return;
+      const mostrar = () => {
+        const texto = nuevas.slice(0, 4).map(c => `${c._tipo === "cobrar" ? "Cobrar a" : "Pagar a"} ${c._tipo === "cobrar" ? c.cliente : c.proveedor}: Q${(parseFloat(c.saldo) || 0).toFixed(2)}`).join("\n");
+        try {
+          new Notification(`🔔 ${nuevas.length} cobro(s)/pago(s) programado(s) para hoy o vencido(s)`, { body: texto + (nuevas.length > 4 ? `\n…y ${nuevas.length - 4} más` : "") });
+        } catch (e) { /* algunos celulares solo permiten notificaciones desde el service worker */ }
+      };
+      if (typeof Notification !== "undefined") {
+        if (Notification.permission === "granted") mostrar();
+        else if (Notification.permission === "default") Notification.requestPermission().then(p => { if (p === "granted") mostrar(); }).catch(() => {});
+      }
+      nuevas.forEach(c => avisados.add(`${c._tipo}_${c.id}`));
+      localStorage.setItem(claveAviso, JSON.stringify(Array.from(avisados)));
+    } catch (e) { /* sin bloqueo */ }
+  }, [cuentasVencidasLista, usuarioActual, tenantId]);
+
   // Note: Master backup seeding for first-visit is handled by getTenantLocalStorage.
   // User data in localStorage is ALWAYS trusted once it exists — never overwritten by static backup.
 
@@ -2634,7 +2674,7 @@ export default function App() {
         activeTenantId={tenantId}
         onTenantChange={isSuperAdminSession() ? handleSwitchTenant : null}
         activeModules={activeModules}
-        badges={{ taller: missingExternalCostCount, recompensas: userHasPermission(usuarioActivo, "recompensas") ? puntosPorVencerCount : 0 }}
+        badges={{ taller: missingExternalCostCount, cuentas: cuentasVencidasCount, recompensas: userHasPermission(usuarioActivo, "recompensas") ? puntosPorVencerCount : 0 }}
       />
 
       {/* Floating Menu Button for mobile */}
@@ -2645,8 +2685,8 @@ export default function App() {
         title="Menú"
       >
         ☰
-        {(missingExternalCostCount + (userHasPermission(usuarioActivo, "recompensas") ? puntosPorVencerCount : 0)) > 0 && (
-          <span className="notif-pin notif-pin-floating">{missingExternalCostCount + (userHasPermission(usuarioActivo, "recompensas") ? puntosPorVencerCount : 0)}</span>
+        {(missingExternalCostCount + (userHasPermission(usuarioActivo, "cuentas") ? cuentasVencidasCount : 0) + (userHasPermission(usuarioActivo, "recompensas") ? puntosPorVencerCount : 0)) > 0 && (
+          <span className="notif-pin notif-pin-floating">{missingExternalCostCount + (userHasPermission(usuarioActivo, "cuentas") ? cuentasVencidasCount : 0) + (userHasPermission(usuarioActivo, "recompensas") ? puntosPorVencerCount : 0)}</span>
         )}
       </button>
       )}
@@ -2655,7 +2695,7 @@ export default function App() {
       {esMovil && (() => {
         const puede = (id) => userHasPermission(usuarioActivo, id);
         const permitidos = modulosPermitidos(puede, activeModules);
-        const badgesMovil = { taller: missingExternalCostCount, recompensas: puede("recompensas") ? puntosPorVencerCount : 0 };
+        const badgesMovil = { taller: missingExternalCostCount, cuentas: puede("cuentas") ? cuentasVencidasCount : 0, recompensas: puede("recompensas") ? puntosPorVencerCount : 0 };
         const navegar = (id) => {
           setMenuMasAbierto(false);
           setIsSidebarOpen(false);

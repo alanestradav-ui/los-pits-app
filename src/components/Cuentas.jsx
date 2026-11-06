@@ -57,11 +57,109 @@ export default function Cuentas({
   const [cNit, setCNit] = useState("");
   const [cConcepto, setCConcepto] = useState("");
   const [cTotal, setCTotal] = useState("");
+  const [cFecha, setCFecha] = useState("");
 
   // Accounts Payable (Proveedores)
   const [pProveedor, setPProveedor] = useState("");
   const [pConcepto, setPConcepto] = useState("");
   const [pTotal, setPTotal] = useState("");
+  const [pFecha, setPFecha] = useState("");
+
+  // 👥 Cuentas agrupadas por cliente / proveedor
+  const [gruposAbiertos, setGruposAbiertos] = useState({});
+  const [soloPendientes, setSoloPendientes] = useState(true);
+  const [busquedaCuentas, setBusquedaCuentas] = useState("");
+
+  // 📅 Fechas programadas de cobro / pago
+  const hoyLocalStr = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
+  const diasHasta = (f) => {
+    if (!f) return null;
+    const [y, m, d] = String(f).slice(0, 10).split("-").map(Number);
+    if (!y || !m || !d) return null;
+    const objetivo = new Date(y, m - 1, d);
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    return Math.round((objetivo.getTime() - hoy.getTime()) / 86400000);
+  };
+  const fechaCorta = (f) => {
+    if (!f) return "";
+    const [y, m, d] = String(f).slice(0, 10).split("-");
+    return `${d}/${m}/${y}`;
+  };
+  const infoVencimiento = (c) => {
+    if (!c || (parseFloat(c.saldo) || 0) <= 0.009) return null;
+    const d = diasHasta(c.fechaVencimiento);
+    if (d === null) return null;
+    if (d < 0) return { nivel: 3, texto: `Vencida hace ${-d} día(s) (${fechaCorta(c.fechaVencimiento)})`, color: "#ef4444" };
+    if (d === 0) return { nivel: 2, texto: `Vence HOY (${fechaCorta(c.fechaVencimiento)})`, color: "#f59e0b" };
+    if (d <= 3) return { nivel: 1, texto: `Vence en ${d} día(s) (${fechaCorta(c.fechaVencimiento)})`, color: "#eab308" };
+    return { nivel: 0, texto: `Programada: ${fechaCorta(c.fechaVencimiento)}`, color: "#60a5fa" };
+  };
+
+  const normTxt = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+  const sumaPagos = (c) => (Array.isArray(c.pagos) ? c.pagos : []).reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
+
+  // Agrupa las cuentas del mismo cliente (por nombre o teléfono) o del mismo proveedor (por nombre)
+  const agruparCuentas = (lista, tipo) => {
+    const grupos = [];
+    const porNombre = {};
+    const porTel = {};
+    (Array.isArray(lista) ? lista : []).forEach(c => {
+      if (!c) return;
+      const nombre = tipo === "cobrar" ? c.cliente : c.proveedor;
+      const n = normTxt(nombre) || "sin nombre";
+      const tel = tipo === "cobrar" ? String(c.telefono || "").replace(/\D/g, "") : "";
+      let g = (tel.length >= 8 && porTel[tel]) || porNombre[n];
+      if (!g) {
+        g = { clave: `${tipo}_${n}_${grupos.length}`, tipo, nombre: (nombre || "Sin nombre").trim(), telefono: c.telefono || "", nit: c.nit || "", cuentas: [] };
+        grupos.push(g);
+      }
+      g.cuentas.push(c);
+      if (!porNombre[n]) porNombre[n] = g;
+      if (tel.length >= 8 && !porTel[tel]) porTel[tel] = g;
+      if (!g.telefono && c.telefono) g.telefono = c.telefono;
+      if ((!g.nit || g.nit === "C/F") && c.nit) g.nit = c.nit;
+    });
+    grupos.forEach(g => {
+      g.cuentas.sort((a, b) => new Date(a.fecha || 0) - new Date(b.fecha || 0));
+      g.total = g.cuentas.reduce((s, c) => s + (parseFloat(c.total) || 0), 0);
+      g.saldo = Math.round(g.cuentas.reduce((s, c) => s + Math.max(0, parseFloat(c.saldo) || 0), 0) * 100) / 100;
+      g.abonado = g.cuentas.reduce((s, c) => s + sumaPagos(c), 0);
+      g.pendientes = g.cuentas.filter(c => (parseFloat(c.saldo) || 0) > 0.009);
+      const alertas = g.pendientes.map(infoVencimiento).filter(Boolean).sort((a, b) => b.nivel - a.nivel);
+      g.alerta = alertas[0] || null;
+      const fechas = g.pendientes.map(c => c.fechaVencimiento).filter(Boolean).sort();
+      g.proximaFecha = fechas[0] || "";
+    });
+    return grupos.sort((a, b) => {
+      if ((b.saldo > 0) !== (a.saldo > 0)) return b.saldo > 0 ? 1 : -1;
+      const na = a.alerta ? a.alerta.nivel : -1;
+      const nb = b.alerta ? b.alerta.nivel : -1;
+      if (nb !== na) return nb - na;
+      return b.saldo - a.saldo;
+    });
+  };
+
+  const setterDe = (tipo) => (tipo === "cobrar" ? setCuentasPorCobrar : setCuentasPorPagar);
+
+  const actualizarFechaCuenta = (tipo, cuentaId, fecha) => {
+    setterDe(tipo)(prev => (Array.isArray(prev) ? prev : []).map(c => String(c.id) === String(cuentaId)
+      ? { ...c, fechaVencimiento: fecha || "", avisoVencimientoVisto: false, updatedAt: new Date().toISOString() }
+      : c));
+  };
+
+  const actualizarFechaGrupo = (grupo, fecha) => {
+    const ids = new Set(grupo.pendientes.map(c => String(c.id)));
+    if (ids.size === 0) return;
+    setterDe(grupo.tipo)(prev => (Array.isArray(prev) ? prev : []).map(c => ids.has(String(c.id))
+      ? { ...c, fechaVencimiento: fecha || "", avisoVencimientoVisto: false, updatedAt: new Date().toISOString() }
+      : c));
+  };
+
+  const verHistorialPagos = (c) => {
+    const pagos = Array.isArray(c.pagos) ? c.pagos : [];
+    if (pagos.length === 0) { alert("Esta cuenta no tiene abonos registrados."); return; }
+    alert(`Historial de abonos — ${c.concepto || ""}\n\n` + pagos.map(p => `- ${formatDate(p.fecha)}: ${formatMoney(p.monto)} por ${String(p.metodo || "").toUpperCase()}${p.abonoGeneral ? " (abono general)" : ""}`).join("\n"));
+  };
 
   // --- MANUAL CREATION ACTIONS ---
   const handleAddCobrar = (e) => {
@@ -81,6 +179,7 @@ export default function Cuentas({
       total: totalVal,
       saldo: totalVal,
       fecha: new Date().toISOString(),
+      fechaVencimiento: cFecha || "",
       estado: "Pendiente",
       pagos: []
     };
@@ -115,6 +214,7 @@ export default function Cuentas({
     setCNit("");
     setCConcepto("");
     setCTotal("");
+    setCFecha("");
     alert("Cuenta por cobrar registrada con éxito.");
   };
 
@@ -133,6 +233,7 @@ export default function Cuentas({
       total: totalVal,
       saldo: totalVal,
       fecha: new Date().toISOString(),
+      fechaVencimiento: pFecha || "",
       estado: "Pendiente",
       pagos: []
     };
@@ -141,53 +242,90 @@ export default function Cuentas({
     setPProveedor("");
     setPConcepto("");
     setPTotal("");
+    setPFecha("");
     alert("Obligación por pagar registrada con éxito.");
   };
 
   // --- ABONO/PAYMENT PROCESSOR ---
+  // selectedCuenta puede ser una cuenta individual o un grupo (cliente/proveedor con varias cuentas).
+  // En un grupo, el abono se reparte automáticamente empezando por la cuenta más antigua / que vence primero.
   const handleAbonoSubmit = (e) => {
     e.preventDefault();
     if (!selectedCuenta) return;
 
-    const montoVal = parseFloat(abonoMonto);
+    const montoVal = Math.round((parseFloat(abonoMonto) || 0) * 100) / 100;
     if (isNaN(montoVal) || montoVal <= 0) {
       alert("Ingresa un monto válido mayor a 0.");
       return;
     }
 
-    if (montoVal > selectedCuenta.saldo) {
-      alert(`El abono (${formatMoney(montoVal)}) no puede ser mayor que el saldo pendiente (${formatMoney(selectedCuenta.saldo)}).`);
+    const saldoDisponible = Math.round((parseFloat(selectedCuenta.saldo) || 0) * 100) / 100;
+    if (montoVal > saldoDisponible + 0.009) {
+      alert(`El abono (${formatMoney(montoVal)}) no puede ser mayor que el saldo pendiente (${formatMoney(saldoDisponible)}).`);
       return;
     }
 
-    const updatedCuenta = { ...selectedCuenta };
-    const nuevoPago = {
-      id: Date.now(),
-      monto: montoVal,
-      metodo: abonoMetodo,
-      fecha: new Date().toISOString()
-    };
+    const tipo = selectedCuenta.tipoCuenta || activeSubTab;
+    const ahora = new Date().toISOString();
+    const objetivos = selectedCuenta.esGrupo
+      ? [...selectedCuenta.cuentas]
+          .filter(c => (parseFloat(c.saldo) || 0) > 0.009)
+          .sort((a, b) => {
+            const fa = a.fechaVencimiento || "9999-12-31";
+            const fb = b.fechaVencimiento || "9999-12-31";
+            if (fa !== fb) return fa.localeCompare(fb);
+            return new Date(a.fecha || 0) - new Date(b.fecha || 0);
+          })
+      : [selectedCuenta];
 
-    updatedCuenta.pagos = [nuevoPago, ...updatedCuenta.pagos];
-    updatedCuenta.saldo = Math.max(0, updatedCuenta.saldo - montoVal);
-    
-    if (updatedCuenta.saldo === 0) {
-      updatedCuenta.estado = "Pagado";
-    }
+    let restante = montoVal;
+    const aplicaciones = {};
+    objetivos.forEach((c, idx) => {
+      if (restante <= 0.009) return;
+      const saldoC = Math.round((parseFloat(c.saldo) || 0) * 100) / 100;
+      const aplicar = Math.min(saldoC, restante);
+      if (aplicar <= 0) return;
+      aplicaciones[String(c.id)] = aplicar;
+      restante = Math.round((restante - aplicar) * 100) / 100;
+    });
 
-    if (activeSubTab === "cobrar") {
-      setCuentasPorCobrar(cuentasPorCobrar.map(c => c.id === selectedCuenta.id ? updatedCuenta : c));
-      alert("Abono del cliente registrado.");
-    } else {
-      setCuentasPorPagar(cuentasPorPagar.map(c => c.id === selectedCuenta.id ? updatedCuenta : c));
-      alert("Pago al proveedor registrado.");
-    }
+    setterDe(tipo)(prev => (Array.isArray(prev) ? prev : []).map(c => {
+      const aplicar = aplicaciones[String(c.id)];
+      if (!aplicar) return c;
+      const nuevoPago = {
+        id: `${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+        monto: aplicar,
+        metodo: abonoMetodo,
+        fecha: ahora,
+        abonoGeneral: !!selectedCuenta.esGrupo,
+        registradoPor: usuarioActual?.user || ""
+      };
+      const saldoNuevo = Math.max(0, Math.round(((parseFloat(c.saldo) || 0) - aplicar) * 100) / 100);
+      return {
+        ...c,
+        pagos: [nuevoPago, ...(Array.isArray(c.pagos) ? c.pagos : [])],
+        saldo: saldoNuevo,
+        estado: saldoNuevo <= 0.009 ? "Pagado" : c.estado,
+        updatedAt: ahora
+      };
+    }));
+
+    const nCuentas = Object.keys(aplicaciones).length;
+    alert(tipo === "cobrar"
+      ? `Abono del cliente registrado${nCuentas > 1 ? ` (aplicado a ${nCuentas} cuentas)` : ""}.`
+      : `Pago al proveedor registrado${nCuentas > 1 ? ` (aplicado a ${nCuentas} cuentas)` : ""}.`);
 
     setAbonoMonto("");
     setSelectedCuenta(null);
   };
 
   // --- METRIC SUMMARY CALCULATORS ---
+  const gruposCobrar = agruparCuentas(cuentasPorCobrar, "cobrar");
+  const gruposPagar = agruparCuentas(cuentasPorPagar, "pagar");
+  const alertasVencimiento = [
+    ...(cuentasPorCobrar || []).map(c => ({ c, tipo: "cobrar", info: infoVencimiento(c) })),
+    ...(cuentasPorPagar || []).map(c => ({ c, tipo: "pagar", info: infoVencimiento(c) }))
+  ].filter(a => a.info && a.info.nivel >= 1).sort((a, b) => b.info.nivel - a.info.nivel);
   const totalCobrarPendiente = cuentasPorCobrar
     .filter(c => c.estado === "Pendiente")
     .reduce((sum, c) => sum + c.saldo, 0);
@@ -336,6 +474,170 @@ export default function Cuentas({
     setExtHistoryJob(null);
   };
 
+  // 👥 Lista unificada por cliente / proveedor con detalle desplegable
+  const renderCartera = (tipo) => {
+    const esCobrar = tipo === "cobrar";
+    const grupos = esCobrar ? gruposCobrar : gruposPagar;
+    const q = normTxt(busquedaCuentas);
+    const visibles = grupos.filter(g => {
+      if (soloPendientes && g.saldo <= 0.009) return false;
+      if (!q) return true;
+      return normTxt(g.nombre).includes(q) || String(g.telefono || "").includes(q) ||
+        g.cuentas.some(c => normTxt(c.concepto).includes(q));
+    });
+    const colorSaldo = esCobrar ? "var(--color-warning)" : "var(--color-danger)";
+
+    return (
+      <div className="glass-panel" style={{ padding: "20px", alignSelf: "stretch", minWidth: 0 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "14px" }}>
+          <h3 style={{ fontSize: "1.1rem", fontWeight: "700", margin: 0 }}>
+            {esCobrar ? "Cartera de Clientes" : "Cuentas por Pagar"} <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", fontWeight: 600 }}>(agrupadas por {esCobrar ? "cliente" : "proveedor"})</span>
+          </h3>
+          <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.8rem", color: "var(--text-muted)", cursor: "pointer" }}>
+            <input type="checkbox" checked={soloPendientes} onChange={(e) => setSoloPendientes(e.target.checked)} />
+            Solo con saldo pendiente
+          </label>
+        </div>
+        <input
+          className="input-field"
+          placeholder={esCobrar ? "Buscar cliente, teléfono o concepto..." : "Buscar proveedor o concepto..."}
+          value={busquedaCuentas}
+          onChange={(e) => setBusquedaCuentas(e.target.value)}
+          style={{ marginBottom: "14px", width: "100%" }}
+        />
+
+        {visibles.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "40px 10px", color: "var(--text-muted)" }}>
+            {esCobrar ? "No hay cuentas por cobrar" : "No hay obligaciones por pagar"}{soloPendientes ? " con saldo pendiente" : " registradas"}.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            {visibles.map(g => {
+              const abierto = !!gruposAbiertos[g.clave];
+              return (
+                <div key={g.clave} style={{ border: `1px solid ${g.alerta && g.alerta.nivel >= 2 ? g.alerta.color + "88" : "rgba(255,255,255,0.08)"}`, borderRadius: "12px", background: "rgba(255,255,255,0.02)", overflow: "hidden" }}>
+                  {/* Encabezado del grupo */}
+                  <div style={{ padding: "12px 14px", display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ minWidth: 0, flex: "1 1 200px" }}>
+                      <div style={{ fontWeight: 800, color: "#fff", fontSize: "0.98rem", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                        {esCobrar ? <User size={15} /> : <Building size={15} />} {g.nombre}
+                        <span style={{ fontSize: "0.72rem", fontWeight: 700, padding: "2px 8px", borderRadius: "10px", background: "rgba(59,130,246,0.15)", color: "#60a5fa" }}>
+                          {g.cuentas.length} cuenta{g.cuentas.length !== 1 ? "s" : ""}{g.pendientes.length ? ` · ${g.pendientes.length} pendiente${g.pendientes.length !== 1 ? "s" : ""}` : ""}
+                        </span>
+                      </div>
+                      {(g.telefono || (esCobrar && g.nit)) && (
+                        <div style={{ fontSize: "0.76rem", color: "var(--text-muted)", marginTop: "2px" }}>
+                          {g.telefono ? `📞 ${g.telefono}` : ""}{esCobrar && g.nit ? `  ·  NIT: ${g.nit}` : ""}
+                        </div>
+                      )}
+                      {g.alerta && (
+                        <div style={{ fontSize: "0.76rem", fontWeight: 800, color: g.alerta.color, marginTop: "4px", display: "flex", alignItems: "center", gap: "4px" }}>
+                          <Calendar size={12} /> {g.alerta.texto}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", gap: "16px", fontSize: "0.82rem", flexWrap: "wrap" }}>
+                      <div><div style={{ color: "var(--text-muted)", fontSize: "0.7rem" }}>Total</div><strong style={{ color: "#fff" }}>{formatMoney(g.total)}</strong></div>
+                      <div><div style={{ color: "var(--text-muted)", fontSize: "0.7rem" }}>{esCobrar ? "Abonado" : "Pagado"}</div><strong style={{ color: "var(--color-secondary)" }}>{formatMoney(g.abonado)}</strong></div>
+                      <div><div style={{ color: "var(--text-muted)", fontSize: "0.7rem" }}>Saldo</div><strong style={{ color: g.saldo > 0 ? colorSaldo : "var(--color-success)", fontSize: "0.95rem" }}>{formatMoney(g.saldo)}</strong></div>
+                    </div>
+                  </div>
+
+                  {/* Acciones del grupo */}
+                  <div style={{ padding: "0 14px 12px", display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+                    {g.saldo > 0.009 && (
+                      <button
+                        onClick={() => { setAbonoMonto(""); setSelectedCuenta({ esGrupo: true, tipoCuenta: tipo, nombre: g.nombre, cuentas: g.cuentas, saldo: g.saldo }); }}
+                        className={`btn ${esCobrar ? "btn-primary" : "btn-danger"}`}
+                        style={{ padding: "6px 12px", fontSize: "0.78rem" }}
+                      >
+                        {esCobrar ? "Abonar al saldo total" : "Pagar / Abonar al saldo total"}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setGruposAbiertos(prev => ({ ...prev, [g.clave]: !prev[g.clave] }))}
+                      className="btn btn-ghost"
+                      style={{ padding: "6px 12px", fontSize: "0.78rem" }}
+                    >
+                      {abierto ? "▲ Ocultar detalle" : `▼ Ver detalle (${g.cuentas.length})`}
+                    </button>
+                    {g.pendientes.length > 0 && (
+                      <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.76rem", color: "var(--text-muted)" }}>
+                        📅 Fecha de {esCobrar ? "cobro" : "pago"}:
+                        <input
+                          type="date"
+                          className="input-field"
+                          value={g.pendientes.every(c => (c.fechaVencimiento || "") === (g.pendientes[0].fechaVencimiento || "")) ? (g.pendientes[0].fechaVencimiento || "") : ""}
+                          onChange={(e) => actualizarFechaGrupo(g, e.target.value)}
+                          title="Aplica la fecha a todas las cuentas pendientes de este grupo"
+                          style={{ padding: "4px 8px", fontSize: "0.78rem", height: "32px", width: "auto" }}
+                        />
+                      </label>
+                    )}
+                  </div>
+
+                  {/* Detalle de cuentas individuales */}
+                  {abierto && (
+                    <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", background: "rgba(0,0,0,0.18)", padding: "10px 14px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                      {g.cuentas.map(c => {
+                        const info = infoVencimiento(c);
+                        const saldoC = parseFloat(c.saldo) || 0;
+                        return (
+                          <div key={c.id} style={{ display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "center", justifyContent: "space-between", padding: "8px 10px", borderRadius: "8px", background: "rgba(255,255,255,0.03)" }}>
+                            <div style={{ minWidth: 0, flex: "1 1 200px" }}>
+                              <div style={{ color: "#fff", fontWeight: 700, fontSize: "0.84rem", wordBreak: "break-word" }}>{c.concepto || "Sin concepto"}</div>
+                              <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
+                                Registrada: {formatDate(c.fecha)} · Total {formatMoney(c.total)} · <span style={{ color: saldoC > 0 ? colorSaldo : "var(--color-success)", fontWeight: 700 }}>Saldo {formatMoney(saldoC)}</span>
+                              </div>
+                              {info && <div style={{ fontSize: "0.72rem", color: info.color, fontWeight: 700 }}>{info.texto}</div>}
+                            </div>
+                            <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
+                              <span className={`badge ${c.estado === "Pagado" ? "badge-ready" : "badge-process"}`}>{c.estado}</span>
+                              {saldoC > 0.009 && (
+                                <input
+                                  type="date"
+                                  className="input-field"
+                                  value={c.fechaVencimiento || ""}
+                                  onChange={(e) => actualizarFechaCuenta(tipo, c.id, e.target.value)}
+                                  title={`Fecha programada de ${esCobrar ? "cobro" : "pago"}`}
+                                  style={{ padding: "4px 6px", fontSize: "0.75rem", height: "30px", width: "auto" }}
+                                />
+                              )}
+                              {saldoC > 0.009 && (
+                                <button onClick={() => { setAbonoMonto(""); setSelectedCuenta({ ...c, tipoCuenta: tipo }); }} className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: "0.75rem" }}>
+                                  Abonar a esta
+                                </button>
+                              )}
+                              {(c.pagos || []).length > 0 && (
+                                <button onClick={() => verHistorialPagos(c)} className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: "0.75rem" }}>
+                                  Historial ({c.pagos.length})
+                                </button>
+                              )}
+                              {isAdmin && (
+                                <button
+                                  onClick={() => openDeleteModal(tipo, c)}
+                                  className="btn btn-ghost"
+                                  title="Eliminar cuenta (solo administrador)"
+                                  style={{ padding: "4px 8px", fontSize: "0.75rem", color: "#f87171", borderColor: "rgba(239,68,68,0.35)" }}
+                                >
+                                  🗑️
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div style={styles.container} className="animate-fade-in">
       {/* Header */}
@@ -345,6 +647,25 @@ export default function Cuentas({
           <p>Administra créditos otorgados a clientes y deudas con proveedores de refacciones.</p>
         </div>
       </div>
+
+      {/* 🔔 Avisos de cobros / pagos programados que vencen hoy, están vencidos o vencen pronto */}
+      {alertasVencimiento.length > 0 && (
+        <div style={{ border: "1px solid rgba(245,158,11,0.45)", background: "rgba(245,158,11,0.1)", borderRadius: "12px", padding: "14px 16px", display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ fontWeight: 800, color: "#fbbf24", display: "flex", alignItems: "center", gap: "8px" }}>
+            🔔 {alertasVencimiento.length} cobro{alertasVencimiento.length !== 1 ? "s" : ""}/pago{alertasVencimiento.length !== 1 ? "s" : ""} programado{alertasVencimiento.length !== 1 ? "s" : ""} requieren atención
+          </div>
+          {alertasVencimiento.slice(0, 8).map(({ c, tipo, info }) => (
+            <div key={`${tipo}_${c.id}`} style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: "8px", fontSize: "0.82rem", alignItems: "center" }}>
+              <span style={{ color: "#fff", minWidth: 0 }}>
+                {tipo === "cobrar" ? "💰 Cobrar a" : "💸 Pagar a"} <strong>{tipo === "cobrar" ? c.cliente : c.proveedor}</strong> — {formatMoney(c.saldo)}
+                <span style={{ color: "var(--text-muted)" }}> · {c.concepto}</span>
+              </span>
+              <span style={{ color: info.color, fontWeight: 800 }}>{info.texto}</span>
+            </div>
+          ))}
+          {alertasVencimiento.length > 8 && <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>…y {alertasVencimiento.length - 8} más.</span>}
+        </div>
+      )}
 
       {/* Sub tabs navigation */}
       <div style={styles.subTabs}>
@@ -510,101 +831,24 @@ export default function Cuentas({
                   />
                 </div>
 
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>📅 Fecha programada de cobro (Opcional)</label>
+                  <input
+                    type="date"
+                    className="input-field"
+                    value={cFecha}
+                    onChange={(e) => setCFecha(e.target.value)}
+                  />
+                  <span style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>Recibirás un aviso cuando llegue esta fecha.</span>
+                </div>
+
                 <button type="submit" className="btn btn-primary" style={{ marginTop: "10px" }}>
                   <Plus size={16} /> Crear Cuenta por Cobrar
                 </button>
               </form>
             </div>
 
-            {/* Right: Table of accounts */}
-            <div className="glass-panel" style={{ padding: "24px", alignSelf: "stretch" }}>
-              <h3 style={{ fontSize: "1.1rem", fontWeight: "700", marginBottom: "16px" }}>Cartera de Clientes</h3>
-              
-              <div style={styles.tableResponsive}>
-                <table style={styles.table}>
-                  <thead>
-                    <tr>
-                      <th style={styles.th}>Fecha / NIT</th>
-                      <th style={styles.th}>Cliente / Concepto</th>
-                      <th style={styles.th}>Total</th>
-                      <th style={styles.th}>Saldo Pendiente</th>
-                      <th style={styles.th}>Estado</th>
-                      <th style={{ ...styles.th, textAlign: "right" }}>Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cuentasPorCobrar.length === 0 ? (
-                      <tr>
-                        <td colSpan="6" style={{ ...styles.td, textAlign: "center", padding: "40px", color: "var(--text-muted)" }}>
-                          No hay cuentas por cobrar registradas.
-                        </td>
-                      </tr>
-                    ) : (
-                      cuentasPorCobrar.map((c) => (
-                        <tr key={c.id} style={styles.tr}>
-                          <td style={styles.td}>
-                            <div style={{ fontWeight: "600", color: "#fff" }}>{formatDate(c.fecha)}</div>
-                            <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>NIT: {c.nit}</div>
-                          </td>
-                          <td style={styles.td}>
-                            <div style={{ fontWeight: "700", color: "#fff" }}>
-                              {c.cliente}
-                              {c.telefono && <span style={{ color: "var(--text-muted)", fontWeight: "500", fontSize: "0.8rem", marginLeft: "8px" }}>📞 {c.telefono}</span>}
-                            </div>
-                            <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", maxWidth: "220px", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }} title={c.concepto}>
-                              {c.concepto}
-                            </div>
-                          </td>
-                          <td style={styles.td}>{formatMoney(c.total)}</td>
-                          <td style={{ ...styles.td, fontWeight: "700", color: c.saldo > 0 ? "var(--color-warning)" : "var(--color-success)" }}>
-                            {formatMoney(c.saldo)}
-                          </td>
-                          <td style={styles.td}>
-                            <span className={`badge ${c.estado === "Pagado" ? "badge-ready" : "badge-process"}`}>
-                              {c.estado}
-                            </span>
-                          </td>
-                          <td style={styles.td}>
-                            <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
-                              {c.saldo > 0 && (
-                                <button
-                                  onClick={() => setSelectedCuenta(c)}
-                                  className="btn btn-primary"
-                                  style={{ padding: "6px 12px", fontSize: "0.78rem" }}
-                                >
-                                  Abonar
-                                </button>
-                              )}
-                              {c.pagos && c.pagos.length > 0 && (
-                                <button
-                                  onClick={() => {
-                                    alert(`Historial de Abonos:\n` + c.pagos.map(p => `- ${formatDate(p.fecha)}: ${formatMoney(p.monto)} por ${p.metodo.toUpperCase()}`).join("\n"));
-                                  }}
-                                  className="btn btn-ghost"
-                                  style={{ padding: "6px 12px", fontSize: "0.78rem" }}
-                                >
-                                  Historial ({c.pagos.length})
-                                </button>
-                              )}
-                              {isAdmin && (
-                                <button
-                                  onClick={() => openDeleteModal("cobrar", c)}
-                                  className="btn btn-ghost"
-                                  title="Eliminar cuenta (solo administrador)"
-                                  style={{ padding: "6px 10px", fontSize: "0.78rem", color: "#f87171", borderColor: "rgba(239,68,68,0.35)" }}
-                                >
-                                  🗑️
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            {renderCartera("cobrar")}
           </div>
         </div>
       )}
@@ -698,97 +942,24 @@ export default function Cuentas({
                   />
                 </div>
 
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>📅 Fecha programada de pago (Opcional)</label>
+                  <input
+                    type="date"
+                    className="input-field"
+                    value={pFecha}
+                    onChange={(e) => setPFecha(e.target.value)}
+                  />
+                  <span style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>Recibirás un aviso cuando llegue esta fecha.</span>
+                </div>
+
                 <button type="submit" className="btn btn-danger" style={{ marginTop: "10px" }}>
                   <Plus size={16} /> Crear Obligación por Pagar
                 </button>
               </form>
             </div>
 
-            {/* Right: Table of accounts */}
-            <div className="glass-panel" style={{ padding: "24px", alignSelf: "stretch" }}>
-              <h3 style={{ fontSize: "1.1rem", fontWeight: "700", marginBottom: "16px" }}>Cuentas por Pagar</h3>
-              
-              <div style={styles.tableResponsive}>
-                <table style={styles.table}>
-                  <thead>
-                    <tr>
-                      <th style={styles.th}>Fecha</th>
-                      <th style={styles.th}>Proveedor / Concepto</th>
-                      <th style={styles.th}>Total</th>
-                      <th style={styles.th}>Saldo Pendiente</th>
-                      <th style={styles.th}>Estado</th>
-                      <th style={{ ...styles.th, textAlign: "right" }}>Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cuentasPorPagar.length === 0 ? (
-                      <tr>
-                        <td colSpan="6" style={{ ...styles.td, textAlign: "center", padding: "40px", color: "var(--text-muted)" }}>
-                          No hay obligaciones por pagar registradas.
-                        </td>
-                      </tr>
-                    ) : (
-                      cuentasPorPagar.map((p) => (
-                        <tr key={p.id} style={styles.tr}>
-                          <td style={styles.td}>
-                            <div style={{ fontWeight: "600", color: "#fff" }}>{formatDate(p.fecha)}</div>
-                          </td>
-                          <td style={styles.td}>
-                            <div style={{ fontWeight: "700", color: "#fff" }}>{p.proveedor}</div>
-                            <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", maxWidth: "220px", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }} title={p.concepto}>
-                              {p.concepto}
-                            </div>
-                          </td>
-                          <td style={styles.td}>{formatMoney(p.total)}</td>
-                          <td style={{ ...styles.td, fontWeight: "700", color: p.saldo > 0 ? "var(--color-danger)" : "var(--color-success)" }}>
-                            {formatMoney(p.saldo)}
-                          </td>
-                          <td style={styles.td}>
-                            <span className={`badge ${p.estado === "Pagado" ? "badge-ready" : "badge-process"}`}>
-                              {p.estado}
-                            </span>
-                          </td>
-                          <td style={styles.td}>
-                            <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
-                              {p.saldo > 0 && (
-                                <button
-                                  onClick={() => setSelectedCuenta(p)}
-                                  className="btn btn-danger"
-                                  style={{ padding: "6px 12px", fontSize: "0.78rem" }}
-                                >
-                                  Pagar / Abonar
-                                </button>
-                              )}
-                              {p.pagos && p.pagos.length > 0 && (
-                                <button
-                                  onClick={() => {
-                                    alert(`Historial de Pagos:\n` + p.pagos.map(pg => `- ${formatDate(pg.fecha)}: ${formatMoney(pg.monto)} por ${pg.metodo.toUpperCase()}`).join("\n"));
-                                  }}
-                                  className="btn btn-ghost"
-                                  style={{ padding: "6px 12px", fontSize: "0.78rem" }}
-                                >
-                                  Historial ({p.pagos.length})
-                                </button>
-                              )}
-                              {isAdmin && (
-                                <button
-                                  onClick={() => openDeleteModal("pagar", p)}
-                                  className="btn btn-ghost"
-                                  title="Eliminar cuenta (solo administrador)"
-                                  style={{ padding: "6px 10px", fontSize: "0.78rem", color: "#f87171", borderColor: "rgba(239,68,68,0.35)" }}
-                                >
-                                  🗑️
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            {renderCartera("pagar")}
           </div>
         </div>
       )}
@@ -1043,9 +1214,11 @@ export default function Cuentas({
                 <Coins size={22} color="var(--color-primary)" /> Registrar Abono / Pago
               </h2>
               <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "3px" }}>
-                {activeSubTab === "cobrar" 
-                  ? `Cliente: ${selectedCuenta.cliente} | Saldo Pendiente: ${formatMoney(selectedCuenta.saldo)}` 
-                  : `Proveedor: ${selectedCuenta.proveedor} | Saldo Pendiente: ${formatMoney(selectedCuenta.saldo)}`
+                {selectedCuenta.esGrupo
+                  ? `${(selectedCuenta.tipoCuenta || activeSubTab) === "cobrar" ? "Cliente" : "Proveedor"}: ${selectedCuenta.nombre} | Saldo total: ${formatMoney(selectedCuenta.saldo)} (${selectedCuenta.cuentas.filter(c => (parseFloat(c.saldo) || 0) > 0.009).length} cuentas). El abono se aplica primero a la cuenta que vence antes / más antigua.`
+                  : (selectedCuenta.tipoCuenta || activeSubTab) === "cobrar"
+                    ? `Cliente: ${selectedCuenta.cliente} | ${selectedCuenta.concepto || ""} | Saldo Pendiente: ${formatMoney(selectedCuenta.saldo)}`
+                    : `Proveedor: ${selectedCuenta.proveedor} | ${selectedCuenta.concepto || ""} | Saldo Pendiente: ${formatMoney(selectedCuenta.saldo)}`
                 }
               </p>
             </div>
