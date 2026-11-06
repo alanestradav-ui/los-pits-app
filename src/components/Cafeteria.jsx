@@ -26,7 +26,8 @@ export default function Cafeteria({
   setCuentasPorCobrar,
   clientes = [],
   setClientes,
-  addPuntosLealtad
+  addPuntosLealtad,
+  softDelete
 }) {
   const [activeSubTab, setActiveSubTab] = useState("pos"); // 'pos' or 'inventory'
   
@@ -352,10 +353,18 @@ export default function Cafeteria({
     setMinStock(item.minStock !== undefined ? item.minStock.toString() : "5");
   };
 
+  // 🗑️ Elimina el producto completo. Se registra en la Papelera para que la
+  // sincronización con la nube NO lo vuelva a traer (antes reaparecía).
   const eliminarItem = (id) => {
-    if (window.confirm("¿Seguro que deseas eliminar este producto de cafetería?")) {
-      setCafeteriaInventory(cafeteriaInventory.filter(item => item.id !== id));
+    const item = (cafeteriaInventory || []).find(p => String(p.id) === String(id));
+    if (!item) return;
+    if (!window.confirm(`¿Seguro que deseas eliminar por completo el producto "${item.name}" de la cafetería?\n\nSe moverá a la Papelera (recuperable por 30 días).`)) return;
+    if (typeof softDelete === "function") {
+      softDelete("cafeteriaInventory", item, usuarioActual?.user);
     }
+    setCafeteriaInventory(prev => (Array.isArray(prev) ? prev : []).filter(p => String(p.id) !== String(id)));
+    setCart(prev => prev.filter(c => String(c.id) !== String(id)));
+    if (String(editingId) === String(id)) cancelarEdicion();
   };
 
   const cancelarEdicion = () => {

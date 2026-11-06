@@ -35,7 +35,7 @@ import ExpressQuoteModal from "./ExpressQuoteModal";
 import ServicePackagesManager, { aplicarPaqueteAPresupuesto, paqueteDesdePresupuesto, getTotalesPaquete } from "./ServicePackages";
 import { jsPDF } from "jspdf";
 import { AutorizacionClienteModal, RegistrosNoAutorizados } from "./AutorizacionClienteModal";
-import { totalesPresupuesto, filtrarPresupuesto, crearRegistroNoAutorizado } from "../utils/cotizaciones";
+import { totalesPresupuesto, filtrarPresupuesto, crearRegistroNoAutorizado, lineasDePresupuesto } from "../utils/cotizaciones";
 import { useEsMovil, leerEncargoMovil, borrarEncargosMovil } from "../utils/movil";
 
 const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
@@ -5796,9 +5796,11 @@ export default function Taller({
                         </div>
                       </div>
 
-                      {/* Respuesta del cliente al presupuesto */}
-                      {isManager && o.total > 0 && !o.reparacionNoAutorizada &&
-                        ["En proceso de diagnóstico y presupuesto", "En espera de autorización"].includes(o.estado) && (
+                      {/* Respuesta del cliente al presupuesto.
+                          Antes solo aparecía en 2 estados exactos y con total > 0 (por eso a veces no salía).
+                          Ahora aparece en cualquier orden activa que tenga presupuesto, sin importar el estado. */}
+                      {isManager && !o.reparacionNoAutorizada && o.estado !== "Entregado" &&
+                        (lineasDePresupuesto(o.presupuesto).length > 0 || (parseFloat(o.total) || 0) > 0) && (
                         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", margin: "8px 0" }}>
                           <button
                             id={`btn-no-autoriza-${o.id}`}
@@ -7888,6 +7890,37 @@ export default function Taller({
                 <button type="button" className="btn btn-ghost" onClick={() => setPresupuestoFormalOrder(null)}>
                   Cerrar
                 </button>
+
+                {/* ❌ / ✂️ Respuesta del cliente disponible también desde el presupuesto formal */}
+                {isManager && !presupuestoFormalOrder.reparacionNoAutorizada && presupuestoFormalOrder.estado !== "Entregado" &&
+                  lineasDePresupuesto(presupuestoFormalOrder.presupuesto).length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        const actual = ordenes.find(x => String(x.id) === String(presupuestoFormalOrder.id)) || presupuestoFormalOrder;
+                        setPresupuestoFormalOrder(null);
+                        setAutorizacionModal({ orden: actual, modo: "total" });
+                      }}
+                      style={{ border: "1px solid rgba(239,68,68,0.5)", background: "rgba(239,68,68,0.12)", color: "#f87171", fontWeight: 800 }}
+                    >
+                      ❌ Cliente no autoriza
+                    </button>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        const actual = ordenes.find(x => String(x.id) === String(presupuestoFormalOrder.id)) || presupuestoFormalOrder;
+                        setPresupuestoFormalOrder(null);
+                        setAutorizacionModal({ orden: actual, modo: "parcial" });
+                      }}
+                      style={{ border: "1px solid rgba(245,158,11,0.5)", background: "rgba(245,158,11,0.12)", color: "#fbbf24", fontWeight: 800 }}
+                    >
+                      ✂️ Autorización parcial
+                    </button>
+                  </>
+                )}
 
                 {!presupuestoFormalOrder.diagnosticoAutorizado && (usuarioActual?.rol === "admin" || usuarioActual?.rol === "jefe de taller") && (
                   <button

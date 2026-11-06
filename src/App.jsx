@@ -2868,6 +2868,7 @@ export default function App() {
             clientes={clientes}
             setClientes={setClientes}
             addPuntosLealtad={addPuntosLealtad}
+            softDelete={softDelete}
           />
         )}
 
