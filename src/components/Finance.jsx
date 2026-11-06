@@ -22,6 +22,31 @@ import { jsPDF } from "jspdf";
 import { getActiveBranding, getDocThemeRgb, themeHtmlDocument } from "../utils/branding";
 import { calcOrderCommission, getCommissionableLabor, getWarrantyPenalty, parseLocalDate, calcSupervisorPartsCommission, getUserCarwashFixedCommission, getPartsProfit } from "../utils/workshopCalc";
 
+// 💵 Catálogos de planilla: motivos de descuento, frecuencias de bonos y bases de producción
+const MOTIVOS_DESCUENTO = {
+  error: "Error cometido",
+  danio: "Daño / pérdida",
+  faltante: "Faltante de caja",
+  uniforme: "Uniforme / herramienta",
+  otro: "Otro motivo"
+};
+const FRECUENCIAS_BONO = {
+  cada_pago: "En cada pago",
+  quincenal: "Quincenal",
+  mensual: "Mensual"
+};
+const BASES_PRODUCCION = {
+  ordenes_taller: { label: "Órdenes de taller entregadas", tipo: "cantidad", unidad: "órdenes" },
+  lavados: { label: "Lavados de carwash entregados", tipo: "cantidad", unidad: "lavados" },
+  mano_obra: { label: "Mano de obra facturada (Q)", tipo: "monto", unidad: "Q de mano de obra" },
+  facturado_total: { label: "Total facturado taller + carwash (Q)", tipo: "monto", unidad: "Q facturados" }
+};
+const MODALIDADES_PRODUCCION = {
+  por_unidad: "Monto fijo por cada orden / lavado",
+  porcentaje: "Porcentaje (%) sobre lo producido",
+  meta: "Bono fijo al alcanzar una meta"
+};
+
 export default function Finance({ 
   usuarioActual,
   ordenes = [], 
@@ -63,7 +88,7 @@ export default function Finance({
   const [payrollMonth, setPayrollMonth] = useState(new Date().getMonth());
   const [commSubTab, setCommSubTab] = useState("planilla"); // 'planilla', 'movimientos' or 'historial'
   const todayLocalStr = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
-  const EMPTY_MOV_FORM = { colaborador: "", tipo: "prestamo", nombre: "", monto: "", fecha: todayLocalStr, fechaInicioPago: todayLocalStr, numCuotas: "1", recurrente: false, registrarEgreso: true, nota: "" };
+  const EMPTY_MOV_FORM = { colaborador: "", tipo: "prestamo", nombre: "", monto: "", fecha: todayLocalStr, fechaInicioPago: todayLocalStr, numCuotas: "1", recurrente: false, frecuencia: "cada_pago", frecuenciaCuotas: "cada_pago", motivo: "error", prodBase: "ordenes_taller", prodModalidad: "por_unidad", prodValor: "", prodMeta: "", registrarEgreso: true, nota: "" };
   const [movForm, setMovForm] = useState(EMPTY_MOV_FORM);
   const [movShowInactive, setMovShowInactive] = useState(false);
   const [selectedPayrollUser, setSelectedPayrollUser] = useState(null);
@@ -150,26 +175,50 @@ export default function Finance({
     alert("¡Lavado facturado actualizado con éxito en Finanzas!");
   };
 
-  // 💵 PRÉSTAMOS / ANTICIPOS / BONOS DE COLABORADORES
+  // 💵 PRÉSTAMOS / ANTICIPOS / DESCUENTOS / BONOS DE COLABORADORES
   const handleAddMovimiento = (e) => {
     e.preventDefault();
-    const monto = parseFloat(movForm.monto);
     if (!movForm.colaborador) { alert("Selecciona el colaborador."); return; }
-    if (isNaN(monto) || monto <= 0) { alert("Ingresa un monto válido mayor a 0."); return; }
-    const esBono = movForm.tipo === "bono";
-    const numCuotas = esBono ? 1 : Math.max(1, parseInt(movForm.numCuotas) || 1);
-    const nombre = movForm.nombre.trim() || (esBono ? "Bono" : (movForm.tipo === "prestamo" ? "Préstamo" : "Anticipo de salario"));
+    const tipo = movForm.tipo;
+    const esBono = tipo === "bono";
+    const esProduccion = tipo === "bonoProduccion";
+    const esDescuento = tipo === "prestamo" || tipo === "anticipo" || tipo === "descuento";
+
+    let monto = parseFloat(movForm.monto);
+    if (esProduccion) {
+      const valor = parseFloat(movForm.prodValor);
+      if (isNaN(valor) || valor <= 0) { alert("Ingresa el valor del bono por producción (porcentaje, monto por unidad o monto del bono)."); return; }
+      if (movForm.prodModalidad === "meta" && !(parseFloat(movForm.prodMeta) > 0)) { alert("Ingresa la meta de producción que debe alcanzar el colaborador."); return; }
+      monto = valor;
+    } else if (isNaN(monto) || monto <= 0) { alert("Ingresa un monto válido mayor a 0."); return; }
+
+    const numCuotas = esDescuento ? Math.max(1, parseInt(movForm.numCuotas) || 1) : 1;
+    const nombreDefecto = esProduccion ? "Bono por producción"
+      : esBono ? "Bono"
+      : tipo === "prestamo" ? "Préstamo"
+      : tipo === "anticipo" ? "Anticipo de salario"
+      : `Descuento por ${(MOTIVOS_DESCUENTO[movForm.motivo] || "otro motivo").toLowerCase()}`;
+    const nombre = movForm.nombre.trim() || nombreDefecto;
     const mov = {
       id: `mov_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
       colaborador: movForm.colaborador,
-      tipo: movForm.tipo,
+      tipo,
       nombre,
       monto,
       fecha: movForm.fecha || todayLocalStr,
-      fechaInicioPago: esBono ? null : (movForm.fechaInicioPago || movForm.fecha || todayLocalStr),
+      fechaInicioPago: esDescuento ? (movForm.fechaInicioPago || movForm.fecha || todayLocalStr) : (movForm.fecha || todayLocalStr),
       numCuotas,
-      cuotaMonto: esBono ? monto : Math.round((monto / numCuotas) * 100) / 100,
-      recurrente: esBono ? !!movForm.recurrente : false,
+      cuotaMonto: esDescuento ? Math.round((monto / numCuotas) * 100) / 100 : monto,
+      frecuenciaCuotas: esDescuento ? (movForm.frecuenciaCuotas || "cada_pago") : null,
+      motivo: tipo === "descuento" ? movForm.motivo : null,
+      recurrente: (esBono || esProduccion) ? !!movForm.recurrente : false,
+      frecuencia: (esBono || esProduccion) && movForm.recurrente ? (movForm.frecuencia || "cada_pago") : null,
+      produccion: esProduccion ? {
+        base: movForm.prodBase,
+        modalidad: movForm.prodModalidad,
+        valor: parseFloat(movForm.prodValor) || 0,
+        meta: parseFloat(movForm.prodMeta) || 0
+      } : null,
       nota: movForm.nota.trim(),
       pagos: [],
       activo: true,
@@ -181,14 +230,14 @@ export default function Finance({
       setNominaMovimientos(prev => [mov, ...(Array.isArray(prev) ? prev : [])]);
     }
     // El préstamo/anticipo es una salida de efectivo: se registra como egreso para que la caja cuadre.
-    if (!esBono && movForm.registrarEgreso && typeof setCompras === "function") {
+    if ((tipo === "prestamo" || tipo === "anticipo") && movForm.registrarEgreso && typeof setCompras === "function") {
       setCompras(prev => [{
         id: Date.now(),
         fecha: mov.fecha,
         fotos: [],
         total: monto,
         modulo: "general",
-        concepto: `${movForm.tipo === "prestamo" ? "Préstamo" : "Anticipo"} a colaborador: ${mov.colaborador} — ${nombre}`,
+        concepto: `${tipo === "prestamo" ? "Préstamo" : "Anticipo"} a colaborador: ${mov.colaborador} — ${nombre}`,
         formaPago: "efectivo",
         proveedor: `Nómina - ${mov.colaborador}`,
         tipoGasto: "gasto",
@@ -200,7 +249,9 @@ export default function Finance({
       }, ...(Array.isArray(prev) ? prev : [])]);
     }
     setMovForm({ ...EMPTY_MOV_FORM, colaborador: movForm.colaborador });
-    alert(esBono ? "Bono registrado. Se sumará en la próxima liquidación de nómina." : `Registrado. Se descontará ${formatMoney(mov.cuotaMonto)} por planilla en ${numCuotas} cuota(s).`);
+    if (esProduccion) alert("Bono por producción registrado. Se calculará automáticamente con la producción de cada período de planilla.");
+    else if (esBono) alert(mov.recurrente ? `Bono recurrente registrado (${FRECUENCIAS_BONO[mov.frecuencia]}). Se sumará automáticamente en cada liquidación.` : "Bono registrado. Se sumará en la próxima liquidación de nómina.");
+    else alert(`Registrado. Se descontará ${formatMoney(mov.cuotaMonto)} ${numCuotas === 1 ? "en un solo pago" : `en ${numCuotas} cuotas`} (${mov.frecuenciaCuotas === "mensual" ? "una vez al mes" : "en cada planilla"}).`);
   };
 
   const toggleMovimientoActivo = (id) => {
@@ -850,48 +901,163 @@ export default function Finance({
   // Normaliza el rol (acepta mayúsculas, acentos y variantes como "Jefe de Taller", "Mecánico")
   const normRol = (r) => String(r || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 
-  // Préstamos / anticipos / bonos aplicables a un colaborador en el período de nómina
-  const getMovimientosNomina = (userName, endDate) => {
+  // 🗓️ Claves del período de planilla seleccionado (para no pagar dos veces el mismo bono/cuota)
+  const getPeriodoClaves = () => {
+    const { endDate } = getPayrollDateRangeInfo();
+    const mesClave = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, "0")}`;
+    const periodoClave = payrollPeriodMode === "custom" ? `custom_${commStart}_${commEnd}` : `${payrollPeriodMode}_${payrollYear}_${payrollMonth}`;
+    return { mesClave, periodoClave, periodoModo: payrollPeriodMode };
+  };
+
+  // ¿Este movimiento ya tuvo un pago/cuota aplicado en el período actual?
+  const yaAplicadoEnPeriodo = (pagos, claves) => (pagos || []).some(p => {
+    if (!p) return false;
+    if (p.periodoClave && p.periodoClave === claves.periodoClave) return true;
+    if (claves.periodoModo === "custom" || p.periodoModo === "custom") return false;
+    // Un pago de "mes completo" se cruza con las quincenas del mismo mes (y viceversa)
+    return p.mesClave === claves.mesClave && (p.periodoModo === "mes" || claves.periodoModo === "mes");
+  });
+
+  // 📈 Producción del colaborador en el período (para bonos por producción)
+  const getProduccionColaborador = (userName, startDate, endDate) => {
+    const lower = String(userName || "").toLowerCase().trim();
+    const enRango = (f, id) => {
+      const d = f ? new Date(f) : new Date(id);
+      return !isNaN(d.getTime()) && d >= startDate && d <= endDate;
+    };
+    let ordenesN = 0, manoObra = 0, facturadoTaller = 0, lavadosN = 0, facturadoLavados = 0;
+    (ordenes || []).forEach(o => {
+      if (!o || o.estado !== "Entregado" || String(o.mecanico || "").toLowerCase().trim() !== lower || !enRango(o.fecha, o.id)) return;
+      ordenesN += 1;
+      facturadoTaller += parseFloat(o.total) || 0;
+      manoObra += (o.presupuesto?.labor || []).reduce((s, l) => s + (parseFloat(l.price) || 0) * (parseFloat(l.qty) || 1), 0);
+    });
+    (carwash || []).forEach(c => {
+      if (!c || c.estado !== "Entregado" || !enRango(c.fecha, c.id)) return;
+      const lavList = c.lavadores && c.lavadores.length > 0 ? c.lavadores : (c.lavador ? c.lavador.split(", ").map(i => i.trim()).filter(Boolean) : []);
+      if (!lavList.some(l => String(l).toLowerCase().trim() === lower)) return;
+      lavadosN += 1;
+      facturadoLavados += (parseFloat(c.precio) || 0) / Math.max(1, lavList.length);
+    });
+    return {
+      ordenes_taller: ordenesN,
+      lavados: lavadosN,
+      mano_obra: Math.round(manoObra * 100) / 100,
+      facturado_total: Math.round((facturadoTaller + facturadoLavados) * 100) / 100
+    };
+  };
+
+  const calcularBonoProduccion = (m, produccion) => {
+    const cfg = m.produccion || {};
+    const base = BASES_PRODUCCION[cfg.base] || BASES_PRODUCCION.ordenes_taller;
+    const cantidad = produccion[cfg.base] || 0;
+    const valor = parseFloat(cfg.valor) || 0;
+    const fmtBase = base.tipo === "monto" ? formatMoney(cantidad) : `${cantidad} ${base.unidad}`;
+    if (cfg.modalidad === "porcentaje") {
+      return { monto: Math.round(cantidad * valor) / 100, detalle: `${base.label}: ${fmtBase} × ${valor}%` };
+    }
+    if (cfg.modalidad === "meta") {
+      const meta = parseFloat(cfg.meta) || 0;
+      const alcanzada = cantidad >= meta && meta > 0;
+      return {
+        monto: alcanzada ? valor : 0,
+        detalle: `${base.label}: ${fmtBase} — Meta ${base.tipo === "monto" ? formatMoney(meta) : `${meta} ${base.unidad}`} ${alcanzada ? "✅ alcanzada" : "❌ no alcanzada"}`
+      };
+    }
+    return { monto: Math.round(cantidad * valor * 100) / 100, detalle: `${base.label}: ${fmtBase} × ${formatMoney(valor)} c/u` };
+  };
+
+  // Préstamos / anticipos / descuentos / bonos aplicables a un colaborador en el período de nómina
+  const getMovimientosNomina = (userName, startDate, endDate) => {
     const lower = (userName || "").toLowerCase().trim();
+    const claves = getPeriodoClaves();
     const items = [];
     (nominaMovimientos || []).forEach(m => {
-      if (!m || m.activo === false) return;
+      if (!m || m.activo === false || m.eliminado) return;
       if (String(m.colaborador || "").toLowerCase().trim() !== lower) return;
       const pagos = Array.isArray(m.pagos) ? m.pagos : [];
       const aplicado = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
-      if (m.tipo === "prestamo" || m.tipo === "anticipo") {
+
+      if (m.tipo === "prestamo" || m.tipo === "anticipo" || m.tipo === "descuento") {
         const monto = parseFloat(m.monto) || 0;
         const saldo = Math.round((monto - aplicado) * 100) / 100;
         if (saldo <= 0.009) return;
         const inicio = parseLocalDate(m.fechaInicioPago || m.fecha);
         if (inicio && endDate && inicio > endDate) return;
+        if (yaAplicadoEnPeriodo(pagos, claves)) return;
+        const mensual = m.frecuenciaCuotas === "mensual";
+        if (mensual) {
+          if (claves.periodoModo === "q1") return; // las cuotas mensuales se descuentan en la 2da quincena o mes completo
+          if (pagos.some(p => p.mesClave === claves.mesClave)) return;
+        }
         const numCuotas = Math.max(1, parseInt(m.numCuotas) || 1);
         const cuota = parseFloat(m.cuotaMonto) || (monto / numCuotas);
         const descuento = Math.min(saldo, Math.round(cuota * 100) / 100);
         const cuotaNum = pagos.length + 1;
+        const etiquetaTipo = m.tipo === "prestamo" ? "Préstamo" : m.tipo === "anticipo" ? "Anticipo" : `Descuento (${MOTIVOS_DESCUENTO[m.motivo] || "Otro motivo"})`;
+        const planTxt = numCuotas === 1 ? "Pago único" : `Cuota ${Math.min(cuotaNum, numCuotas)} de ${numCuotas}`;
         items.push({
           type: "descuento",
+          clase: m.tipo,
           orderId: m.id,
-          titulo: `${m.tipo === "prestamo" ? "Préstamo" : "Anticipo"}: ${m.nombre || "Descuento"} (Cuota ${cuotaNum}/${numCuotas})`,
-          subtitulo: `Monto original ${formatMoney(monto)} · Saldo antes de esta cuota ${formatMoney(saldo)}`,
+          titulo: `${etiquetaTipo}: ${m.nombre || "Descuento"} — ${planTxt}`,
+          subtitulo: `Monto total ${formatMoney(monto)} · Ya descontado ${formatMoney(aplicado)} · Saldo después de este pago ${formatMoney(Math.max(0, saldo - descuento))} · ${mensual ? "Cuota mensual" : "Cuota por planilla"}${m.nota ? ` · ${m.nota}` : ""}`,
           fecha: m.fecha,
           comision: -descuento,
-          nombre: m.nombre || (m.tipo === "prestamo" ? "Préstamo" : "Anticipo"),
+          nombre: m.nombre || etiquetaTipo,
           movimientoId: m.id
         });
-      } else if (m.tipo === "bono") {
-        const monto = parseFloat(m.monto) || 0;
-        if (monto <= 0) return;
+      } else if (m.tipo === "bono" || m.tipo === "bonoProduccion") {
         if (!m.recurrente && pagos.length > 0) return;
+        if (m.recurrente && yaAplicadoEnPeriodo(pagos, claves)) return;
         const fechaBono = parseLocalDate(m.fecha);
         if (fechaBono && endDate && fechaBono > endDate) return;
+
+        let multiplicador = 1;
+        let notaFrecuencia = "";
+        if (m.recurrente) {
+          const frec = m.frecuencia || "cada_pago";
+          if (frec === "mensual") {
+            if (claves.periodoModo === "q1") return; // se paga en la 2da quincena o en el mes completo
+            if (pagos.some(p => p.mesClave === claves.mesClave)) return;
+            notaFrecuencia = "Bono mensual";
+          } else if (frec === "quincenal") {
+            if (claves.periodoModo === "mes") { multiplicador = 2; notaFrecuencia = "Bono quincenal × 2 quincenas"; }
+            else notaFrecuencia = "Bono quincenal";
+          } else {
+            notaFrecuencia = "Bono en cada pago";
+          }
+        }
+
+        if (m.tipo === "bonoProduccion") {
+          const prod = getProduccionColaborador(userName, startDate, endDate);
+          const calc = calcularBonoProduccion(m, prod);
+          const montoProd = Math.round(calc.monto * multiplicador * 100) / 100;
+          if (montoProd <= 0) return;
+          items.push({
+            type: "bono",
+            clase: "produccion",
+            orderId: m.id,
+            titulo: `Bono por producción: ${m.nombre || "Producción"}${m.recurrente ? ` (${FRECUENCIAS_BONO[m.frecuencia || "cada_pago"]})` : " (pago único)"}`,
+            subtitulo: `${calc.detalle}${m.nota ? ` · ${m.nota}` : ""}`,
+            fecha: m.fecha,
+            comision: montoProd,
+            nombre: m.nombre || "Bono por producción",
+            movimientoId: m.id
+          });
+          return;
+        }
+
+        const monto = (parseFloat(m.monto) || 0) * multiplicador;
+        if (monto <= 0) return;
         items.push({
           type: "bono",
+          clase: m.recurrente ? "recurrente" : "unico",
           orderId: m.id,
-          titulo: `Bono: ${m.nombre || "Bonificación"}${m.recurrente ? " (recurrente)" : ""}`,
-          subtitulo: m.nota || "Bono / incentivo adicional al salario",
+          titulo: `Bono${m.recurrente ? " recurrente" : ""}: ${m.nombre || "Bonificación"}${m.recurrente ? ` (${FRECUENCIAS_BONO[m.frecuencia || "cada_pago"]})` : " (pago único)"}`,
+          subtitulo: [notaFrecuencia, m.nota].filter(Boolean).join(" · ") || "Bono / incentivo adicional al salario",
           fecha: m.fecha,
-          comision: monto,
+          comision: Math.round(monto * 100) / 100,
           nombre: m.nombre || "Bonificación",
           movimientoId: m.id
         });
@@ -1094,7 +1260,7 @@ export default function Finance({
     });
 
     // 💵 Bonos y descuentos por préstamos / anticipos
-    getMovimientosNomina(userName, endDate).forEach(mi => {
+    getMovimientosNomina(userName, startDate, endDate).forEach(mi => {
       totalComs += mi.comision;
       items.push(mi);
     });
@@ -1168,12 +1334,13 @@ export default function Finance({
     // 💵 Registrar cuotas descontadas y bonos pagados en los movimientos de nómina
     const movItems = items.filter(i => i.type === "descuento" || i.type === "bono");
     if (movItems.length > 0 && setNominaMovimientos) {
+      const claves = getPeriodoClaves();
       setNominaMovimientos(prev => (prev || []).map(m => {
         const it = movItems.find(i => String(i.movimientoId) === String(m.id));
         if (!it) return m;
-        const pagos = [...(Array.isArray(m.pagos) ? m.pagos : []), { payrollId, fecha: nowIso, monto: Math.abs(it.comision), periodo: periodLabel }];
-        const next = { ...m, pagos };
-        if (m.tipo !== "bono") {
+        const pagos = [...(Array.isArray(m.pagos) ? m.pagos : []), { payrollId, fecha: nowIso, monto: Math.abs(it.comision), periodo: periodLabel, mesClave: claves.mesClave, periodoClave: claves.periodoClave, periodoModo: claves.periodoModo }];
+        const next = { ...m, pagos, updatedAt: nowIso };
+        if (m.tipo !== "bono" && m.tipo !== "bonoProduccion") {
           const aplicado = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
           if (aplicado >= (parseFloat(m.monto) || 0) - 0.009) {
             next.activo = false;
@@ -1221,8 +1388,8 @@ export default function Finance({
       totalDescuentos,
       totalPagado: totalPaid,
       detallesComisiones: comisionesItems,
-      bonos: bonosItems.map(i => ({ nombre: i.nombre, monto: i.comision, detalle: i.titulo })),
-      descuentos: descuentosItems.map(i => ({ nombre: i.nombre || i.titulo, monto: Math.abs(i.comision), detalle: i.titulo })),
+      bonos: bonosItems.map(i => ({ nombre: i.nombre, monto: i.comision, detalle: i.titulo, subdetalle: i.subtitulo || "", clase: i.clase || "unico" })),
+      descuentos: descuentosItems.map(i => ({ nombre: i.nombre || i.titulo, monto: Math.abs(i.comision), detalle: i.titulo, subdetalle: i.subtitulo || "", clase: i.clase || i.type })),
       registradoPor: usuarioActual?.user || "Gerencia",
       updatedAt: nowIso
     };
@@ -1253,8 +1420,8 @@ export default function Finance({
       totalDescuentos: descuentosItems.reduce((s, i) => s + Math.abs(i.comision), 0),
       totalPagado: total,
       detallesComisiones: comisionesItems,
-      bonos: bonosItems.map(i => ({ nombre: i.nombre, monto: i.comision, detalle: i.titulo })),
-      descuentos: descuentosItems.map(i => ({ nombre: i.nombre || i.titulo, monto: Math.abs(i.comision), detalle: i.titulo })),
+      bonos: bonosItems.map(i => ({ nombre: i.nombre, monto: i.comision, detalle: i.titulo, subdetalle: i.subtitulo || "", clase: i.clase || "unico" })),
+      descuentos: descuentosItems.map(i => ({ nombre: i.nombre || i.titulo, monto: Math.abs(i.comision), detalle: i.titulo, subdetalle: i.subtitulo || "", clase: i.clase || i.type })),
       registradoPor: usuarioActual?.user || "Gerencia"
     };
   };
@@ -1275,12 +1442,23 @@ export default function Finance({
       </tr>
     `).join("");
 
-    const bonosHtml = (rec.bonos || []).map(b => `
-      <tr style="border-bottom: 1px solid #e5e7eb;"><td style="padding: 8px;"><strong>${b.nombre}</strong>${b.detalle && b.detalle !== b.nombre ? `<br/><small style="color:#6b7280;">${b.detalle}</small>` : ""}</td><td style="padding: 8px; text-align: right; font-weight: bold; color: #047857;">+Q${(parseFloat(b.monto) || 0).toFixed(2)}</td></tr>
-    `).join("");
-    const descuentosHtml = (rec.descuentos || []).map(d => `
-      <tr style="border-bottom: 1px solid #e5e7eb;"><td style="padding: 8px;"><strong>${d.nombre}</strong>${d.detalle && d.detalle !== d.nombre ? `<br/><small style="color:#6b7280;">${d.detalle}</small>` : ""}</td><td style="padding: 8px; text-align: right; font-weight: bold; color: #b91c1c;">-Q${(parseFloat(d.monto) || 0).toFixed(2)}</td></tr>
-    `).join("");
+    const CLASE_LABEL = {
+      recurrente: "Bono recurrente",
+      unico: "Bono único",
+      produccion: "Bono por producción",
+      prestamo: "Préstamo",
+      anticipo: "Anticipo",
+      descuento: "Descuento",
+      penalizacion: "Penalización garantía"
+    };
+    const filaMov = (x, signo, color) => `
+      <tr style="border-bottom: 1px solid #e5e7eb;">
+        <td style="padding: 8px; white-space: nowrap;"><span style="font-size: 11px; font-weight: bold; padding: 2px 6px; border-radius: 4px; background: ${signo === "+" ? "#d1fae5" : "#fee2e2"}; color: ${color};">${CLASE_LABEL[x.clase] || (signo === "+" ? "Bono" : "Descuento")}</span></td>
+        <td style="padding: 8px;"><strong>${x.detalle || x.nombre}</strong>${x.subdetalle ? `<br/><small style="color:#6b7280;">${x.subdetalle}</small>` : ""}</td>
+        <td style="padding: 8px; text-align: right; font-weight: bold; color: ${color}; white-space: nowrap;">${signo}Q${(parseFloat(x.monto) || 0).toFixed(2)}</td>
+      </tr>`;
+    const bonosHtml = (rec.bonos || []).map(b => filaMov(b, "+", "#047857")).join("");
+    const descuentosHtml = (rec.descuentos || []).map(d => filaMov(d, "-", "#b91c1c")).join("");
 
     printWin.document.write(themeHtmlDocument(`
       <!DOCTYPE html>
@@ -1334,8 +1512,8 @@ export default function Finance({
             </tbody>
           </table>
 
-          ${bonosHtml ? `<h3>🎁 Bonos e Incentivos</h3><table><thead><tr><th>Concepto</th><th style="text-align: right;">Monto</th></tr></thead><tbody>${bonosHtml}</tbody></table>` : ""}
-          ${descuentosHtml ? `<h3>➖ Descuentos (Préstamos / Anticipos / Penalizaciones)</h3><table><thead><tr><th>Concepto</th><th style="text-align: right;">Monto</th></tr></thead><tbody>${descuentosHtml}</tbody></table>` : ""}
+          ${bonosHtml ? `<h3>🎁 Bonos e Incentivos Pagados</h3><table><thead><tr><th>Tipo</th><th>Concepto / Detalle</th><th style="text-align: right;">Monto</th></tr></thead><tbody>${bonosHtml}</tbody></table>` : ""}
+          ${descuentosHtml ? `<h3>➖ Descuentos Aplicados (Préstamos / Anticipos / Descuentos / Penalizaciones)</h3><table><thead><tr><th>Tipo</th><th>Concepto / Detalle</th><th style="text-align: right;">Monto</th></tr></thead><tbody>${descuentosHtml}</tbody></table>` : ""}
 
           <div class="summary">
             <div class="summary-row">
@@ -2500,7 +2678,7 @@ export default function Finance({
                     fontWeight: "600"
                   }}
                 >
-                  💵 Préstamos, Anticipos y Bonos ({(nominaMovimientos || []).filter(m => m && !m.eliminado && m.activo !== false).length})
+                  💵 Bonos y Descuentos ({(nominaMovimientos || []).filter(m => m && !m.eliminado && m.activo !== false).length})
                 </button>
                 <button
                   onClick={() => setCommSubTab("historial")}
@@ -2708,15 +2886,18 @@ export default function Finance({
             {commSubTab === "movimientos" && (() => {
               const movList = (nominaMovimientos || []).filter(m => m && !m.eliminado && (movShowInactive || m.activo !== false));
               const isBonoForm = movForm.tipo === "bono";
-              const cuotaPreview = !isBonoForm && parseFloat(movForm.monto) > 0 ? (parseFloat(movForm.monto) / Math.max(1, parseInt(movForm.numCuotas) || 1)) : 0;
+              const isProdForm = movForm.tipo === "bonoProduccion";
+              const isDescForm = ["prestamo", "anticipo", "descuento"].includes(movForm.tipo);
+              const cuotaPreview = isDescForm && parseFloat(movForm.monto) > 0 ? (parseFloat(movForm.monto) / Math.max(1, parseInt(movForm.numCuotas) || 1)) : 0;
+              const baseProdSel = BASES_PRODUCCION[movForm.prodBase] || BASES_PRODUCCION.ordenes_taller;
               const lblStyle = { fontSize: "0.78rem", color: "var(--text-muted)", display: "block", marginBottom: "4px", fontWeight: 600 };
               return (
                 <>
                   <h3 style={{ ...styles.subtitle, color: "var(--color-warning)", borderBottom: "1px solid rgba(245, 158, 11, 0.2)", paddingBottom: "8px", marginBottom: "16px" }}>
-                    💵 Préstamos, Anticipos y Bonos de Colaboradores
+                    💵 Bonos y Descuentos de Colaboradores
                   </h3>
                   <p style={{ margin: "0 0 16px 0", color: "var(--text-muted)", fontSize: "0.82rem" }}>
-                    Los préstamos y anticipos se descuentan automáticamente en la liquidación de nómina según su plan de cuotas. Los bonos se suman al pago y aparecen con su nombre en el recibo.
+                    Los préstamos, anticipos y descuentos (por error, daño, faltante, etc.) se descuentan automáticamente en la planilla, en un solo pago o en cuotas quincenales o mensuales. Los bonos fijos (únicos o recurrentes) y los bonos por producción se suman al pago. Todo aparece detallado en el recibo.
                   </p>
 
                   <form onSubmit={handleAddMovimiento} style={{ backgroundColor: "rgba(0,0,0,0.25)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "12px", padding: "16px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "12px", marginBottom: "24px" }}>
@@ -2730,45 +2911,146 @@ export default function Finance({
                     <div>
                       <label style={lblStyle}>Tipo *</label>
                       <select className="input-field" value={movForm.tipo} onChange={(e) => setMovForm({ ...movForm, tipo: e.target.value })}>
-                        <option value="prestamo">Préstamo</option>
-                        <option value="anticipo">Anticipo de salario</option>
-                        <option value="bono">Bono / Incentivo</option>
+                        <optgroup label="➖ Descuentos al empleado">
+                          <option value="prestamo">Préstamo</option>
+                          <option value="anticipo">Anticipo de salario</option>
+                          <option value="descuento">Descuento (error, daño, faltante, etc.)</option>
+                        </optgroup>
+                        <optgroup label="➕ Bonos al empleado">
+                          <option value="bono">Bono fijo (único o recurrente)</option>
+                          <option value="bonoProduccion">Bono por producción</option>
+                        </optgroup>
                       </select>
                     </div>
+                    {movForm.tipo === "descuento" && (
+                      <div>
+                        <label style={lblStyle}>Motivo del descuento *</label>
+                        <select className="input-field" value={movForm.motivo} onChange={(e) => setMovForm({ ...movForm, motivo: e.target.value })}>
+                          {Object.entries(MOTIVOS_DESCUENTO).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                        </select>
+                      </div>
+                    )}
                     <div>
-                      <label style={lblStyle}>{isBonoForm ? "Nombre del bono *" : "Concepto"}</label>
-                      <input className="input-field" value={movForm.nombre} onChange={(e) => setMovForm({ ...movForm, nombre: e.target.value })} placeholder={isBonoForm ? "Ej. Bono por productividad" : "Ej. Préstamo personal"} />
+                      <label style={lblStyle}>{isBonoForm || isProdForm ? "Nombre del bono *" : "Concepto"}</label>
+                      <input className="input-field" value={movForm.nombre} onChange={(e) => setMovForm({ ...movForm, nombre: e.target.value })} placeholder={isProdForm ? "Ej. Bono por órdenes entregadas" : isBonoForm ? "Ej. Bono de puntualidad" : movForm.tipo === "descuento" ? "Ej. Rayón en vehículo placa P-123ABC" : "Ej. Préstamo personal"} />
                     </div>
+                    {!isProdForm && (
+                      <div>
+                        <label style={lblStyle}>{isBonoForm ? "Monto del bono (Q) *" : "Monto total a descontar (Q) *"}</label>
+                        <input type="number" min="0.01" step="any" className="input-field" value={movForm.monto} onChange={(e) => setMovForm({ ...movForm, monto: e.target.value })} placeholder="0.00" />
+                      </div>
+                    )}
                     <div>
-                      <label style={lblStyle}>Monto total (Q) *</label>
-                      <input type="number" min="0.01" step="any" className="input-field" value={movForm.monto} onChange={(e) => setMovForm({ ...movForm, monto: e.target.value })} placeholder="0.00" />
-                    </div>
-                    <div>
-                      <label style={lblStyle}>Fecha</label>
+                      <label style={lblStyle}>{isDescForm ? "Fecha del registro" : "Vigente desde"}</label>
                       <input type="date" className="input-field" value={movForm.fecha} onChange={(e) => setMovForm({ ...movForm, fecha: e.target.value })} />
                     </div>
-                    {!isBonoForm ? (
+
+                    {isDescForm && (
                       <>
                         <div>
                           <label style={lblStyle}>Inicia descuento desde</label>
                           <input type="date" className="input-field" value={movForm.fechaInicioPago} onChange={(e) => setMovForm({ ...movForm, fechaInicioPago: e.target.value })} />
                         </div>
                         <div>
-                          <label style={lblStyle}>Número de cuotas (planillas)</label>
-                          <input type="number" min="1" step="1" className="input-field" value={movForm.numCuotas} onChange={(e) => setMovForm({ ...movForm, numCuotas: e.target.value })} />
-                          {cuotaPreview > 0 && <span style={{ fontSize: "0.75rem", color: "var(--color-warning)" }}>Cuota: {formatMoney(cuotaPreview)} por planilla</span>}
+                          <label style={lblStyle}>Forma de descuento</label>
+                          <select className="input-field" value={parseInt(movForm.numCuotas) > 1 ? "cuotas" : "unico"} onChange={(e) => setMovForm({ ...movForm, numCuotas: e.target.value === "unico" ? "1" : (parseInt(movForm.numCuotas) > 1 ? movForm.numCuotas : "2") })}>
+                            <option value="unico">Pago único (un solo descuento)</option>
+                            <option value="cuotas">En varios pagos (cuotas)</option>
+                          </select>
                         </div>
-                        <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.8rem", color: "var(--text-muted)", cursor: "pointer" }}>
-                          <input type="checkbox" checked={movForm.registrarEgreso} onChange={(e) => setMovForm({ ...movForm, registrarEgreso: e.target.checked })} />
-                          Registrar salida de efectivo en egresos
-                        </label>
+                        {parseInt(movForm.numCuotas) > 1 && (
+                          <>
+                            <div>
+                              <label style={lblStyle}>Número de cuotas</label>
+                              <input type="number" min="2" step="1" className="input-field" value={movForm.numCuotas} onChange={(e) => setMovForm({ ...movForm, numCuotas: e.target.value })} />
+                            </div>
+                            <div>
+                              <label style={lblStyle}>Frecuencia de las cuotas</label>
+                              <select className="input-field" value={movForm.frecuenciaCuotas} onChange={(e) => setMovForm({ ...movForm, frecuenciaCuotas: e.target.value })}>
+                                <option value="cada_pago">Quincenal (en cada planilla)</option>
+                                <option value="mensual">Mensual (una vez al mes)</option>
+                              </select>
+                            </div>
+                          </>
+                        )}
+                        {cuotaPreview > 0 && (
+                          <div style={{ display: "flex", alignItems: "flex-end" }}>
+                            <span style={{ fontSize: "0.8rem", color: "var(--color-warning)", fontWeight: 700 }}>
+                              {parseInt(movForm.numCuotas) > 1 ? `${movForm.numCuotas} cuotas de ${formatMoney(cuotaPreview)} (${movForm.frecuenciaCuotas === "mensual" ? "mensual" : "por planilla"})` : `Descuento único de ${formatMoney(cuotaPreview)}`}
+                            </span>
+                          </div>
+                        )}
+                        {(movForm.tipo === "prestamo" || movForm.tipo === "anticipo") && (
+                          <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.8rem", color: "var(--text-muted)", cursor: "pointer" }}>
+                            <input type="checkbox" checked={movForm.registrarEgreso} onChange={(e) => setMovForm({ ...movForm, registrarEgreso: e.target.checked })} />
+                            Registrar salida de efectivo en egresos
+                          </label>
+                        )}
                       </>
-                    ) : (
-                      <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.8rem", color: "var(--text-muted)", cursor: "pointer" }}>
-                        <input type="checkbox" checked={movForm.recurrente} onChange={(e) => setMovForm({ ...movForm, recurrente: e.target.checked })} />
-                        Bono recurrente (cada planilla)
-                      </label>
                     )}
+
+                    {isProdForm && (
+                      <>
+                        <div>
+                          <label style={lblStyle}>Producción que se mide *</label>
+                          <select className="input-field" value={movForm.prodBase} onChange={(e) => {
+                            const nb = e.target.value;
+                            const esMonto = BASES_PRODUCCION[nb]?.tipo === "monto";
+                            setMovForm({ ...movForm, prodBase: nb, prodModalidad: esMonto && movForm.prodModalidad === "por_unidad" ? "porcentaje" : (!esMonto && movForm.prodModalidad === "porcentaje" ? "por_unidad" : movForm.prodModalidad) });
+                          }}>
+                            {Object.entries(BASES_PRODUCCION).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={lblStyle}>Cómo se calcula *</label>
+                          <select className="input-field" value={movForm.prodModalidad} onChange={(e) => setMovForm({ ...movForm, prodModalidad: e.target.value })}>
+                            {Object.entries(MODALIDADES_PRODUCCION)
+                              .filter(([k]) => baseProdSel.tipo === "monto" ? k !== "por_unidad" : k !== "porcentaje")
+                              .map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                          </select>
+                        </div>
+                        {movForm.prodModalidad === "meta" && (
+                          <div>
+                            <label style={lblStyle}>Meta del período ({baseProdSel.unidad}) *</label>
+                            <input type="number" min="0" step="any" className="input-field" value={movForm.prodMeta} onChange={(e) => setMovForm({ ...movForm, prodMeta: e.target.value })} placeholder={baseProdSel.tipo === "monto" ? "Ej. 15000" : "Ej. 20"} />
+                          </div>
+                        )}
+                        <div>
+                          <label style={lblStyle}>{movForm.prodModalidad === "porcentaje" ? "Porcentaje (%) *" : movForm.prodModalidad === "meta" ? "Monto del bono al cumplir la meta (Q) *" : `Q por cada ${baseProdSel.unidad.replace(/s$/, "")} *`}</label>
+                          <input type="number" min="0" step="any" className="input-field" value={movForm.prodValor} onChange={(e) => setMovForm({ ...movForm, prodValor: e.target.value })} placeholder={movForm.prodModalidad === "porcentaje" ? "Ej. 3" : "Ej. 25"} />
+                        </div>
+                        {movForm.colaborador && (() => {
+                          const { startDate, endDate } = getPayrollDateRangeInfo();
+                          const prod = getProduccionColaborador(movForm.colaborador, startDate, endDate);
+                          const calc = calcularBonoProduccion({ produccion: { base: movForm.prodBase, modalidad: movForm.prodModalidad, valor: parseFloat(movForm.prodValor) || 0, meta: parseFloat(movForm.prodMeta) || 0 } }, prod);
+                          return (
+                            <div style={{ gridColumn: "1 / -1", fontSize: "0.78rem", color: "#34d399", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)", borderRadius: "8px", padding: "8px 10px" }}>
+                              📊 Vista previa con la producción del período seleccionado ({getPayrollDateRangeInfo().periodLabel}): {calc.detalle} → <strong>{formatMoney(calc.monto)}</strong>
+                            </div>
+                          );
+                        })()}
+                      </>
+                    )}
+
+                    {(isBonoForm || isProdForm) && (
+                      <>
+                        <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.8rem", color: "var(--text-muted)", cursor: "pointer" }}>
+                          <input type="checkbox" checked={movForm.recurrente} onChange={(e) => setMovForm({ ...movForm, recurrente: e.target.checked })} />
+                          Bono recurrente (se paga automáticamente cada período)
+                        </label>
+                        {movForm.recurrente && (
+                          <div>
+                            <label style={lblStyle}>Frecuencia del bono</label>
+                            <select className="input-field" value={movForm.frecuencia} onChange={(e) => setMovForm({ ...movForm, frecuencia: e.target.value })}>
+                              <option value="cada_pago">En cada pago de planilla</option>
+                              <option value="quincenal">Quincenal (en planilla mensual se paga doble)</option>
+                              <option value="mensual">Mensual (una vez al mes, en la 2da quincena)</option>
+                            </select>
+                          </div>
+                        )}
+                      </>
+                    )}
+
                     <div>
                       <label style={lblStyle}>Nota</label>
                       <input className="input-field" value={movForm.nota} onChange={(e) => setMovForm({ ...movForm, nota: e.target.value })} placeholder="Opcional" />
@@ -2801,12 +3083,21 @@ export default function Finance({
                       </thead>
                       <tbody>
                         {movList.length === 0 ? (
-                          <tr><td colSpan="8" style={{ ...styles.td, textAlign: "center", padding: "30px", color: "var(--text-muted)" }}>No hay préstamos, anticipos ni bonos registrados.</td></tr>
+                          <tr><td colSpan="8" style={{ ...styles.td, textAlign: "center", padding: "30px", color: "var(--text-muted)" }}>No hay bonos ni descuentos registrados.</td></tr>
                         ) : movList.map(m => {
                           const aplicado = (m.pagos || []).reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
-                          const esBono = m.tipo === "bono";
+                          const esBono = m.tipo === "bono" || m.tipo === "bonoProduccion";
                           const saldo = esBono ? 0 : Math.max(0, (parseFloat(m.monto) || 0) - aplicado);
-                          const tipoLabel = esBono ? "🎁 Bono" : (m.tipo === "prestamo" ? "💳 Préstamo" : "💵 Anticipo");
+                          const tipoLabel = m.tipo === "bonoProduccion" ? "📈 Bono por producción"
+                            : m.tipo === "bono" ? (m.recurrente ? "🔁 Bono recurrente" : "🎁 Bono único")
+                            : m.tipo === "prestamo" ? "💳 Préstamo"
+                            : m.tipo === "anticipo" ? "💵 Anticipo"
+                            : `➖ Descuento · ${MOTIVOS_DESCUENTO[m.motivo] || "Otro"}`;
+                          const planTxt = m.tipo === "bonoProduccion"
+                            ? `${(BASES_PRODUCCION[m.produccion?.base] || {}).label || "Producción"} · ${m.produccion?.modalidad === "porcentaje" ? `${m.produccion?.valor}%` : m.produccion?.modalidad === "meta" ? `Meta ${m.produccion?.meta} → ${formatMoney(m.produccion?.valor)}` : `${formatMoney(m.produccion?.valor)} c/u`} · ${m.recurrente ? FRECUENCIAS_BONO[m.frecuencia || "cada_pago"] : "Pago único"}`
+                            : esBono
+                              ? (m.recurrente ? FRECUENCIAS_BONO[m.frecuencia || "cada_pago"] : "Pago único")
+                              : `${(parseInt(m.numCuotas) || 1) === 1 ? "Pago único" : `${m.numCuotas} cuotas`} de ${formatMoney(m.cuotaMonto)} ${m.frecuenciaCuotas === "mensual" ? "(mensual)" : "(por planilla)"} desde ${m.fechaInicioPago || m.fecha}`;
                           return (
                             <tr key={m.id} style={styles.tr}>
                               <td style={{ ...styles.td, fontWeight: 700, color: "#fff" }}>{m.colaborador}</td>
@@ -2814,9 +3105,9 @@ export default function Finance({
                                 <div style={{ fontWeight: 700, color: "#fff" }}>{tipoLabel}</div>
                                 <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{m.nombre}{m.nota ? ` · ${m.nota}` : ""}</div>
                               </td>
-                              <td style={styles.td}>{formatMoney(m.monto)}</td>
+                              <td style={styles.td}>{m.tipo === "bonoProduccion" ? <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>Variable</span> : formatMoney(m.monto)}</td>
                               <td style={{ ...styles.td, fontSize: "0.8rem" }}>
-                                {esBono ? (m.recurrente ? "Cada planilla" : "Pago único") : `${m.numCuotas} cuota(s) de ${formatMoney(m.cuotaMonto)} desde ${m.fechaInicioPago || m.fecha}`}
+                                {planTxt}
                               </td>
                               <td style={{ ...styles.td, color: "var(--color-success)" }}>{formatMoney(aplicado)} <span style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>({(m.pagos || []).length})</span></td>
                               <td style={{ ...styles.td, fontWeight: 700, color: saldo > 0 ? "var(--color-warning)" : "var(--text-muted)" }}>{esBono ? "—" : formatMoney(saldo)}</td>
