@@ -23,6 +23,7 @@ import { DEFAULT_BRANDING, getCleanBranding, drawCanvasHeader, applyDocumentThem
 import ClientVehiclesModal from "./ClientVehiclesModal";
 import { jsPDF } from "jspdf";
 import { useEsMovil, leerEncargoMovil, borrarEncargosMovil } from "../utils/movil";
+import { getSiguientePaso } from "../utils/pasosOrdenes";
 
 const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
 
@@ -855,11 +856,9 @@ export default function Carwash({
           };
         }
 
-        // CASE 2: Regular standalone carwash order
+        // CASE 2: Regular standalone carwash order (usa los pasos configurados en Configuración)
         let nuevoEstado = c.estado;
-        if (c.estado === "En proceso") {
-          nuevoEstado = "Listo para entrega";
-        } else if (c.estado === "Listo para entrega" && isManager) {
+        if (c.estado === "Listo para entrega" && isManager) {
           // Open split payment modal instead of directly updating order state!
           setCheckoutOrder({ ...c, total: c.precio });
           setCheckoutNit(c.nit || "C/F");
@@ -868,6 +867,9 @@ export default function Carwash({
           setSelectedPaymentMethods([]);
           cancelado = true;
           return c;
+        } else if (c.estado !== "Listo para entrega") {
+          const siguiente = getSiguientePaso(workshopBranding, "carwash", c.estado);
+          if (siguiente && siguiente !== "Entregado") nuevoEstado = siguiente;
         }
         return { ...c, estado: nuevoEstado, updatedAt: new Date().toISOString() };
       }
@@ -2710,7 +2712,12 @@ export default function Carwash({
                           <CheckCircle size={16} />
                           {c.tallerOrderId 
                             ? (c.estado === "En proceso" ? "Completar y Regresar a Taller" : "Retornar a Taller (Listo)")
-                            : (c.estado === "En proceso" ? "Completar Lavado" : "Facturar y Entregar")
+                            : (c.estado === "Listo para entrega"
+                                ? "Facturar y Entregar"
+                                : (() => {
+                                    const sig = getSiguientePaso(workshopBranding, "carwash", c.estado);
+                                    return !sig || sig === "Listo para entrega" ? "Completar Lavado" : `Pasar a: ${sig}`;
+                                  })())
                           }
                         </button>
                       )}

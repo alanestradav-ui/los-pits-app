@@ -52,6 +52,7 @@ import BrandingPaletteEditor from "./BrandingPaletteEditor";
 import { ALL_AVAILABLE_MODULES, DEFAULT_ACTIVE_MODULES, MODULE_PRESETS, isModuleActive } from "../utils/modulesConfig";
 import { getSupabaseClient, resetSupabaseClient, syncKeyToCloud, testSupabaseConnection, cloudDelete } from "../utils/supabase";
 import PapeleraModal from "./PapeleraModal";
+import PasosOrdenesEditor from "./PasosOrdenesEditor";
 import { createBackup, exportBackupToFile, restoreFromBackup, getBackupsList } from "../services/backupService";
 import { getTrashItems, softDelete as trashSoftDelete } from "../services/trashService";
 import { addDeletedUsername, removeDeletedUsername, addDeletedFixedCost, removeDeletedFixedCost, setTenantLocalStorage } from "../utils/storage";
@@ -194,7 +195,12 @@ export default function SettingsComponent({
   const handleSaveBranding = (e) => {
     if (e) e.preventDefault();
     if (typeof setWorkshopBranding === "function") {
-      setWorkshopBranding(brandingForm);
+      // Conserva los pasos de órdenes configurados (se editan en su propia pestaña)
+      setWorkshopBranding(prev => ({
+        ...brandingForm,
+        pasosOrdenes: prev?.pasosOrdenes || brandingForm.pasosOrdenes,
+        pasosOrdenesUpdatedAt: prev?.pasosOrdenesUpdatedAt || brandingForm.pasosOrdenesUpdatedAt
+      }));
     }
     setBrandingSavedToast(true);
     setTimeout(() => setBrandingSavedToast(false), 3000);
@@ -230,7 +236,7 @@ export default function SettingsComponent({
     if (window.confirm("¿Deseas restaurar la configuración visual y textos por defecto de Los Pits?")) {
       setBrandingForm(DEFAULT_BRANDING);
       if (typeof setWorkshopBranding === "function") {
-        setWorkshopBranding(DEFAULT_BRANDING);
+        setWorkshopBranding(prev => ({ ...DEFAULT_BRANDING, pasosOrdenes: prev?.pasosOrdenes, pasosOrdenesUpdatedAt: prev?.pasosOrdenesUpdatedAt }));
       }
     }
   };
@@ -1199,6 +1205,12 @@ export default function SettingsComponent({
           <Settings size={16} /> Tarifas y Comisión General
         </button>
         <button 
+          onClick={() => setActiveTab("pasos")}
+          style={{ ...styles.subTabBtn, ...(activeTab === "pasos" ? styles.subTabActive : {}) }}
+        >
+          <Sliders size={16} /> 🧭 Pasos de Órdenes
+        </button>
+        <button 
           onClick={() => setActiveTab("workshop")}
           style={{ ...styles.subTabBtn, ...(activeTab === "workshop" ? styles.subTabActive : {}) }}
         >
@@ -1899,6 +1911,16 @@ export default function SettingsComponent({
             </div>
 
           </div>
+        )}
+
+        {/* Tab: 🧭 Pasos configurables de órdenes de Taller y Carwash */}
+        {activeTab === "pasos" && (
+          <PasosOrdenesEditor
+            workshopBranding={workshopBranding}
+            setWorkshopBranding={setWorkshopBranding}
+            ordenes={ordenes}
+            carwash={carwash}
+          />
         )}
 
         {/* Tab 1: General Settings & Presets CRUD */}

@@ -36,6 +36,7 @@ import ServicePackagesManager, { aplicarPaqueteAPresupuesto, paqueteDesdePresupu
 import { jsPDF } from "jspdf";
 import { AutorizacionClienteModal, RegistrosNoAutorizados } from "./AutorizacionClienteModal";
 import { totalesPresupuesto, filtrarPresupuesto, crearRegistroNoAutorizado, lineasDePresupuesto } from "../utils/cotizaciones";
+import { getPasosActivos, getSiguientePaso } from "../utils/pasosOrdenes";
 import { useEsMovil, leerEncargoMovil, borrarEncargosMovil } from "../utils/movil";
 
 const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
@@ -2512,7 +2513,7 @@ export default function Taller({
           abrirRevisionModal(o);
         }
 
-        if (nuevoEstado === "Listo para entrega" && (!o.revisionPreEntrega || !o.revisionPreEntrega.completado)) {
+        if (nuevoEstado === "Listo para entrega" && getPasosActivos(workshopBranding, "taller").includes("Revisión antes de entrega") && (!o.revisionPreEntrega || !o.revisionPreEntrega.completado)) {
           alert("Debes realizar la 'Revisión Antes de Entrega' y completar la lista de chequeo antes de marcar el vehículo como Listo para Entrega.");
           abrirRevisionModal(o);
           cancelado = true;
@@ -3203,11 +3204,22 @@ export default function Taller({
   const avanzarOrden = (id) => {
     const orden = ordenes.find((o) => o.id === id);
     if (!orden) return;
-    const currentIndex = TALLER_STATUSES.indexOf(orden.estado);
-    if (currentIndex !== -1 && currentIndex < TALLER_STATUSES.length - 1) {
-      const siguienteEstado = TALLER_STATUSES[currentIndex + 1];
+    // 🧭 Usa los pasos configurados por el administrador (Configuración → Pasos de órdenes)
+    const siguienteEstado = getSiguientePaso(workshopBranding, "taller", orden.estado);
+    if (siguienteEstado) {
       cambiarEstado(id, siguienteEstado);
     }
+  };
+
+  // Etiqueta del botón de avance según el siguiente paso configurado
+  const getEtiquetaAvance = (estado) => {
+    if (estado === "Listo para entrega") return getButtonLabel(estado);
+    const siguiente = getSiguientePaso(workshopBranding, "taller", estado);
+    const defectoIdx = TALLER_STATUSES.indexOf(estado);
+    const siguienteDefecto = defectoIdx !== -1 ? TALLER_STATUSES[defectoIdx + 1] : null;
+    if (siguiente && siguiente === siguienteDefecto) return getButtonLabel(estado);
+    if (siguiente === "Listo para entrega") return "Marcar Listo para Entrega";
+    return siguiente ? `Pasar a: ${siguiente}` : "Siguiente";
   };
 
   const handleWhatsAppRedirect = (phoneFormatted, text) => {
@@ -5983,7 +5995,7 @@ export default function Taller({
                             }}
                             disabled={isWorker && (o.estado === "Listo para entrega" || o.estado === "Entregado")}
                           >
-                            {TALLER_STATUSES.map((status) => (
+                            {[...getPasosActivos(workshopBranding, "taller"), ...(getPasosActivos(workshopBranding, "taller").includes(o.estado) ? [] : [o.estado])].filter(Boolean).map((status) => (
                               <option key={status} value={status} style={{ backgroundColor: "var(--bg-surface)", color: "#fff" }}>
                                 {status}
                               </option>
@@ -6027,7 +6039,7 @@ export default function Taller({
                                 disabled={isWorker && o.estado === "Listo para entrega"}
                               >
                                 <CheckCircle size={14} />
-                                <span style={{ fontSize: "0.8rem", whiteSpace: "nowrap" }}>{getButtonLabel(o.estado)}</span>
+                                <span style={{ fontSize: "0.8rem", whiteSpace: "nowrap" }}>{getEtiquetaAvance(o.estado)}</span>
                               </button>
                             )
                           )}
@@ -8835,7 +8847,7 @@ export default function Taller({
                     value={editingBilledOrder.estado || "Entregado"}
                     onChange={(e) => setEditingBilledOrder({ ...editingBilledOrder, estado: e.target.value })}
                   >
-                    {TALLER_STATUSES.map((st, idx) => (
+                    {[...getPasosActivos(workshopBranding, "taller"), ...(getPasosActivos(workshopBranding, "taller").includes(editingBilledOrder.estado || "Entregado") ? [] : [editingBilledOrder.estado])].filter(Boolean).map((st, idx) => (
                       <option key={idx} value={st}>{st}</option>
                     ))}
                   </select>

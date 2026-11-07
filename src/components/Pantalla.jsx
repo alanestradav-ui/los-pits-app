@@ -343,13 +343,13 @@ export default function Pantalla({ ordenes = [], carwash = [], usuarioActual, us
               <div className="glass-panel" style={styles.kanbanColumn}>
                 <div style={{ ...styles.kanbanColumnHeader, borderBottom: "3px solid var(--color-primary)" }}>
                   <h3>2. Reparación & Calidad</h3>
-                  <span style={styles.countBadge}>{filteredTaller.filter(o => ["En proceso de reparación", "En período de prueba y control de calidad", "En proceso de lavado"].includes(o.estado)).length}</span>
+                  <span style={styles.countBadge}>{filteredTaller.filter(o => !["En recepción", "En proceso de diagnóstico y presupuesto", "En espera de autorización", "Listo para entrega"].includes(o.estado)).length}</span>
                 </div>
                 <div style={styles.kanbanScrollContainer}>
-                  {filteredTaller.filter(o => ["En proceso de reparación", "En período de prueba y control de calidad", "En proceso de lavado"].includes(o.estado)).map(item => (
+                  {filteredTaller.filter(o => !["En recepción", "En proceso de diagnóstico y presupuesto", "En espera de autorización", "Listo para entrega"].includes(o.estado)).map(item => (
                     <TallerCard key={item.id} item={item} isFullscreen={true} />
                   ))}
-                  {filteredTaller.filter(o => ["En proceso de reparación", "En período de prueba y control de calidad", "En proceso de lavado"].includes(o.estado)).length === 0 && (
+                  {filteredTaller.filter(o => !["En recepción", "En proceso de diagnóstico y presupuesto", "En espera de autorización", "Listo para entrega"].includes(o.estado)).length === 0 && (
                     <div style={styles.emptyKanban}>Sin vehículos en esta etapa</div>
                   )}
                 </div>
@@ -394,13 +394,13 @@ export default function Pantalla({ ordenes = [], carwash = [], usuarioActual, us
               <div className="glass-panel" style={{ ...styles.kanbanColumn, flex: 1 }}>
                 <div style={{ ...styles.kanbanColumnHeader, borderBottom: "3px solid var(--color-warning)" }}>
                   <h3>1. En Proceso de Lavado / Detallado</h3>
-                  <span style={styles.countBadge}>{filteredCarwash.filter(c => c.estado === "En proceso").length}</span>
+                  <span style={styles.countBadge}>{filteredCarwash.filter(c => c.estado !== "Listo para entrega").length}</span>
                 </div>
                 <div style={styles.kanbanScrollContainer}>
-                  {filteredCarwash.filter(c => c.estado === "En proceso").map(item => (
+                  {filteredCarwash.filter(c => c.estado !== "Listo para entrega").map(item => (
                     <CarwashCard key={item.id} item={item} isFullscreen={true} />
                   ))}
-                  {filteredCarwash.filter(c => c.estado === "En proceso").length === 0 && (
+                  {filteredCarwash.filter(c => c.estado !== "Listo para entrega").length === 0 && (
                     <div style={styles.emptyKanban}>Sin servicios en lavado actualmente</div>
                   )}
                 </div>
