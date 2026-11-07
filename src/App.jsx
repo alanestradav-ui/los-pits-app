@@ -1444,11 +1444,66 @@ export default function App() {
   const [sessionVersion, setSessionVersion] = useState(0);
   const sessionExpiredNotified = useRef(false);
 
+  // 🛡️ BLINDAJE DE ÓRDENES NUEVAS (celular):
+  // La sincronización con la nube calcula un valor a partir de una "foto" del estado tomada antes de
+  // recibir la respuesta. Si mientras tanto se creó o editó una orden (muy común en celular, con red lenta),
+  // ese valor fijo reemplazaba al estado y la orden recién creada desaparecía.
+  // Ahora el valor de la nube se FUSIONA con el estado más reciente: se conservan las órdenes locales
+  // recientes que la nube aún no tiene y, si una orden existe en ambos lados, gana la versión más nueva.
+  const protegerRegistrosLocales = (prev, next) => {
+    if (!Array.isArray(prev) || !Array.isArray(next)) return next;
+    const ahora = Date.now();
+    const tiempo = (it) => {
+      const t = it && (it.updatedAt || it.fecha);
+      const n = t ? new Date(t).getTime() : 0;
+      return isNaN(n) ? 0 : n;
+    };
+    const creadoEn = (it) => {
+      if (!it) return 0;
+      const m = String(it.id || "").match(/(\d{12,})/);
+      if (m) return parseInt(m[1], 10);
+      return tiempo(it);
+    };
+    const eliminados = new Set();
+    try {
+      const papelera = (stateRef.current && stateRef.current.papeleraSistema) || [];
+      (Array.isArray(papelera) ? papelera : []).forEach(p => {
+        const id = p && (p.targetOriginalId || (p.itemOriginal && p.itemOriginal.id));
+        if (id !== undefined && id !== null) eliminados.add(String(id));
+      });
+    } catch (e) { /* sin papelera */ }
+
+    const prevPorId = new Map();
+    prev.forEach(it => { if (it && it.id !== undefined && it.id !== null) prevPorId.set(String(it.id), it); });
+    const idsNext = new Set();
+    const resultado = next.map(it => {
+      if (!it || it.id === undefined || it.id === null) return it;
+      const id = String(it.id);
+      idsNext.add(id);
+      const local = prevPorId.get(id);
+      // Si la versión local es más reciente (editada mientras llegaba la nube), se conserva
+      return local && tiempo(local) > tiempo(it) ? local : it;
+    });
+    const rescatados = prev.filter(it => {
+      if (!it || it.id === undefined || it.id === null) return false;
+      const id = String(it.id);
+      if (idsNext.has(id) || eliminados.has(id)) return false;
+      const esNuevaLocal = it._isNewOffline || it.isOfflineCreated;
+      const reciente = ahora - Math.max(creadoEn(it), tiempo(it)) < 48 * 60 * 60 * 1000;
+      return esNuevaLocal ? reciente : (ahora - tiempo(it) < 3 * 60 * 1000);
+    });
+    if (rescatados.length === 0) {
+      const sinCambios = resultado.length === next.length && resultado.every((it, i) => it === next[i]);
+      return sinCambios ? next : resultado;
+    }
+    return [...rescatados, ...resultado];
+  };
+
   // Register active state setters on every render/mount so async callbacks target the correct instance
   useEffect(() => {
     globalActiveSetters.usuarios = setUsuarios;
-    globalActiveSetters.ordenes = setOrdenes;
-    globalActiveSetters.carwash = setCarwash;
+    globalActiveSetters.ordenes = (valor) => setOrdenes(prev => protegerRegistrosLocales(prev, typeof valor === "function" ? valor(prev) : valor));
+    globalActiveSetters.carwash = (valor) => setCarwash(prev => protegerRegistrosLocales(prev, typeof valor === "function" ? valor(prev) : valor));
     globalActiveSetters.parkingEntries = setParkingEntries;
     globalActiveSetters.parkingRate = setParkingRate;
     globalActiveSetters.parkingHistory = setParkingHistory;
@@ -2191,15 +2246,18 @@ export default function App() {
     };
   }, [isInitialPullDone, tenantId, sessionVersion]);
 
+  // 🛡️ Las órdenes y lavados se guardan en el equipo SIEMPRE (aunque la descarga inicial de la nube
+  // aún no termine). Antes, una orden creada en ese momento desde el celular no quedaba guardada y
+  // se perdía si la app se recargaba (por ejemplo, al abrir WhatsApp). La subida a la nube sí espera.
   useEffect(() => {
-    if (!isInitialPullDone) return;
     setTenantLocalStorage("ordenes", ordenes, tenantId);
+    if (!isInitialPullDone) return;
     syncToCloud("ordenes", ordenes);
   }, [ordenes, isInitialPullDone]);
 
   useEffect(() => {
-    if (!isInitialPullDone) return;
     setTenantLocalStorage("carwash", carwash, tenantId);
+    if (!isInitialPullDone) return;
     syncToCloud("carwash", carwash);
   }, [carwash, isInitialPullDone]);
 

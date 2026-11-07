@@ -574,12 +574,16 @@ export default function Citas({
 
   // Convert Appointment to Live Order (Taller or Carwash)
   const handleDispatchCita = (cita) => {
+    const ahoraIso = new Date().toISOString();
     if (cita.moduloDestino === "carwash") {
       // Create Carwash Order
+      const lavadorAsignado = cita.responsable || "";
       const newWash = {
-        id: `cw_${Date.now()}`,
+        id: `cw_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
         cliente: cita.clienteNombre,
         telefono: cita.clienteTelefono,
+        nit: cita.clienteNit || "C/F",
+        nombreFacturacion: cita.clienteNombre,
         vehiculo: {
           marca: cita.vehiculoMarca || "General",
           linea: cita.vehiculoLinea || "",
@@ -588,10 +592,15 @@ export default function Citas({
         },
         tipo: cita.servicio || "Lavado Completo",
         precio: parseFloat(cita.precioEstimado) || 60,
+        precioBase: parseFloat(cita.precioEstimado) || 60,
         estado: "En proceso",
-        lavador: cita.responsable || (lavadores[0] || "Asignado"),
-        horaIngreso: new Date().toISOString(),
-        metodoPago: "Efectivo",
+        lavadores: lavadorAsignado ? [lavadorAsignado] : [],
+        lavador: lavadorAsignado || "Sin asignar",
+        creadoPor: usuarioActual?.user || "",
+        fotos: [],
+        horaIngreso: ahoraIso,
+        fecha: ahoraIso,
+        updatedAt: ahoraIso,
         origenCitaId: cita.id
       };
 
@@ -603,20 +612,33 @@ export default function Citas({
       if (typeof onNavigateTab === "function") onNavigateTab("carwash");
 
     } else {
-      // Create Workshop / Taller Order
+      // Create Workshop / Taller Order (con la misma estructura que una orden creada en Taller)
+      const motivo = cita.servicio + (cita.notas ? ` - Notas: ${cita.notas}` : "");
+      const placa = cita.vehiculoPlaca || "S/P";
       const newOrder = {
-        id: Date.now(),
+        id: `ord_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
         cliente: cita.clienteNombre,
         telefono: cita.clienteTelefono,
-        nit: cita.clienteNit || "CF",
-        vehiculo: `${cita.vehiculoMarca || ''} ${cita.vehiculoLinea || ''} (${cita.vehiculoPlaca || 'S/P'})`.trim(),
-        mecanico: cita.responsable || (mecanicos[0] || "Juan"),
-        trabajo: cita.servicio + (cita.notas ? ` - Notas: ${cita.notas}` : ""),
+        nit: cita.clienteNit || "C/F",
+        nombreFacturacion: cita.clienteNombre,
+        placa,
+        marca: cita.vehiculoMarca || "",
+        linea: cita.vehiculoLinea || "",
+        color: cita.vehiculoColor || "",
+        anio: cita.vehiculoModelo || "",
+        vehiculo: `${cita.vehiculoMarca || ''} ${cita.vehiculoLinea || ''} (${placa})`.trim(),
+        mecanico: cita.responsable || "",
+        motivosIngreso: [cita.servicio].filter(Boolean),
+        motivoIngreso: motivo,
+        trabajo: motivo,
         fotos: [],
-        estado: "En Proceso",
+        estado: "En recepción",
         total: parseFloat(cita.precioEstimado) || 0,
         comision: 0,
-        fecha: new Date().toISOString(),
+        diagnosticoAutorizado: false,
+        creadoPor: usuarioActual?.user || "",
+        fecha: ahoraIso,
+        updatedAt: ahoraIso,
         origenCitaId: cita.id,
         _isNewOffline: true,
         isOfflineCreated: true
@@ -626,7 +648,7 @@ export default function Citas({
         setOrdenes(prev => [newOrder, ...(Array.isArray(prev) ? prev : [])]);
       }
       handleUpdateEstado(cita.id, "ingresada");
-      alert(`✅ ¡Vehículo ingresado al Taller Mecánico con éxito! Orden técnica #${newOrder.id} generada.`);
+      alert(`✅ ¡Vehículo ingresado al Taller Mecánico con éxito! La orden quedó "En recepción"${newOrder.mecanico ? "" : " (recuerda asignarle un mecánico)"}.`);
       if (typeof onNavigateTab === "function") onNavigateTab("taller");
     }
   };
