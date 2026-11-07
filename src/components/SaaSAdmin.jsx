@@ -466,8 +466,10 @@ export default function SaaSAdmin({ activeTenantId, onSwitchTenant }) {
 const styles = {
   container: {
     padding: "20px",
-    maxWidth: "1200px",
-    margin: "0 auto"
+    width: "100%",
+    height: "100%",
+    overflowY: "auto",
+    boxSizing: "border-box"
   },
   headerRow: {
     display: "flex",

@@ -480,6 +480,51 @@ p {
   min-width: 0;
 }
 
+/* 📅 Citas: el contenido se centra con un ancho máximo cómodo (sin afectar sus ventanas emergentes) */
+.citas-modulo > *:not([style*="position: fixed"]) {
+  max-width: 1400px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (max-width: 768px) {
+  /* Cada módulo ocupa exactamente el ancho de la pantalla y queda centrado */
+  .app-main > * {
+    width: 100% !important;
+    box-sizing: border-box;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    overflow-x: hidden;
+  }
+  .app-main *,
+  .app-main *::before,
+  .app-main *::after {
+    box-sizing: border-box;
+  }
+
+  /* Citas en celular: filtros y buscador a todo el ancho, tarjetas en una columna */
+  .citas-modulo [style*="min-width: min(100%, 260px)"] {
+    flex: 1 1 100% !important;
+    width: 100%;
+  }
+  .citas-modulo > div > div > select {
+    flex: 1 1 calc(50% - 6px);
+    min-width: 0;
+  }
+  .citas-modulo h2 {
+    font-size: 1.1rem !important;
+  }
+
+  /* Pantalla monitor en celular: se puede desplazar y las columnas se apilan */
+  .pantalla-modulo {
+    overflow-y: auto !important;
+    height: 100% !important;
+  }
+  .pantalla-modulo > * {
+    flex-shrink: 0;
+  }
+}
+
 @media (max-width: 768px) {
   .app-container {
     width: 100% !important;

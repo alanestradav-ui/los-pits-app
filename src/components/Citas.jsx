@@ -632,7 +632,7 @@ export default function Citas({
   };
 
   return (
-    <div style={styles.container}>
+    <div style={styles.container} className="animate-fade-in citas-modulo">
       {/* 1. TOP HEADER & METRICS BAR */}
       <div style={styles.headerCard}>
         <div style={styles.headerLeft}>
@@ -1443,8 +1443,11 @@ export default function Citas({
 const styles = {
   container: {
     padding: "24px",
-    maxWidth: "1400px",
-    margin: "0 auto"
+    width: "100%",
+    height: "100%",
+    overflowY: "auto",
+    overflowX: "hidden",
+    boxSizing: "border-box"
   },
   headerCard: {
     display: "flex",
@@ -1586,7 +1589,9 @@ const styles = {
     border: "1px solid rgba(255, 255, 255, 0.12)",
     borderRadius: "8px",
     padding: "6px 12px",
-    minWidth: "260px"
+    minWidth: "min(100%, 260px)",
+    flex: "1 1 260px",
+    boxSizing: "border-box"
   },
   searchInput: {
     background: "transparent",
@@ -1611,7 +1616,7 @@ const styles = {
   },
   citasListGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 340px), 1fr))",
     gap: "18px"
   },
   citaCard: {

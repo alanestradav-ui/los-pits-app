@@ -161,7 +161,7 @@ export default function Pantalla({ ordenes = [], carwash = [], usuarioActual, us
   };
 
   return (
-    <div style={styles.container} className="animate-fade-in">
+    <div style={styles.container} className="animate-fade-in pantalla-modulo">
       {/* HEADER CONTROL BAR */}
       <div className="glass-panel" style={styles.controlHeader}>
         <div style={styles.titleSection}>
