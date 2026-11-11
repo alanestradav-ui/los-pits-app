@@ -17,14 +17,16 @@ export const purgeStorageBloat = () => {
       "app_data_backup_snapshot",
       "lospits_app_data_backup_snapshot",
       "systemSnapshots",
-      "lospits_systemSnapshots"
+      "lospits_systemSnapshots",
+      "pruebas_systemSnapshots",
+      "autozoom_systemSnapshots"
     ];
     keysToEvict.forEach(k => {
       try { localStorage.removeItem(k); } catch (e) {}
     });
 
     // Also remove duplicate unscoped keys for lospits if scoped versions exist
-    const baseKeys = ["ordenes", "carwash", "usuarios", "parkingEntries", "workshopInventory", "cafeteriaInventory", "clientes", "vehiculos"];
+    const baseKeys = ["ordenes", "carwash", "usuarios", "parkingEntries", "parkingHistory", "workshopInventory", "cafeteriaInventory", "clientes", "vehiculos", "compras", "cuentasPorCobrar", "cuentasPorPagar", "papeleraSistema"];
     baseKeys.forEach(bk => {
       if (localStorage.getItem(`lospits_${bk}`) !== null) {
         try { localStorage.removeItem(bk); } catch (e) {}
@@ -32,7 +34,7 @@ export const purgeStorageBloat = () => {
     });
 
     // 🧼 Purge stale/corrupted carwash cache on mobile devices to resync cleanly with Supabase
-    const CW_CLEANUP_FLAG = "lospits_cw_sync_clean_v5";
+    const CW_CLEANUP_FLAG = "lospits_cw_sync_clean_v6";
     if (localStorage.getItem(CW_CLEANUP_FLAG) !== "true") {
       try {
         localStorage.removeItem("carwash");
@@ -70,6 +72,14 @@ export const purgeStorageBloat = () => {
   }
 };
 
+// 🚀 Ejecutar purga de emergencia al cargar el script para garantizar cuota libre
+// ANTES de que cualquier módulo intente guardar la sesión o cargar órdenes
+try {
+  if (typeof window !== "undefined" && window.localStorage) {
+    purgeStorageBloat();
+  }
+} catch (e) {}
+
 export const setLocalStorage = (key, value) => {
   try {
     localStorage.setItem(key, JSON.stringify(value));
@@ -97,16 +107,37 @@ export const setLocalStorage = (key, value) => {
           return;
         } catch (e2) {
           try {
-            // Si aún no cabe: solo los registros activos con sus fotos y los entregados sin fotos de ninguna orden antigua
+            // Nivel 2: registros entregados sin fotos
             const minima = value.map(it => {
               if (!it) return it;
-              if (it.estado !== "Entregado") return it;
+              if (it.estado !== "Entregado" && it.estado !== "Cobrado") return it;
               const { fotos, fotosDiagnostico, presupuestoOriginal, ...resto } = it;
               return { ...resto, _fotosSoloEnNube: true };
             });
             localStorage.setItem(key, JSON.stringify(minima));
             return;
-          } catch (e3) { /* sin espacio */ }
+          } catch (e3) {
+            try {
+              // Nivel 3 (pantallas móviles con cuota muy baja): mantener todos los registros intactos
+              // pero acotar fotos base64 gigantescas para asegurar que quepan en los 5 MB de cuota del celular
+              const ultraligera = value.map(it => {
+                if (!it) return it;
+                const copia = { ...it };
+                if (Array.isArray(copia.fotos)) {
+                  copia.fotos = copia.fotos.slice(0, 3).map(f => typeof f === "string" && f.length > 40000 ? f.substring(0, 40000) : f);
+                }
+                if (Array.isArray(copia.fotosDiagnostico)) {
+                  copia.fotosDiagnostico = copia.fotosDiagnostico.slice(0, 3).map(f => typeof f === "string" && f.length > 40000 ? f.substring(0, 40000) : f);
+                }
+                delete copia.presupuestoOriginal;
+                return copia;
+              });
+              localStorage.setItem(key, JSON.stringify(ultraligera));
+              return;
+            } catch (e4) {
+              console.error(`[Storage] Failed to set "${key}" even after ultra-light fallback:`, e4);
+            }
+          }
         }
       }
       console.error(`[Storage] Failed to set "${key}" even after cleanup:`, retryError);

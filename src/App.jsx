@@ -1414,8 +1414,10 @@ export default function App() {
 
   // 💾 PERSISTENCE EFFECT — scoped to tenant for strict isolation
   useEffect(() => {
-    const scopedSessionKey = `${tenantId}_usuarioActual`;
-    setLocalStorage(scopedSessionKey, usuarioActual);
+    if (usuarioActual && typeof usuarioActual === "object") {
+      const scopedSessionKey = `${tenantId}_usuarioActual`;
+      setLocalStorage(scopedSessionKey, usuarioActual);
+    }
   }, [usuarioActual, tenantId]);
 
   // 🔄 Sync logged-in user permissions & role with updated usuarios array (e.g. when Admin updates permissions)
@@ -1981,6 +1983,23 @@ export default function App() {
               cloudDataMap.set(item.key, item.value);
               const ver = Date.parse(item.updated_at) || 0;
               if (ver) cloudKeyVersions[item.key] = ver;
+
+              // 🚀 APLICACIÓN INMEDIATA: pintar órdenes y carwash en pantalla de inmediato sin esperar al resto
+              const bKey = critKey.endsWith("_ordenes") ? "ordenes" : (critKey.endsWith("_carwash") ? "carwash" : null);
+              if (bKey) {
+                try {
+                  const cVal = safeParseJSON(item.value);
+                  const lVal = getLatestLocalValue(bKey);
+                  const pRaw = safeParseJSON(getTenantLocalStorage("papeleraSistema", [], activeTenant));
+                  const merged = mergeCollections(bKey, lVal, cVal, pRaw, activeTenant);
+                  const setter = globalActiveSetters[bKey];
+                  if (typeof setter === "function") setter(merged);
+                  setTenantLocalStorage(bKey, merged, activeTenant);
+                  globalLastSynced[critKey] = JSON.stringify(merged);
+                } catch (eMerged) {
+                  console.warn(`[Sync] Error en aplicación inmediata de ${bKey}:`, eMerged);
+                }
+              }
             }
           } catch (critErr) {
             console.warn(`[Sync] Primer intento de ${critKey} falló (${critErr.message}). Reintentando...`);
@@ -1993,6 +2012,21 @@ export default function App() {
                 cloudDataMap.set(item.key, item.value);
                 const ver = Date.parse(item.updated_at) || 0;
                 if (ver) cloudKeyVersions[item.key] = ver;
+
+                // 🚀 APLICACIÓN INMEDIATA en reintento
+                const bKey = critKey.endsWith("_ordenes") ? "ordenes" : (critKey.endsWith("_carwash") ? "carwash" : null);
+                if (bKey) {
+                  try {
+                    const cVal = safeParseJSON(item.value);
+                    const lVal = getLatestLocalValue(bKey);
+                    const pRaw = safeParseJSON(getTenantLocalStorage("papeleraSistema", [], activeTenant));
+                    const merged = mergeCollections(bKey, lVal, cVal, pRaw, activeTenant);
+                    const setter = globalActiveSetters[bKey];
+                    if (typeof setter === "function") setter(merged);
+                    setTenantLocalStorage(bKey, merged, activeTenant);
+                    globalLastSynced[critKey] = JSON.stringify(merged);
+                  } catch (eMerged) {}
+                }
               } else {
                 failedBatchKeys.add(critKey);
               }

@@ -90,16 +90,67 @@ const readActiveTenant = () => {
   }
 };
 
-export const getSession = () => {
+const getCookie = (name) => {
   try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    const s = JSON.parse(raw);
-    if (!s || !s.token) return null;
-    return s;
+    if (typeof document === "undefined") return null;
+    const match = document.cookie.match(new RegExp('(^|;\\s*)(' + name + ')=([^;]*)'));
+    return match ? decodeURIComponent(match[3]) : null;
   } catch (e) {
     return null;
   }
+};
+
+const setCookie = (name, value, days = 30) => {
+  try {
+    if (typeof document === "undefined") return;
+    const maxAge = days * 24 * 60 * 60;
+    document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${maxAge}; SameSite=Lax`;
+  } catch (e) {}
+};
+
+const deleteCookie = (name) => {
+  try {
+    if (typeof document === "undefined") return;
+    document.cookie = `${name}=; path=/; max-age=0; SameSite=Lax`;
+  } catch (e) {}
+};
+
+export const getSession = () => {
+  let s = null;
+
+  // 1. Intentar desde localStorage
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (raw) s = JSON.parse(raw);
+  } catch (e) {}
+
+  // 2. Si no está en localStorage, intentar desde sessionStorage (sobrevive recargas de pestaña)
+  if (!s || !s.token) {
+    try {
+      const rawSession = sessionStorage.getItem(SESSION_KEY);
+      if (rawSession) s = JSON.parse(rawSession);
+    } catch (e) {}
+  }
+
+  // 3. Si no está, intentar desde cookie segura
+  if (!s || !s.token) {
+    try {
+      const rawCookie = getCookie(SESSION_KEY);
+      if (rawCookie) s = JSON.parse(rawCookie);
+    } catch (e) {}
+  }
+
+  if (!s || !s.token) return null;
+
+  // 🛡️ Auto-rehidratar todos los almacenes si se recuperó de alguno
+  try {
+    const str = JSON.stringify(s);
+    localStorage.setItem(SESSION_KEY, str);
+    sessionStorage.setItem(SESSION_KEY, str);
+    setCookie(SESSION_KEY, str, 30);
+  } catch (e) {}
+
+  return s;
 };
 
 /** Sesión válida para el taller indicado (el superadmin puede operar cualquier taller) */
@@ -125,15 +176,41 @@ export const getSessionForTenant = (tenantId = null) => {
 const readActiveTenantSafe = () => readActiveTenant();
 
 export const setSession = (s) => {
+  if (!s) return;
+  const jsonStr = JSON.stringify(s);
+
+  // 1. Guardar en localStorage con reintento si la cuota estaba al límite
   try {
-    localStorage.setItem(SESSION_KEY, JSON.stringify(s));
+    localStorage.setItem(SESSION_KEY, jsonStr);
+  } catch (e) {
+    // Si la cuota de localStorage estaba llena, purgar bloat de inmediato
+    try {
+      ["app_data_backup_snapshot", "lospits_app_data_backup_snapshot", "systemSnapshots", "lospits_systemSnapshots", "ordenes"].forEach(k => {
+        try { localStorage.removeItem(k); } catch (e2) {}
+      });
+      localStorage.setItem(SESSION_KEY, jsonStr);
+    } catch (e3) {
+      console.warn("[Session] localStorage full, using sessionStorage & cookies as primary:", e3);
+    }
+  }
+
+  // 2. Respaldo en sessionStorage (espacio independiente en móviles, sobrevive recargas de pestaña)
+  try {
+    sessionStorage.setItem(SESSION_KEY, jsonStr);
   } catch (e) {}
+
+  // 3. Respaldo en Cookie persistente (sobrevive cierres de navegador y recargas)
+  setCookie(SESSION_KEY, jsonStr, 30);
 };
 
 export const clearSession = () => {
   try {
     localStorage.removeItem(SESSION_KEY);
   } catch (e) {}
+  try {
+    sessionStorage.removeItem(SESSION_KEY);
+  } catch (e) {}
+  deleteCookie(SESSION_KEY);
 };
 
 export const isSuperAdminSession = () => !!getSession()?.superadmin;
