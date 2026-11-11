@@ -41,15 +41,34 @@ export default function Login({ onLogin, activeTenantId = "lospits" }) {
       }
 
       const usuario = res.usuario || { user: user.trim() };
-      if (res.taller !== activeTenantId) {
-        // Otro taller: recargar para iniciar la app con los datos de ese taller
-        setLocalStorage("current_tenant_id", res.taller);
-        setLocalStorage(`${res.taller}_usuarioActual`, usuario);
+      const authenticatedTenant = String(res.taller || cleanTenant).toLowerCase().trim();
+
+      // 🛡️ Guardar el taller y usuario de la sesión autenticada con prioridad total
+      setLocalStorage("current_tenant_id", authenticatedTenant);
+      setLocalStorage(`${authenticatedTenant}_usuarioActual`, usuario);
+
+      // 🧹 Limpiar parámetros residuales ?taller= o ?tenant= de la barra de URL
+      // para evitar que al refrescar la página en el celular se sobreescriba el taller activo
+      try {
+        if (typeof window !== "undefined" && window.history && window.history.replaceState) {
+          const url = new URL(window.location.href);
+          if (url.searchParams.has("taller") || url.searchParams.has("tenant")) {
+            url.searchParams.delete("taller");
+            url.searchParams.delete("tenant");
+            const newSearch = url.searchParams.toString();
+            const newUrl = url.pathname + (newSearch ? `?${newSearch}` : "") + (url.hash || "");
+            window.history.replaceState({}, document.title, newUrl);
+          }
+        }
+      } catch (e) {}
+
+      if (authenticatedTenant !== activeTenantId) {
+        // Otro taller: recargar limpiamente para iniciar con los datos de ese taller
         window.location.reload();
         return;
       }
       setPass("");
-      onLogin(usuario);
+      onLogin(usuario, authenticatedTenant);
     } catch (err) {
       const code = String(err?.message || "");
       setError(MENSAJES_ERROR[code] || (code.includes("Tiempo de espera") || code.includes("fetch")

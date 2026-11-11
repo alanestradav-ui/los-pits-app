@@ -93,3 +93,4 @@ export const serializarPasos = (lista) => (lista || []).map(p => ({
   descripcion: p.descripcion || "",
   activo: p.obligatorio ? true : p.activo !== false
 })).filter(p => p.nombre);
+

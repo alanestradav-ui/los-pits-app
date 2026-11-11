@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Search, Wrench, Droplets, Wallet, CalendarPlus, ChevronRight, X, BarChart3, CarFront, CheckCircle2, CalendarClock, Clock } from "lucide-react";
+import { Search, Wrench, Droplets, Wallet, CalendarPlus, ChevronRight, X, BarChart3, CarFront, CheckCircle2, CalendarClock, Clock, RefreshCw } from "lucide-react";
 import { formatMoney } from "../../utils/storage";
 import { placaDe, vehiculoTexto, dejarEncargoMovil } from "../../utils/movil";
 
@@ -34,10 +34,27 @@ const estadoCorto = (e) => ({
 
 export default function InicioMovil({
   ordenes = [], carwash = [], citas = [], clientes = [], vehiculos = [],
-  usuario, puede, onNavegar, verMontos, nombreTaller
+  usuario, puede, onNavegar, verMontos, nombreTaller, onSincronizar, realtimeStatus
 }) {
   const [busqueda, setBusqueda] = useState("");
   const [hojaCobrar, setHojaCobrar] = useState(false);
+  const [sincronizando, setSincronizando] = useState(false);
+  const [syncExito, setSyncExito] = useState(false);
+
+  const ejecutarSincronizacion = async () => {
+    if (sincronizando || !onSincronizar) return;
+    setSincronizando(true);
+    setSyncExito(false);
+    try {
+      await onSincronizar();
+      setSyncExito(true);
+      setTimeout(() => setSyncExito(false), 2500);
+    } catch (e) {
+      console.warn("[InicioMovil] Error al sincronizar:", e);
+    } finally {
+      setSincronizando(false);
+    }
+  };
 
   const listaOrdenes = Array.isArray(ordenes) ? ordenes.filter(o => o && !o.deleted && !o._deleted) : [];
   const listaLavados = Array.isArray(carwash) ? carwash.filter(c => c && !c.deleted && !c._deleted) : [];
@@ -125,14 +142,51 @@ export default function InicioMovil({
 
   return (
     <div className="inicio-movil animate-fade-in">
-      <header style={{ marginBottom: "14px" }}>
-        <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", textTransform: "capitalize" }}>
-          {new Date().toLocaleDateString("es-GT", { weekday: "long", day: "numeric", month: "long" })}
+      <header style={{ marginBottom: "14px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", textTransform: "capitalize" }}>
+            {new Date().toLocaleDateString("es-GT", { weekday: "long", day: "numeric", month: "long" })}
+          </div>
+          <h1 style={{ margin: "2px 0 0", fontSize: "1.45rem", fontWeight: 800, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {saludo}{nombre ? `, ${nombre.charAt(0).toUpperCase() + nombre.slice(1)}` : ""} 👋
+          </h1>
+          {nombreTaller && <div style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>{nombreTaller}</div>}
         </div>
-        <h1 style={{ margin: "2px 0 0", fontSize: "1.45rem", fontWeight: 800, color: "#fff" }}>
-          {saludo}{nombre ? `, ${nombre.charAt(0).toUpperCase() + nombre.slice(1)}` : ""} 👋
-        </h1>
-        {nombreTaller && <div style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>{nombreTaller}</div>}
+
+        {onSincronizar && (
+          <button
+            type="button"
+            onClick={ejecutarSincronizacion}
+            disabled={sincronizando}
+            id="btn-sync-movil-inicio"
+            title="Sincronizar datos con la nube"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "8px 12px",
+              borderRadius: "10px",
+              background: syncExito ? "rgba(16, 185, 129, 0.15)" : "rgba(59, 130, 246, 0.12)",
+              border: `1px solid ${syncExito ? "rgba(16, 185, 129, 0.35)" : "rgba(59, 130, 246, 0.25)"}`,
+              color: syncExito ? "#10b981" : "#60a5fa",
+              fontSize: "0.78rem",
+              fontWeight: 700,
+              cursor: sincronizando ? "wait" : "pointer",
+              flexShrink: 0,
+              marginTop: "2px",
+              transition: "all 0.2s ease"
+            }}
+          >
+            <RefreshCw
+              size={15}
+              style={{
+                animation: sincronizando ? "spin 1s linear infinite" : "none",
+                color: syncExito ? "#10b981" : "#60a5fa"
+              }}
+            />
+            <span>{sincronizando ? "Sincronizando…" : syncExito ? "¡Al día!" : "Sincronizar"}</span>
+          </button>
+        )}
       </header>
 
       {/* Buscador global */}

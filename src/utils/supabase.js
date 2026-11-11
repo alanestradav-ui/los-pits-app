@@ -108,6 +108,17 @@ export const getSessionForTenant = (tenantId = null) => {
   if (!s) return null;
   const t = (tenantId || readActiveTenantSafe()).toLowerCase().trim();
   if (s.taller === t || s.superadmin) return s;
+
+  // 🛡️ RECONCILIACIÓN AUTOMÁTICA: si la sesión activa es de un taller válido pero difiere
+  // de tenantId (ej. tras recargar la página con un query param residual o valor desfasado),
+  // el taller de la sesión manda. Se sincroniza el almacenamiento local y se preserva
+  // la sesión abierta en lugar de expulsar al usuario al Login.
+  if (s.taller) {
+    try {
+      localStorage.setItem("current_tenant_id", JSON.stringify(s.taller));
+    } catch (e) {}
+    return s;
+  }
   return null;
 };
 

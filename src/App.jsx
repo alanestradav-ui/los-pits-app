@@ -616,6 +616,21 @@ export default function App() {
 
   // 🏢 MULTI-TENANT SAAS ARCHITECTURE STATE
   const [tenantId, setTenantId] = useState(() => {
+    // 1. 🛡️ Prioridad Absoluta: si este dispositivo tiene una sesión activa válida,
+    // su taller es la verdad absoluta. Esto evita que al recargar la página en celular
+    // un parámetro viejo en la URL o un valor desfasado saque al usuario de su sesión.
+    try {
+      const activeSession = getSession();
+      if (activeSession && activeSession.token && activeSession.taller) {
+        const sessionTenant = String(activeSession.taller).toLowerCase().trim().replace(/[^a-z0-9_-]/g, "");
+        if (sessionTenant) {
+          setLocalStorage("current_tenant_id", sessionTenant);
+          return sessionTenant;
+        }
+      }
+    } catch (e) {}
+
+    // 2. Si no hay sesión activa, revisar parámetro de URL (ej. enlace de invitación)
     try {
       const urlParams = new URLSearchParams(window.location.search);
       const urlTenant = urlParams.get("taller") || urlParams.get("tenant");
@@ -1927,51 +1942,96 @@ export default function App() {
       // (unos pocos KB) y descargar únicamente las llaves que cambiaron en la nube.
       let keysToFetch = scopedQueryKeys;
       if (!isFullPull) {
-        const metaRes = await withTimeout(
-          cloudVersions(scopedQueryKeys, 10000).then(rows => ({ data: rows, error: null })),
-          10000,
-          'Timeout consultando versiones'
-        );
-        if (metaRes.error) throw new Error(metaRes.error.message || 'Error consultando versiones');
-        const changed = [];
-        (metaRes.data || []).forEach(row => {
-          const ver = Date.parse(row.updated_at) || 0;
-          if (ver && cloudKeyVersions[row.key] !== ver) changed.push(row.key);
-        });
-        keysToFetch = changed;
+        try {
+          const metaRes = await withTimeout(
+            cloudVersions(scopedQueryKeys, 10000).then(rows => ({ data: rows, error: null })),
+            10000,
+            'Timeout consultando versiones'
+          );
+          if (metaRes && !metaRes.error && Array.isArray(metaRes.data)) {
+            const changed = [];
+            metaRes.data.forEach(row => {
+              const ver = Date.parse(row.updated_at) || 0;
+              if (ver && cloudKeyVersions[row.key] !== ver) changed.push(row.key);
+            });
+            keysToFetch = changed;
+          }
+        } catch (metaErr) {
+          console.warn("[Sync] Error en chequeo incremental, pasando a pull directo:", metaErr.message);
+        }
       }
       const keysToFetchSet = new Set(keysToFetch);
 
-      // Consultar llaves en paralelo en lotes de 10 con timeout generoso (20s)
-      // Large keys like ordenes/carwash can be several MB and need more time
-      const chunkSize = 10;
-      const batchChunks = [];
-      const promises = [];
-      for (let i = 0; i < keysToFetch.length; i += chunkSize) {
-        const chunk = keysToFetch.slice(i, i + chunkSize);
-        batchChunks.push(chunk);
-        const queryPromise = cloudGet(chunk, 20000).then(rows => ({ data: rows, error: null }));
-        promises.push(withTimeout(queryPromise, 20000, `Timeout en lote`));
-      }
+      // 🛡️ ESTRATEGIA PRIORITARIA PARA CELULARES Y CONEXIONES MÓVILES:
+      // Las llaves más pesadas y críticas para la operación (órdenes y carwash) se descargan
+      // en llamadas dedicadas con timeout de 30s para que nunca compitan ni fallen por culpa de otras tablas.
+      const criticalScopedKeys = [getScopedKey("ordenes"), getScopedKey("carwash")].filter(k => keysToFetchSet.has(k));
+      const regularScopedKeys = keysToFetch.filter(k => !criticalScopedKeys.includes(k));
 
-      // 🛡️ Track which keys were in FAILED batches to prevent stale local data from overwriting cloud
       const failedBatchKeys = new Set();
-      const results = await Promise.allSettled(promises);
-      results.forEach((res, batchIdx) => {
-        if (res.status === "fulfilled" && res.value && res.value.data && !res.value.error) {
-          res.value.data.forEach(item => {
-            cloudDataMap.set(item.key, item.value);
-            const ver = Date.parse(item.updated_at) || 0;
-            if (ver) cloudKeyVersions[item.key] = ver;
-          });
-        } else {
-          // Mark all keys in this failed batch — we must NOT push local data for these keys
-          console.warn(`[Sync] Lote ${batchIdx + 1} falló. Protegiendo ${batchChunks[batchIdx]?.length || 0} llaves contra sobreescritura.`);
-          if (batchChunks[batchIdx]) {
-            batchChunks[batchIdx].forEach(k => failedBatchKeys.add(k));
+
+      // Fase 1: Descargar órdenes y carwash de forma prioritaria
+      if (criticalScopedKeys.length > 0) {
+        for (const critKey of criticalScopedKeys) {
+          try {
+            const critPromise = cloudGet([critKey], 30000).then(rows => ({ data: rows, error: null }));
+            const critRes = await withTimeout(critPromise, 30000, `Timeout descargando ${critKey}`);
+            if (critRes && critRes.data && Array.isArray(critRes.data) && critRes.data.length > 0) {
+              const item = critRes.data[0];
+              cloudDataMap.set(item.key, item.value);
+              const ver = Date.parse(item.updated_at) || 0;
+              if (ver) cloudKeyVersions[item.key] = ver;
+            }
+          } catch (critErr) {
+            console.warn(`[Sync] Primer intento de ${critKey} falló (${critErr.message}). Reintentando...`);
+            // Reintento rápido individual para asegurar órdenes en celular
+            try {
+              const retryPromise = cloudGet([critKey], 25000).then(rows => ({ data: rows, error: null }));
+              const retryRes = await withTimeout(retryPromise, 25000, `Timeout reintento ${critKey}`);
+              if (retryRes && retryRes.data && Array.isArray(retryRes.data) && retryRes.data.length > 0) {
+                const item = retryRes.data[0];
+                cloudDataMap.set(item.key, item.value);
+                const ver = Date.parse(item.updated_at) || 0;
+                if (ver) cloudKeyVersions[item.key] = ver;
+              } else {
+                failedBatchKeys.add(critKey);
+              }
+            } catch (retryErr2) {
+              console.error(`[Sync] Reintento de ${critKey} falló:`, retryErr2.message);
+              failedBatchKeys.add(critKey);
+            }
           }
         }
-      });
+      }
+
+      // Fase 2: Descargar el resto de llaves en lotes pequeños (máximo 4) para evitar timeouts en celular
+      const chunkSize = 4;
+      const batchChunks = [];
+      const promises = [];
+      for (let i = 0; i < regularScopedKeys.length; i += chunkSize) {
+        const chunk = regularScopedKeys.slice(i, i + chunkSize);
+        batchChunks.push(chunk);
+        const queryPromise = cloudGet(chunk, 20000).then(rows => ({ data: rows, error: null }));
+        promises.push(withTimeout(queryPromise, 20000, `Timeout en lote regular`));
+      }
+
+      if (promises.length > 0) {
+        const results = await Promise.allSettled(promises);
+        results.forEach((res, batchIdx) => {
+          if (res.status === "fulfilled" && res.value && res.value.data && !res.value.error) {
+            res.value.data.forEach(item => {
+              cloudDataMap.set(item.key, item.value);
+              const ver = Date.parse(item.updated_at) || 0;
+              if (ver) cloudKeyVersions[item.key] = ver;
+            });
+          } else {
+            console.warn(`[Sync] Lote ${batchIdx + 1} falló. Protegiendo ${batchChunks[batchIdx]?.length || 0} llaves contra sobreescritura.`);
+            if (batchChunks[batchIdx]) {
+              batchChunks[batchIdx].forEach(k => failedBatchKeys.add(k));
+            }
+          }
+        });
+      }
 
       // 🛡️ Registro de eliminaciones (usuarios / costos fijos) que cambió en otro dispositivo
       TOMB_KINDS.forEach(kind => {
@@ -2119,22 +2179,20 @@ export default function App() {
     window.addEventListener("focus", handleSyncEvent);
     document.addEventListener("visibilitychange", handleSyncEvent);
 
-    // Reset failedPullCount periodically so sync can recover from transient failures
+    // Reset failedPullCount para que la sincronización se recupere rápido de fallos transitorios en redes móviles
     const resetInterval = setInterval(() => {
       if (failedPullCount.current > 0) {
-        failedPullCount.current = Math.max(0, failedPullCount.current - 1);
+        failedPullCount.current = 0;
       }
-    }, 60000);
+    }, 15000);
 
-    // ⏰ Background polling: cada 5s se consultan SOLO las fechas de modificación (consulta liviana)
-    // y se descargan únicamente las llaves que cambiaron. Realtime da la notificación instantánea.
-    // NOTE: No document.hidden check — sync must work even when tab is in background
-    // (PWAs and mobile browsers may not fire visibility events reliably)
+    // ⏰ Background polling: cada 6s se consultan SOLO las fechas de modificación (consulta liviana)
+    // y se descargan únicamente las llaves que cambiaron.
     const interval = setInterval(() => {
-      if (navigator.onLine && failedPullCount.current < 5) {
+      if (navigator.onLine && failedPullCount.current < 8) {
         forcePullFromCloud(false);
       }
-    }, 5000);
+    }, 6000);
 
     return () => {
       window.removeEventListener("online", handleSyncEvent);
@@ -2634,7 +2692,7 @@ export default function App() {
   };
 
   // Auth Operations (Login.jsx ya validó usuario y contraseña en el servidor)
-  const handleLogin = (userObj) => {
+  const handleLogin = (userObj, explicitTenant = null) => {
     sessionExpiredNotified.current = false;
     let cleanUserObj = userObj;
     if (userObj && (userObj.user || "").toLowerCase().trim() === "armando avila") {
@@ -2642,9 +2700,16 @@ export default function App() {
         cleanUserObj = { ...userObj, permissions: userObj.permissions.filter(p => p !== "finanzas") };
       }
     }
+
+    const s = getSession();
+    const activeT = (explicitTenant || s?.taller || tenantId || "lospits").toLowerCase().trim();
+    if (activeT !== tenantId) {
+      setTenantId(activeT);
+    }
+    setLocalStorage("current_tenant_id", activeT);
     setUsuarioActual(cleanUserObj);
     // 🔒 Save session scoped to tenant
-    const scopedSessionKey = `${tenantId}_usuarioActual`;
+    const scopedSessionKey = `${activeT}_usuarioActual`;
     setLocalStorage(scopedSessionKey, cleanUserObj);
 
     if (cleanUserObj) {
@@ -2656,6 +2721,16 @@ export default function App() {
         setCurrentTab(esMovil ? "inicio" : "dashboard");
       }
     }
+
+    // 🧹 Reiniciar banderas y versiones de caché en memoria para que la nueva sesión
+    // fuerce la descarga completa y fresca de todas las órdenes y datos desde la nube
+    globalSyncFlags.isInitialPullDone = false;
+    globalSyncFlags.isInitialPullSucceeded = false;
+    globalSyncFlags.isPullRunning = false;
+    failedPullCount.current = 0;
+    Object.keys(globalLastSynced).forEach(k => delete globalLastSynced[k]);
+    Object.keys(cloudKeyVersions).forEach(k => delete cloudKeyVersions[k]);
+
     // 🔐 Descargar y fusionar los datos del taller con la nueva sesión
     setSessionVersion(v => v + 1);
   };
@@ -2671,6 +2746,29 @@ export default function App() {
     try {
       sessionStorage.removeItem("currentTab");
     } catch (e) {}
+
+    // 🧹 Limpiar banderas y versiones de caché en memoria
+    globalSyncFlags.isInitialPullDone = false;
+    globalSyncFlags.isInitialPullSucceeded = false;
+    globalSyncFlags.isPullRunning = false;
+    failedPullCount.current = 0;
+    Object.keys(globalLastSynced).forEach(k => delete globalLastSynced[k]);
+    Object.keys(cloudKeyVersions).forEach(k => delete cloudKeyVersions[k]);
+
+    // Limpiar query params de la URL si existían
+    try {
+      if (typeof window !== "undefined" && window.history && window.history.replaceState) {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has("taller") || url.searchParams.has("tenant")) {
+          url.searchParams.delete("taller");
+          url.searchParams.delete("tenant");
+          const newSearch = url.searchParams.toString();
+          const newUrl = url.pathname + (newSearch ? `?${newSearch}` : "") + (url.hash || "");
+          window.history.replaceState({}, document.title, newUrl);
+        }
+      }
+    } catch (e) {}
+
     setCurrentTab("dashboard");
   };
 
@@ -2804,6 +2902,8 @@ export default function App() {
               return String(usuarioActivo?.user || "").toLowerCase().trim() === "admin" || /admin|cajer|gerente|jefe/.test(r);
             })()}
             nombreTaller={workshopBranding?.nombreEmpresa}
+            onSincronizar={() => forcePullFromCloud(true)}
+            realtimeStatus={realtimeStatus}
           />
         )}
         {currentTab === "dashboard" && userHasPermission(usuarioActivo, "dashboard") && (

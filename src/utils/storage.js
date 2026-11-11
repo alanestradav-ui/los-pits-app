@@ -79,6 +79,36 @@ export const setLocalStorage = (key, value) => {
     try {
       localStorage.setItem(key, JSON.stringify(value));
     } catch (retryError) {
+      // 📱 Último recurso (celulares con poco espacio): guardar órdenes / lavados sin las fotos pesadas
+      // de los registros ya entregados (las fotos siguen en la nube). Así una orden activa recién
+      // creada SIEMPRE queda guardada en el equipo y no se pierde si la app se recarga.
+      const esListaConFotos = /_(ordenes|carwash)$/.test(String(key)) && Array.isArray(value);
+      if (esListaConFotos) {
+        try {
+          const aligerada = value.map(it => {
+            if (!it || it.estado !== "Entregado") return it;
+            const copia = { ...it };
+            delete copia.fotos;
+            delete copia.fotosDiagnostico;
+            copia._fotosSoloEnNube = true;
+            return copia;
+          });
+          localStorage.setItem(key, JSON.stringify(aligerada));
+          return;
+        } catch (e2) {
+          try {
+            // Si aún no cabe: solo los registros activos con sus fotos y los entregados sin fotos de ninguna orden antigua
+            const minima = value.map(it => {
+              if (!it) return it;
+              if (it.estado !== "Entregado") return it;
+              const { fotos, fotosDiagnostico, presupuestoOriginal, ...resto } = it;
+              return { ...resto, _fotosSoloEnNube: true };
+            });
+            localStorage.setItem(key, JSON.stringify(minima));
+            return;
+          } catch (e3) { /* sin espacio */ }
+        }
+      }
       console.error(`[Storage] Failed to set "${key}" even after cleanup:`, retryError);
     }
   }
