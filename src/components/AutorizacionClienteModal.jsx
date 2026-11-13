@@ -97,7 +97,7 @@ export function AutorizacionClienteModal({ orden, modo, anticipos = 0, onCancel,
   };
 
   return createPortal(
-    <div className="modal-overlay-centered" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)", zIndex: 100050, display: "flex", alignItems: "center", justifyContent: "center", padding: "12px" }}>
+    <div className="modal-overlay-centered" style={{ position: "fixed", top: 0, right: 0, bottom: 0, left: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)", zIndex: 100050, display: "flex", alignItems: "center", justifyContent: "center", padding: "12px" }}>
       <form onSubmit={confirmar} className="glass-panel" style={{ width: "100%", maxWidth: "560px", maxHeight: "92vh", display: "flex", flexDirection: "column", borderRadius: "16px", overflow: "hidden" }}>
         <div style={{ padding: "18px 20px 12px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
           <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 800, color: "#fff", display: "flex", alignItems: "center", gap: "8px" }}>

@@ -336,14 +336,22 @@ export const removeDeletedFixedCost = (costIdentifier, tenantId = null) => {
   markKeys("fixedCosts", [costIdentifier], "r", tenantId);
 };
 
+// 💰 Número con comas de miles y punto decimal: 1234567.5 → "1,234,567.50"
+// (no depende del idioma del navegador: se ve igual en todos los teléfonos y PCs)
+export const formatNumero = (amount, decimales = 2) => {
+  const val = parseFloat(amount);
+  if (!isFinite(val)) return (0).toFixed(decimales);
+  const negativo = val < 0 && Math.abs(val).toFixed(decimales) !== (0).toFixed(decimales);
+  const [entero, fraccion] = Math.abs(val).toFixed(decimales).split(".");
+  const conComas = entero.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return (negativo ? "-" : "") + conComas + (fraccion ? "." + fraccion : "");
+};
+
 export const formatMoney = (amount) => {
   const val = parseFloat(amount);
   if (isNaN(val)) return 'Q 0.00';
-  return new Intl.NumberFormat('es-GT', {
-    style: 'currency',
-    currency: 'GTQ',
-    minimumFractionDigits: 2
-  }).format(val);
+  const texto = formatNumero(val);
+  return texto.startsWith("-") ? `-Q ${texto.slice(1)}` : `Q ${texto}`;
 };
 
 export const formatDate = (dateString) => {

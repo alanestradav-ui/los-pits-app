@@ -45,4 +45,9 @@ export default defineConfig({
       }
     })
   ],
+  // 📱 Compatibilidad con teléfonos de gama baja / navegadores antiguos
+  build: {
+    target: ['es2019', 'chrome80', 'safari13', 'firefox78', 'edge88'],
+    cssTarget: ['chrome61', 'safari12'],
+  },
 })

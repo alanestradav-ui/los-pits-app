@@ -29,6 +29,25 @@ try {
   console.warn("ServiceWorker init warning:", e);
 }
 
+// 📱 Alto REAL de la pantalla visible. En teléfonos de gama baja / navegadores antiguos
+// "100vh" incluye la barra del navegador y los botones de abajo quedaban fuera de la pantalla.
+try {
+  const ajustarAltoPantalla = () => {
+    const alto = Math.round(window.innerHeight || document.documentElement.clientHeight || 0);
+    const ancho = Math.round(window.innerWidth || document.documentElement.clientWidth || 0);
+    if (alto > 0) {
+      document.documentElement.style.setProperty('--alto-app', alto + 'px');
+      document.documentElement.classList.add('alto-medido');
+    }
+    if (ancho > 0) document.documentElement.style.setProperty('--ancho-app', ancho + 'px');
+  };
+  ajustarAltoPantalla();
+  window.addEventListener('resize', ajustarAltoPantalla);
+  window.addEventListener('orientationchange', () => setTimeout(ajustarAltoPantalla, 250));
+} catch (e) {
+  /* sin soporte */
+}
+
 class ErrorBoundary extends Component {
   constructor(props) {
     super(props);

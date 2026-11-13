@@ -16,7 +16,7 @@ import {
   Building2,
   Trash2
 } from "lucide-react";
-import { formatMoney } from "../utils/storage";
+import { formatMoney, formatNumero } from "../utils/storage";
 
 export default function VendorQuotes({
   ordenes = [],
@@ -306,7 +306,7 @@ export default function VendorQuotes({
                       </span>
                       {myQuote && (
                         <span className="badge badge-paid" style={{ backgroundColor: "rgba(16, 185, 129, 0.15)", color: "var(--color-success)", borderColor: "rgba(16, 185, 129, 0.4)" }}>
-                          ✓ Cotizado (Q{myQuote.totalCotizado.toFixed(2)})
+                          ✓ Cotizado (Q{formatNumero(myQuote.totalCotizado)})
                         </span>
                       )}
                     </div>

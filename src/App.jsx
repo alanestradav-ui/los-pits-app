@@ -29,7 +29,7 @@ import { useEsMovil } from "./utils/movil";
 import { DEFAULT_CATALOGO_PREMIOS } from "./utils/wallet";
 import { DEFAULT_BRANDING, getCleanBranding, setActiveBranding } from "./utils/branding";
 import { DEFAULT_ACTIVE_MODULES, isModuleActive } from "./utils/modulesConfig";
-import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocalStorage, getActiveTenantId, restoreMasterBackup, purgeStorageBloat, getDeletedUsernames, addDeletedUsername, removeDeletedUsername, getDeletedFixedCosts, addDeletedFixedCost, removeDeletedFixedCost, getTombMap, saveTombMap, mergeTombMaps, normalizeTombMap } from "./utils/storage";
+import { getLocalStorage, setLocalStorage, getTenantLocalStorage, setTenantLocalStorage, getActiveTenantId, restoreMasterBackup, purgeStorageBloat, getDeletedUsernames, addDeletedUsername, removeDeletedUsername, getDeletedFixedCosts, addDeletedFixedCost, removeDeletedFixedCost, getTombMap, saveTombMap, mergeTombMaps, normalizeTombMap, formatNumero } from "./utils/storage";
 import { getSupabaseClient, syncKeyToCloud, safeParseJSON, withTimeout, processOfflineQueue, cloudKeyVersions, getSessionForTenant, getSession, clearSession, logoutRemoto, cloudGet, cloudVersions, isSuperAdminSession, removeFromOfflineQueue, registrarFusionNube } from "./utils/supabase";
 import { getMissingExternalCosts } from "./utils/workshopCalc";
 import { getPuntosPorVencer, yaSeAvisoVencimiento } from "./utils/loyaltyExpiry";
@@ -1228,7 +1228,7 @@ export default function App() {
       const nuevas = cuentasVencidasLista.filter(c => !avisados.has(`${c._tipo}_${c.id}`));
       if (nuevas.length === 0) return;
       const mostrar = () => {
-        const texto = nuevas.slice(0, 4).map(c => `${c._tipo === "cobrar" ? "Cobrar a" : "Pagar a"} ${c._tipo === "cobrar" ? c.cliente : c.proveedor}: Q${(parseFloat(c.saldo) || 0).toFixed(2)}`).join("\n");
+        const texto = nuevas.slice(0, 4).map(c => `${c._tipo === "cobrar" ? "Cobrar a" : "Pagar a"} ${c._tipo === "cobrar" ? c.cliente : c.proveedor}: Q${formatNumero((parseFloat(c.saldo) || 0))}`).join("\n");
         try {
           new Notification(`🔔 ${nuevas.length} cobro(s)/pago(s) programado(s) para hoy o vencido(s)`, { body: texto + (nuevas.length > 4 ? `\n…y ${nuevas.length - 4} más` : "") });
         } catch (e) { /* algunos celulares solo permiten notificaciones desde el service worker */ }
@@ -1347,6 +1347,41 @@ export default function App() {
     setPapeleraSistema(prev => [deletedEntry, ...(Array.isArray(prev) ? prev : [])]);
   };
 
+  // 🚗 PARQUEO: retirar vehículos (cobrados o eliminados) de forma DEFINITIVA.
+  // Antes solo se quitaban de la lista local y la sincronización con la nube los volvía a traer.
+  // Ahora se registran en la Papelera (los cobrados de forma oculta) para que ningún equipo los resucite.
+  const retirarRegistrosParqueo = (ids, motivo = "eliminado", user) => {
+    const listaIds = (Array.isArray(ids) ? ids : [ids]).map(x => String(x)).filter(Boolean);
+    if (listaIds.length === 0) return;
+    const activeTenant = (tenantId || getActiveTenantId()).toLowerCase().trim();
+    const actuales = Array.isArray(parkingEntries) ? parkingEntries : [];
+    const ahora = new Date().toISOString();
+    const entradas = listaIds.map((rawId, i) => {
+      const item = actuales.find(p => String(p?.id) === rawId) || { id: rawId };
+      const { fotos, ...sinFotos } = item;
+      return {
+        id: `trash_${Date.now()}_${i}_${Math.floor(Math.random() * 1000)}`,
+        tenantId: activeTenant,
+        moduloOrigen: "parkingEntries",
+        itemOriginal: motivo === "cobrado" ? sinFotos : item,
+        targetOriginalId: rawId,
+        targetScopedId: `${activeTenant}_${rawId}`,
+        fechaEliminacion: ahora,
+        motivo,
+        oculto: motivo === "cobrado",
+        usuarioEliminador: user || usuarioActual?.user || "admin"
+      };
+    });
+    // Guardado inmediato en este equipo (la fusión con la nube lo lee de aquí)
+    try {
+      const enDisco = safeParseJSON(getTenantLocalStorage("papeleraSistema", [], activeTenant));
+      const base = Array.isArray(enDisco) ? enDisco : [];
+      setTenantLocalStorage("papeleraSistema", [...entradas, ...base], activeTenant);
+    } catch (e) { /* cuota llena: el estado igual se actualiza */ }
+    setPapeleraSistema(prev => [...entradas, ...(Array.isArray(prev) ? prev : [])]);
+    setParkingEntries(prev => (Array.isArray(prev) ? prev : []).filter(p => !listaIds.includes(String(p?.id))));
+  };
+
   // 🔄 RESTORE TRASH ITEM: Restores soft-deleted item back to its origin module
   const restoreTrashItem = (trashId) => {
     const entry = (papeleraSistema || []).find(p => p.id === trashId);
@@ -1381,6 +1416,8 @@ export default function App() {
     } else if (moduloOrigen === "usuarios") {
       setUsuarios(prev => [itemOriginal, ...(Array.isArray(prev) ? prev : [])]);
       if (itemOriginal?.user) removeDeletedUsername(itemOriginal.user, tenantId);
+    } else if (moduloOrigen === "parkingEntries") {
+      setParkingEntries(prev => [{ ...itemOriginal, updatedAt: new Date().toISOString() }, ...(Array.isArray(prev) ? prev : [])]);
     }
 
     setPapeleraSistema(prev => (prev || []).filter(p => p.id !== trashId));
@@ -3057,6 +3094,8 @@ export default function App() {
           <Parking 
             parkingEntries={parkingEntries}
             setParkingEntries={setParkingEntries}
+            retirarRegistrosParqueo={retirarRegistrosParqueo}
+            idsParqueoRetirados={(Array.isArray(papeleraSistema) ? papeleraSistema : []).filter(p => p && p.moduloOrigen === "parkingEntries").map(p => String(p.targetOriginalId))}
             parkingRate={parkingRate}
             setParkingRate={setParkingRate}
             parkingHistory={parkingHistory}

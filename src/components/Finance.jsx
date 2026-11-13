@@ -17,7 +17,7 @@ import {
   XCircle,
   ShoppingBag
 } from "lucide-react";
-import { formatMoney, formatDate } from "../utils/storage";
+import { formatMoney, formatDate, formatNumero } from "../utils/storage";
 import { jsPDF } from "jspdf";
 import { getActiveBranding, getDocThemeRgb, themeHtmlDocument } from "../utils/branding";
 import { calcOrderCommission, getCommissionableLabor, getWarrantyPenalty, parseLocalDate, calcSupervisorPartsCommission, getUserCarwashFixedCommission, getPartsProfit } from "../utils/workshopCalc";
@@ -1368,7 +1368,7 @@ export default function Finance({
         proveedor: `Nómina - ${userObj.user}`,
         categoria: "Nómina / Planilla",
         total: totalPaid,
-        descripcion: `Pago de Nómina (${periodLabel}) - Sueldo Base: Q${baseSal.toFixed(2)} + Comisiones: Q${totalComisionesPuras.toFixed(2)}${totalBonos ? ` + Bonos: Q${totalBonos.toFixed(2)}` : ""}${totalDescuentos ? ` - Descuentos: Q${totalDescuentos.toFixed(2)}` : ""}`,
+        descripcion: `Pago de Nómina (${periodLabel}) - Sueldo Base: Q${formatNumero(baseSal)} + Comisiones: Q${formatNumero(totalComisionesPuras)}${totalBonos ? ` + Bonos: Q${formatNumero(totalBonos)}` : ""}${totalDescuentos ? ` - Descuentos: Q${formatNumero(totalDescuentos)}` : ""}`,
         formaPago: { efectivo: totalPaid, tarjeta: 0, transferencia: 0, cheque: 0 },
         estado: "Pagado"
       };
@@ -1398,7 +1398,7 @@ export default function Finance({
       setPayrollHistory(prev => [record, ...(prev || [])]);
     }
 
-    alert(`¡Nómina y Comisiones aplicadas con éxito!\n\nSe liquidó Q${totalPaid.toFixed(2)} a ${userObj.user}.\nLas comisiones, bonos y descuentos fueron registrados.`);
+    alert(`¡Nómina y Comisiones aplicadas con éxito!\n\nSe liquidó Q${formatNumero(totalPaid)} a ${userObj.user}.\nLas comisiones, bonos y descuentos fueron registrados.`);
     setSelectedPayrollUser(null);
   };
 
@@ -1438,7 +1438,7 @@ export default function Finance({
         <td style="padding: 8px;">${idx + 1}</td>
         <td style="padding: 8px;"><strong>${item.titulo}</strong><br/><small style="color: #6b7280;">${item.subtitulo}</small></td>
         <td style="padding: 8px;">${item.fecha ? formatDate(item.fecha) : "-"}</td>
-        <td style="padding: 8px; text-align: right; font-weight: bold;">Q${item.comision.toFixed(2)}</td>
+        <td style="padding: 8px; text-align: right; font-weight: bold;">Q${formatNumero(item.comision)}</td>
       </tr>
     `).join("");
 
@@ -1455,7 +1455,7 @@ export default function Finance({
       <tr style="border-bottom: 1px solid #e5e7eb;">
         <td style="padding: 8px; white-space: nowrap;"><span style="font-size: 11px; font-weight: bold; padding: 2px 6px; border-radius: 4px; background: ${signo === "+" ? "#d1fae5" : "#fee2e2"}; color: ${color};">${CLASE_LABEL[x.clase] || (signo === "+" ? "Bono" : "Descuento")}</span></td>
         <td style="padding: 8px;"><strong>${x.detalle || x.nombre}</strong>${x.subdetalle ? `<br/><small style="color:#6b7280;">${x.subdetalle}</small>` : ""}</td>
-        <td style="padding: 8px; text-align: right; font-weight: bold; color: ${color}; white-space: nowrap;">${signo}Q${(parseFloat(x.monto) || 0).toFixed(2)}</td>
+        <td style="padding: 8px; text-align: right; font-weight: bold; color: ${color}; white-space: nowrap;">${signo}Q${formatNumero((parseFloat(x.monto) || 0))}</td>
       </tr>`;
     const bonosHtml = (rec.bonos || []).map(b => filaMov(b, "+", "#047857")).join("");
     const descuentosHtml = (rec.descuentos || []).map(d => filaMov(d, "-", "#b91c1c")).join("");
@@ -1518,17 +1518,17 @@ export default function Finance({
           <div class="summary">
             <div class="summary-row">
               <span>Sueldo Base (${rec.periodo.includes("1ra") || rec.periodo.includes("2da") ? "Quincenal" : "Mensual"}):</span>
-              <strong>Q${(parseFloat(rec.sueldoBase) || 0).toFixed(2)}</strong>
+              <strong>Q${formatNumero((parseFloat(rec.sueldoBase) || 0))}</strong>
             </div>
             <div class="summary-row">
               <span>Total Comisiones Liquidadas:</span>
-              <strong>Q${(parseFloat(rec.totalComisiones) || 0).toFixed(2)}</strong>
+              <strong>Q${formatNumero((parseFloat(rec.totalComisiones) || 0))}</strong>
             </div>
-            ${(parseFloat(rec.totalBonos) || 0) > 0 ? `<div class="summary-row"><span>Total Bonos:</span><strong style="color:#047857;">+Q${(parseFloat(rec.totalBonos) || 0).toFixed(2)}</strong></div>` : ""}
-            ${(parseFloat(rec.totalDescuentos) || 0) > 0 ? `<div class="summary-row"><span>Total Descuentos:</span><strong style="color:#b91c1c;">-Q${(parseFloat(rec.totalDescuentos) || 0).toFixed(2)}</strong></div>` : ""}
+            ${(parseFloat(rec.totalBonos) || 0) > 0 ? `<div class="summary-row"><span>Total Bonos:</span><strong style="color:#047857;">+Q${formatNumero((parseFloat(rec.totalBonos) || 0))}</strong></div>` : ""}
+            ${(parseFloat(rec.totalDescuentos) || 0) > 0 ? `<div class="summary-row"><span>Total Descuentos:</span><strong style="color:#b91c1c;">-Q${formatNumero((parseFloat(rec.totalDescuentos) || 0))}</strong></div>` : ""}
             <div class="summary-row total">
               <span>TOTAL LÍQUIDO A RECIBIR:</span>
-              <span>Q${(parseFloat(rec.totalPagado) || 0).toFixed(2)}</span>
+              <span>Q${formatNumero((parseFloat(rec.totalPagado) || 0))}</span>
             </div>
           </div>
 
@@ -3422,7 +3422,7 @@ export default function Finance({
                       <div>
                         <span style={{ fontSize: "0.8rem", color: "#34d399", fontWeight: "700", textTransform: "uppercase" }}>TOTAL LÍQUIDO A APLICAR</span>
                         <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
-                          Sueldo Base (Q{baseSal.toFixed(2)}) + Comisiones, bonos y descuentos seleccionados (Q{totalSelectedComms.toFixed(2)})
+                          Sueldo Base (Q{formatNumero(baseSal)}) + Comisiones, bonos y descuentos seleccionados (Q{formatNumero(totalSelectedComms)})
                         </div>
                       </div>
                       <span style={{ fontSize: "1.8rem", fontWeight: "900", color: "#34d399" }}>

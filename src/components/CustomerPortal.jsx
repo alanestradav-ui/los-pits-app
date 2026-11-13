@@ -19,7 +19,7 @@ import {
   User,
   Phone
 } from "lucide-react";
-import { formatMoney } from "../utils/storage";
+import { formatMoney, formatNumero } from "../utils/storage";
 import { generateAppleWalletPassData, generateGoogleWalletPassUrl, generateGiftPassQR, getPortalUrl, DEFAULT_CATALOGO_PREMIOS } from "../utils/wallet";
 import { callRpc } from "../utils/supabase";
 
@@ -581,7 +581,7 @@ export default function CustomerPortal({
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", fontSize: "0.75rem" }}>
                         <span style={{ color: "var(--color-primary)", fontWeight: "600" }}>{premio.categoria}</span>
                         {premio.valorEstimado > 0 && (
-                          <span style={{ color: "#eab308", fontWeight: "700" }}>Q{premio.valorEstimado.toFixed(2)}</span>
+                          <span style={{ color: "#eab308", fontWeight: "700" }}>Q{formatNumero(premio.valorEstimado)}</span>
                         )}
                       </div>
                       <button
@@ -1267,7 +1267,7 @@ const styles = {
   },
   modalOverlay: {
     position: "fixed",
-    inset: 0,
+    top: 0, right: 0, bottom: 0, left: 0,
     backgroundColor: "rgba(0,0,0,0.75)",
     display: "flex",
     alignItems: "center",

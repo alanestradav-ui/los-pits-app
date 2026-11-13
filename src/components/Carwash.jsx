@@ -16,13 +16,14 @@ import {
   Pencil,
   X
 } from "lucide-react";
-import { formatMoney, setLocalStorage, setTenantLocalStorage } from "../utils/storage";
+import { formatMoney, setLocalStorage, setTenantLocalStorage, formatNumero } from "../utils/storage";
 import { syncKeyToCloud } from "../utils/supabase";
 import { findVehiclesForClient } from "../utils/vehicleHelpers";
 import { DEFAULT_BRANDING, getCleanBranding, drawCanvasHeader, applyDocumentTheme } from "../utils/branding";
 import ClientVehiclesModal from "./ClientVehiclesModal";
 import { jsPDF } from "jspdf";
 import { useEsMovil, leerEncargoMovil, borrarEncargosMovil } from "../utils/movil";
+import { puedeCrearOrdenes } from "../utils/permisosOrdenes";
 import { getSiguientePaso } from "../utils/pasosOrdenes";
 
 const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
@@ -330,7 +331,7 @@ export default function Carwash({
       fecha: new Date().toISOString()
     };
     setCarwashConsumption(prev => [logEntry, ...prev]);
-    alert(`Se consumieron ${qty} unidades. Costo total de Q${cost.toFixed(2)} cargado.`);
+    alert(`Se consumieron ${qty} unidades. Costo total de Q${formatNumero(cost)} cargado.`);
   };
 
   // Extract unique vehicles historically registered
@@ -570,6 +571,8 @@ export default function Carwash({
   const isWorker = userRolLower === "lavador";
   const isAdmin = !usuarioActual || !usuarioActual.rol || userRolLower.includes("admin") || userRolLower.includes("gerente") || userRolLower.includes("jefe");
   const isManager = isAdmin || userRolLower.includes("cajero") || userRolLower.includes("carwash");
+  // 📝 Colaboradores con acceso a Carwash también pueden registrar lavados nuevos
+  const puedeIngresarOrdenes = isManager || puedeCrearOrdenes(usuarioActual, "carwash");
 
   const lavadoresList = Array.from(new Set([
     ...(Array.isArray(lavadores) ? lavadores : []),
@@ -991,7 +994,7 @@ export default function Carwash({
           nit: checkoutNit.trim() || "C/F",
           nombreFacturacion: checkoutNombreFacturacion.trim() || c.cliente,
           formaPago: breakdown,
-          formaPagoDesc: paymentMethodsSelected.map(m => `${m.toUpperCase()} (Q${breakdown[m].toFixed(2)})`).join(", "),
+          formaPagoDesc: paymentMethodsSelected.map(m => `${m.toUpperCase()} (Q${formatNumero(breakdown[m])})`).join(", "),
           cajero: usuarioActual?.user || "Admin",
           fecha: new Date().toISOString()
         };
@@ -1620,15 +1623,15 @@ export default function Carwash({
 
       {/* RENDER WASH SERVICES TAB */}
       {activeSubTab === "servicios" && (
-        <div className={isManager ? "responsive-carwash-grid" : ""} style={isManager ? undefined : styles.workerGrid}>
+        <div className={puedeIngresarOrdenes ? "responsive-carwash-grid" : ""} style={puedeIngresarOrdenes ? undefined : styles.workerGrid}>
         
-        {/* Left Column: Create Wash Job (Only for Admin/Cajero) */}
-        {isManager && esMovil && !formMovilAbierto && (
+        {/* Left Column: Create Wash Job (Admin/Cajero y colaboradores autorizados) */}
+        {puedeIngresarOrdenes && esMovil && !formMovilAbierto && (
           <button id="carwash-nuevo-lavado-movil" type="button" className="boton-nuevo-movil" style={{ background: "linear-gradient(135deg, #06b6d4, #a855f7)" }} onClick={() => setFormMovilAbierto(true)}>
             <Plus size={22} /> Registrar nuevo lavado
           </button>
         )}
-        {isManager && (!esMovil || formMovilAbierto) && (
+        {puedeIngresarOrdenes && (!esMovil || formMovilAbierto) && (
           <div className="glass-panel" style={styles.formCard}>
             <div style={styles.formHeader}>
               <Plus size={20} color="var(--color-secondary)" />

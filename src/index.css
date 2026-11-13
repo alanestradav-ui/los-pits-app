@@ -473,6 +473,19 @@ p {
   }
 }
 
+/* 📱 Alto real medido por JavaScript (funciona también en teléfonos de gama baja sin soporte de dvh) */
+@media (max-width: 1024px) {
+  html.alto-medido .app-container,
+  html.alto-medido .app-main {
+    height: var(--alto-app, 100vh) !important;
+  }
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 .app-main {
   min-width: 0;
 }
@@ -607,6 +620,45 @@ p {
 
   h1 { font-size: 1.35rem !important; }
   h2 { font-size: 1.2rem !important; }
+
+  /* 📱 Teléfonos angostos / gama baja: ningún elemento puede obligar a salirse de la pantalla */
+  .app-main [style*="min-width"]:not(table):not(th):not(td),
+  [style*="position: fixed"][style*="z-index"] [style*="min-width"]:not(table):not(th):not(td) {
+    min-width: 0 !important;
+  }
+  .app-main [style*="width"][style*="px"]:not(table):not(th):not(td):not(img):not(canvas):not(svg):not(input[type="checkbox"]):not(input[type="radio"]) {
+    max-width: 100% !important;
+  }
+  .app-main button,
+  [style*="position: fixed"][style*="z-index"] button {
+    white-space: normal;
+    word-break: break-word;
+    max-width: 100%;
+  }
+  .app-main input,
+  .app-main select,
+  .app-main textarea {
+    max-width: 100%;
+    min-width: 0;
+  }
+}
+
+/* 📱 Pantallas muy angostas (teléfonos pequeños o con letra/pantalla ampliada) */
+@media (max-width: 380px) {
+  html { font-size: 14px; }
+  .app-main > * {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+  .glass-panel { border-radius: 12px; }
+  .app-main [style*="padding: 24px"],
+  .app-main [style*="padding: 20px"],
+  .app-main [style*="padding: 30px"],
+  .app-main [style*="padding: 32px"] {
+    padding: 12px !important;
+  }
+  .btn { padding: 9px 12px; }
+  .menu-mas-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 /* Print CSS Media Queries for Client Reports */
@@ -704,7 +756,7 @@ p {
 
 /* Menú "Más" a pantalla completa */
 .menu-mas-movil {
-  position: fixed; inset: 0; z-index: 1400;
+  position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 1400;
   background: radial-gradient(circle at 20% 0%, rgba(59,130,246,0.14), transparent 55%), #0a0c10;
   display: flex; flex-direction: column;
   padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
@@ -803,7 +855,7 @@ p {
 
 /* Hoja que sube desde abajo */
 .hoja-movil-fondo {
-  position: fixed; inset: 0; z-index: 2500;
+  position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 2500;
   background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
   display: flex; align-items: flex-end;
 }

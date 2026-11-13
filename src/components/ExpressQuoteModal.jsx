@@ -24,7 +24,7 @@ import {
   ChevronRight,
   AlertCircle
 } from "lucide-react";
-import { formatMoney } from "../utils/storage";
+import { formatMoney, formatNumero } from "../utils/storage";
 import { DEFAULT_BRANDING, getCleanBranding, drawCanvasHeader, applyDocumentTheme } from "../utils/branding";
 import { findVehiclesForClient } from "../utils/vehicleHelpers";
 import ClientVehiclesModal from "./ClientVehiclesModal";
@@ -641,12 +641,12 @@ export default function ExpressQuoteModal({
 
     let laborList = (q.servicios || [])
       .filter(s => s.desc.trim())
-      .map(s => `  • ${s.desc}: Q ${parseFloat(s.price || 0).toFixed(2)}`)
+      .map(s => `  • ${s.desc}: Q ${formatNumero(parseFloat(s.price || 0))}`)
       .join("\n");
 
     let partsList = (q.repuestos || [])
       .filter(r => r.name.trim())
-      .map(r => `  • ${r.qty}x ${r.name}${r.brand ? ` (${r.brand})` : ''}: Q ${(parseFloat(r.qty || 1) * parseFloat(r.price || 0)).toFixed(2)}`)
+      .map(r => `  • ${r.qty}x ${r.name}${r.brand ? ` (${r.brand})` : ''}: Q ${formatNumero((parseFloat(r.qty || 1) * parseFloat(r.price || 0)))}`)
       .join("\n");
 
     const message = `🏁 *COTIZACIÓN ESTIMADA - ${brand.nombreEmpresa || "LOS PITS AUTO CENTER"}* 🏁
@@ -657,8 +657,8 @@ export default function ExpressQuoteModal({
 
 ${laborList ? `🛠️ *MANO DE OBRA Y SERVICIOS:*\n${laborList}\n` : ''}
 ${partsList ? `🔩 *REPUESTOS E INSUMOS:*\n${partsList}\n` : ''}
-${q.descuento > 0 ? `🎁 *Descuento Especial:* -Q ${parseFloat(q.descuento).toFixed(2)}\n` : ''}
-💰 *TOTAL ESTIMADO: Q ${parseFloat(q.total).toFixed(2)}*
+${q.descuento > 0 ? `🎁 *Descuento Especial:* -Q ${formatNumero(parseFloat(q.descuento))}\n` : ''}
+💰 *TOTAL ESTIMADO: Q ${formatNumero(parseFloat(q.total))}*
 
 ⏳ *Validez:* ${q.diasValidez || 15} días
 📝 *Notas:* ${q.notas || 'Precios sujetos a disponibilidad de repuestos.'}
@@ -1423,7 +1423,7 @@ _¡Contáctanos para agendar tu cita y confirmar la orden de trabajo!_`;
 const styles = {
   backdrop: {
     position: "fixed",
-    inset: 0,
+    top: 0, right: 0, bottom: 0, left: 0,
     backgroundColor: "rgba(0, 0, 0, 0.85)",
     backdropFilter: "blur(8px)",
     display: "flex",

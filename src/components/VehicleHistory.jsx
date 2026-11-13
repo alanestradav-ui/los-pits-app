@@ -2616,7 +2616,7 @@ export default function VehicleHistory({
                                     setShowPartSuggestions(false);
                                   }}
                                 >
-                                  <strong>{item.code} - {item.name}</strong> (Stock: {item.quantity} | Venta: Q{item.salePrice})
+                                  <strong>{item.code} - {item.name}</strong> (Stock: {item.quantity} | Venta: {formatMoney(item.salePrice)})
                                 </div>
                               ))}
                             </div>

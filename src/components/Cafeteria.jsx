@@ -14,7 +14,7 @@ import {
   Search, 
   AlertTriangle 
 } from "lucide-react";
-import { formatMoney } from "../utils/storage";
+import { formatMoney, formatNumero } from "../utils/storage";
 
 export default function Cafeteria({ 
   cafeteriaInventory, 
@@ -259,7 +259,7 @@ export default function Cafeteria({
       nit: checkoutNit.trim() || "C/F",
       nombreFacturacion: checkoutNombreFacturacion.trim() || checkoutOrder.cliente || "Cliente General",
       formaPago: breakdown,
-      formaPagoDesc: paymentMethodsSelected.map(m => `${m.toUpperCase()} (Q${breakdown[m].toFixed(2)})`).join(", ")
+      formaPagoDesc: paymentMethodsSelected.map(m => `${m.toUpperCase()} (Q${formatNumero(breakdown[m])})`).join(", ")
     };
 
     setCafeteriaSales([nuevaVenta, ...cafeteriaSales]);

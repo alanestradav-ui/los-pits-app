@@ -28,6 +28,7 @@ import {
   Smartphone
 } from "lucide-react";
 import WalletInviteModal from "./WalletInviteModal";
+import { formatMoney } from "../utils/storage";
 import { getPuntosPorVencer, yaSeAvisoVencimiento, DIAS_AVISO_VENCIMIENTO } from "../utils/loyaltyExpiry";
 
 export default function LoyaltyRewards({
@@ -714,7 +715,7 @@ export default function LoyaltyRewards({
                           {item.nombre}
                         </div>
                         <div style={{ fontSize: "0.75rem", color: canAfford ? "#4ade80" : "#64748b" }}>
-                          {item.puntos.toLocaleString()} Pts (Valor: Q{item.valorEstimado})
+                          {item.puntos.toLocaleString()} Pts (Valor: {formatMoney(item.valorEstimado)})
                         </div>
                       </div>
 
@@ -840,7 +841,7 @@ export default function LoyaltyRewards({
                   justifyContent: "space-between",
                   alignItems: "center"
                 }}>
-                  <span style={{ fontSize: "0.8rem", color: "#cbd5e1" }}>Valor Q{item.valorEstimado}</span>
+                  <span style={{ fontSize: "0.8rem", color: "#cbd5e1" }}>Valor {formatMoney(item.valorEstimado)}</span>
                   <span style={{ fontSize: "1.2rem", fontWeight: "900", color: "#fef08a" }}>
                     {item.puntos.toLocaleString()} Pts
                   </span>
@@ -988,7 +989,7 @@ export default function LoyaltyRewards({
       {/* MODAL 1: AJUSTE MANUAL DE PUNTOS (+ / -) */}
       {isAdjustPointsOpen && selectedCliente && (
         <div style={{
-          position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)",
+          position: "fixed", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)",
           display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: "16px"
         }}>
           <div style={{ backgroundColor: "#0f172a", border: "1px solid #eab308", borderRadius: "16px", padding: "24px", maxWidth: "440px", width: "100%" }}>
@@ -1046,7 +1047,7 @@ export default function LoyaltyRewards({
       {/* MODAL 2: GESTIÓN DE PREMIOS (AGREGAR / EDITAR) */}
       {isPremioModalOpen && (
         <div style={{
-          position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)",
+          position: "fixed", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)",
           display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: "16px"
         }}>
           <div style={{ backgroundColor: "#0f172a", border: "1px solid #eab308", borderRadius: "16px", padding: "24px", maxWidth: "480px", width: "100%" }}>
@@ -1129,7 +1130,7 @@ export default function LoyaltyRewards({
       {/* MODAL 3: GESTIÓN DE REGLAS (AGREGAR / EDITAR) */}
       {isReglaModalOpen && (
         <div style={{
-          position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)",
+          position: "fixed", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)",
           display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: "16px"
         }}>
           <div style={{ backgroundColor: "#0f172a", border: "1px solid #eab308", borderRadius: "16px", padding: "24px", maxWidth: "480px", width: "100%" }}>
@@ -1204,7 +1205,7 @@ export default function LoyaltyRewards({
       {/* CONFIRMATION MODAL FOR REDEMPTION */}
       {redeemingPremio && selectedCliente && (
         <div style={{
-          position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)",
+          position: "fixed", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)",
           display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: "16px"
         }}>
           <div style={{
@@ -1253,7 +1254,7 @@ export default function LoyaltyRewards({
       {/* SUCCESS MODAL AFTER REDEMPTION */}
       {isSuccessModalOpen && lastRedeemedTicket && (
         <div style={{
-          position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)",
+          position: "fixed", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)",
           display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: "16px"
         }}>
           <div style={{

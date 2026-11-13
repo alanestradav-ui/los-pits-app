@@ -15,7 +15,7 @@ import {
   X,
   AlertTriangle
 } from "lucide-react";
-import { formatMoney } from "../utils/storage";
+import { formatMoney, formatNumero } from "../utils/storage";
 import { findVehiclesForClient } from "../utils/vehicleHelpers";
 import { DEFAULT_BRANDING, getCleanBranding, drawCanvasHeader, applyDocumentTheme } from "../utils/branding";
 import ClientVehiclesModal from "./ClientVehiclesModal";
@@ -80,8 +80,26 @@ export default function Parking({
   ordenes = [],
   carwash = [],
   addPuntosLealtad,
-  workshopBranding = DEFAULT_BRANDING
+  workshopBranding = DEFAULT_BRANDING,
+  retirarRegistrosParqueo,
+  idsParqueoRetirados = []
 }) {
+  // 🚗 Vehículos que siguen en el parqueo (los cobrados/eliminados nunca vuelven a aparecer)
+  const setRetirados = new Set((idsParqueoRetirados || []).map(String));
+  // Vehículos ya cobrados (misma placa y misma hora de ingreso en el historial) tampoco se muestran
+  const yaCobrados = new Set((Array.isArray(parkingHistory) ? parkingHistory : [])
+    .filter(h => h && h.placa && h.horaIngreso)
+    .map(h => `${String(h.placa).toUpperCase().trim()}|${h.horaIngreso}`));
+  const estaActivo = (p) => p && !setRetirados.has(String(p.id)) && !yaCobrados.has(`${String(p.placa || "").toUpperCase().trim()}|${p.horaIngreso}`);
+  const parkingActivos = (Array.isArray(parkingEntries) ? parkingEntries : []).filter(estaActivo);
+  const retirarDelParqueo = (id, motivo) => {
+    if (typeof retirarRegistrosParqueo === "function") {
+      retirarRegistrosParqueo([id], motivo, usuarioActual?.user);
+    } else {
+      setParkingEntries(prev => (Array.isArray(prev) ? prev : []).filter(p => String(p?.id) !== String(id)));
+    }
+  };
+  const podarRetirados = (lista) => (Array.isArray(lista) ? lista : []).filter(estaActivo);
   const [platePrefix, setPlatePrefix] = useState("P");
   const [plateNumber, setPlateNumber] = useState("");
   const [marca, setMarca] = useState("");
@@ -230,7 +248,7 @@ export default function Parking({
     const fullPlaca = platePrefix === "Extranjera" ? cleanNum : `${platePrefix}-${cleanNum}`;
 
     // Check if vehicle already in parking
-    const exists = parkingEntries.some(p => p.placa.toUpperCase().trim() === fullPlaca);
+    const exists = parkingActivos.some(p => String(p.placa || "").toUpperCase().trim() === fullPlaca);
     if (exists) {
       alert("El vehículo con esta placa ya se encuentra en el parqueo.");
       return;
@@ -276,7 +294,7 @@ export default function Parking({
       });
     }
 
-    setParkingEntries([nuevo, ...parkingEntries]);
+    setParkingEntries(prev => [{ ...nuevo, updatedAt: new Date().toISOString() }, ...podarRetirados(prev)]);
     setPlatePrefix("P");
     setPlateNumber("");
     setMarca("");
@@ -412,12 +430,12 @@ export default function Parking({
       nit: checkoutNit.trim() || "C/F",
       nombreFacturacion: checkoutNombreFacturacion.trim() || checkoutOrder.cliente || "Cliente General",
       formaPago: breakdown,
-      formaPagoDesc: paymentMethodsSelected.map(m => `${m.toUpperCase()} (Q${breakdown[m].toFixed(2)})`).join(", "),
+      formaPagoDesc: paymentMethodsSelected.map(m => `${m.toUpperCase()} (Q${formatNumero(breakdown[m])})`).join(", "),
       cajero: usuarioActual?.user || "Admin"
     };
 
     setParkingHistory([cobro, ...parkingHistory]);
-    setParkingEntries(parkingEntries.filter(p => p.id !== checkoutOrder.id));
+    retirarDelParqueo(checkoutOrder.id, "cobrado");
 
     if (typeof addPuntosLealtad === "function" && checkoutOrder) {
       addPuntosLealtad(checkoutOrder.telefono || checkoutOrder.cliente, checkoutOrder.cliente, checkoutOrder.total, "parqueo");
@@ -1000,7 +1018,7 @@ export default function Parking({
 
   const eliminarRegistro = (id) => {
     if (window.confirm("¿Seguro que deseas eliminar este registro sin cobrar? (Uso de emergencia)")) {
-      setParkingEntries(parkingEntries.filter(p => p.id !== id));
+      retirarDelParqueo(id, "eliminado");
     }
   };
 
@@ -1015,12 +1033,12 @@ export default function Parking({
     setEditingRate(false);
   };
 
-  const filteredEntries = parkingEntries.filter(p => {
+  const filteredEntries = parkingActivos.filter(p => {
     const query = searchQuery.toLowerCase();
     return (
-      p.placa.toLowerCase().includes(query) ||
-      p.marca.toLowerCase().includes(query) ||
-      p.linea.toLowerCase().includes(query)
+      String(p.placa || "").toLowerCase().includes(query) ||
+      String(p.marca || "").toLowerCase().includes(query) ||
+      String(p.linea || "").toLowerCase().includes(query)
     );
   });
 

@@ -46,7 +46,7 @@ import {
   Sliders,
   CheckCircle2
 } from "lucide-react";
-import { formatMoney } from "../utils/storage";
+import { formatMoney, formatNumero } from "../utils/storage";
 import { DEFAULT_BRANDING, getCleanBranding } from "../utils/branding";
 import BrandingPaletteEditor from "./BrandingPaletteEditor";
 import { ALL_AVAILABLE_MODULES, DEFAULT_ACTIVE_MODULES, MODULE_PRESETS, isModuleActive } from "../utils/modulesConfig";
@@ -95,7 +95,7 @@ export default function SettingsComponent({
   vehiculos = [],
   setVehiculos,
   realtimeStatus,
-  papeleraSistema = [],
+  papeleraSistema: papeleraSistemaTodo = [],
   setPapeleraSistema,
   systemSnapshots = [],
   setSystemSnapshots,
@@ -109,6 +109,8 @@ export default function SettingsComponent({
   restoreMasterBackup,
   tenantId = "lospits"
 }) {
+  // 🗑️ En la Papelera visible no se muestran los registros internos ocultos (vehículos de parqueo cobrados)
+  const papeleraSistema = (Array.isArray(papeleraSistemaTodo) ? papeleraSistemaTodo : []).filter(p => p && !p.oculto);
   const [activeTab, setActiveTab] = useState("branding");
   const [trashFilter, setTrashFilter] = useState("todos");
   const [showPapeleraModal, setShowPapeleraModal] = useState(false);
@@ -2644,7 +2646,7 @@ export default function SettingsComponent({
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "6px" }}>
                 <span>0%</span>
                 <span>{progressPercent.toFixed(1)}% Alcanzado</span>
-                <span>100% (Q{breakEvenPoint.toFixed(2)})</span>
+                <span>100% (Q{formatNumero(breakEvenPoint)})</span>
               </div>
 
               {/* Status Alert Box */}
@@ -3071,6 +3073,7 @@ export default function SettingsComponent({
                         { id: "dashboard", label: "📊 Dashboard" },
                         { id: "citas", label: "📅 Citas & Agenda" },
                         { id: "taller", label: "🔧 Taller Mecánico" },
+                        { id: "crearOrdenes", label: "📝 Ingresar órdenes (mecánicos)" },
                         { id: "carwash", label: "🧼 Carwash" },
                         { id: "parqueo", label: "🚗 Parqueo" },
                         { id: "bodega", label: "📦 Bodega Taller" },
@@ -3613,6 +3616,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.app_data;`}
                     <option value="workshopInventory">Bodega Taller</option>
                     <option value="cafeteriaInventory">Cafetería</option>
                     <option value="compras">Compras</option>
+                    <option value="parkingEntries">Parqueo</option>
                   </select>
                 </div>
               </div>
@@ -4068,6 +4072,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.app_data;`}
                     { id: "dashboard", label: "📊 Dashboard" },
                     { id: "citas", label: "📅 Citas & Agenda" },
                     { id: "taller", label: "🔧 Taller Mecánico" },
+                    { id: "crearOrdenes", label: "📝 Ingresar órdenes (mecánicos)" },
                     { id: "carwash", label: "🧼 Carwash" },
                     { id: "parqueo", label: "🚗 Parqueo" },
                     { id: "bodega", label: "📦 Bodega Taller" },
@@ -4239,7 +4244,14 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.app_data;`}
         isOpen={showPapeleraModal} 
         onClose={() => setShowPapeleraModal(false)} 
         onDataRestored={() => {
-          if (setPapeleraSistema) setPapeleraSistema(getTrashItems());
+          if (setPapeleraSistema) setPapeleraSistema(prev => {
+            const t = getTrashItems();
+            const lista = Array.isArray(t) ? t : [];
+            const ids = new Set(lista.map(x => x && x.id));
+            // Conservar los registros internos ocultos (vehículos de parqueo ya cobrados)
+            const ocultos = (Array.isArray(prev) ? prev : []).filter(p => p && p.oculto && !ids.has(p.id));
+            return [...ocultos, ...lista];
+          });
         }} 
         currentUser={usuarioActual} 
       />

@@ -25,7 +25,7 @@ import {
   Calculator,
   FileText
 } from "lucide-react";
-import { formatMoney, getLocalStorage, setLocalStorage, setTenantLocalStorage } from "../utils/storage";
+import { formatMoney, getLocalStorage, setLocalStorage, setTenantLocalStorage, formatNumero } from "../utils/storage";
 import { calcOrderCommission, laborComisiona, findPreviousOrderForPlate, getMissingExternalCosts, getWarrantyPenalty } from "../utils/workshopCalc";
 import { syncKeyToCloud } from "../utils/supabase";
 import { findVehiclesForClient } from "../utils/vehicleHelpers";
@@ -38,6 +38,7 @@ import { AutorizacionClienteModal, RegistrosNoAutorizados } from "./Autorizacion
 import { totalesPresupuesto, filtrarPresupuesto, crearRegistroNoAutorizado, lineasDePresupuesto } from "../utils/cotizaciones";
 import { getPasosActivos, getSiguientePaso } from "../utils/pasosOrdenes";
 import { useEsMovil, leerEncargoMovil, borrarEncargosMovil } from "../utils/movil";
+import { puedeCrearOrdenes } from "../utils/permisosOrdenes";
 
 const prefixesList = ["P", "A", "MI", "CD", "C", "M", "DIS"];
 
@@ -369,7 +370,7 @@ export default function Taller({
               )}
             </div>
             <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#f87171" }}>
-              Penalización a descontar en planilla: Q{preview.toFixed(2)}
+              Penalización a descontar en planilla: Q{formatNumero(preview)}
             </div>
           </div>
         )}
@@ -808,7 +809,7 @@ export default function Taller({
                 <div class="banner-lbl">Monto Aportado (Anticipo)</div>
                 <div style="font-size: 12px; opacity: 0.9; margin-top: 2px;">Método de Pago: <strong>${(anticipo.metodoPago || "Efectivo").toUpperCase()}</strong></div>
               </div>
-              <div class="banner-val">Q${parseFloat(anticipo.monto).toFixed(2)}</div>
+              <div class="banner-val">Q${formatNumero(parseFloat(anticipo.monto))}</div>
             </div>
 
             <!-- Detalle del Anticipo -->
@@ -834,16 +835,16 @@ export default function Taller({
                 <tbody>
                   <tr>
                     <td>Total Trabajo Presupuestado</td>
-                    <td class="num">${totalOrden > 0 ? "Q" + totalOrden.toFixed(2) : "Pendiente de Presupuesto"}</td>
+                    <td class="num">${totalOrden > 0 ? "Q" + formatNumero(totalOrden) : "Pendiente de Presupuesto"}</td>
                   </tr>
                   <tr>
                     <td>Total Anticipos Acumulados a la Fecha</td>
-                    <td class="num" style="color: #16a34a;">- Q${totalAnticipos.toFixed(2)}</td>
+                    <td class="num" style="color: #16a34a;">- Q${formatNumero(totalAnticipos)}</td>
                   </tr>
                   <tr style="background: #f8fafc; font-weight: 800;">
                     <td>Saldo Pendiente por Liquidar</td>
                     <td class="num" style="color: ${saldoRestante > 0 ? '#dc2626' : '#16a34a'}; font-size: 13px;">
-                      ${totalOrden > 0 ? "Q" + saldoRestante.toFixed(2) : "Se calculará al autorizar presupuesto"}
+                      ${totalOrden > 0 ? "Q" + formatNumero(saldoRestante) : "Se calculará al autorizar presupuesto"}
                     </td>
                   </tr>
                 </tbody>
@@ -1338,21 +1339,21 @@ export default function Taller({
             <div class="kpi-grid">
               <div class="kpi-card">
                 <div class="kpi-lbl">Ventas Totales Netas</div>
-                <div class="kpi-val" style="color: #1e40af;">Q${fin.ventasNetas.toFixed(2)}</div>
+                <div class="kpi-val" style="color: #1e40af;">Q${formatNumero(fin.ventasNetas)}</div>
               </div>
               <div class="kpi-card">
                 <div class="kpi-lbl">Costos Directos Totales</div>
-                <div class="kpi-val" style="color: #b91c1c;">Q${fin.costosTotales.toFixed(2)}</div>
+                <div class="kpi-val" style="color: #b91c1c;">Q${formatNumero(fin.costosTotales)}</div>
               </div>
               <div class="kpi-card">
                 <div class="kpi-lbl">Utilidad Bruta (Ganancia)</div>
                 <div class="kpi-val" style="color: ${fin.utilidadBruta >= 0 ? '#16a34a' : '#dc2626'};">
-                  Q${fin.utilidadBruta.toFixed(2)}
+                  Q${formatNumero(fin.utilidadBruta)}
                 </div>
               </div>
               <div class="kpi-card">
                 <div class="kpi-lbl">Anticipos Recibidos</div>
-                <div class="kpi-val" style="color: #0f172a;">Q${totalAnticipos.toFixed(2)}</div>
+                <div class="kpi-val" style="color: #0f172a;">Q${formatNumero(totalAnticipos)}</div>
               </div>
             </div>
 
@@ -1378,11 +1379,11 @@ export default function Taller({
                     <td>${item.categoryLabel}</td>
                     <td><strong>${item.desc}</strong></td>
                     <td style="text-align: center;">${item.qty}</td>
-                    <td class="num">Q${item.costUnit.toFixed(2)}</td>
-                    <td class="num" style="color: #b91c1c;">Q${item.costTotal.toFixed(2)}</td>
-                    <td class="num">Q${item.saleUnit.toFixed(2)}</td>
-                    <td class="num" style="color: #1e40af;">Q${item.saleTotal.toFixed(2)}</td>
-                    <td class="num" style="color: ${item.profit >= 0 ? '#16a34a' : '#dc2626'}; font-weight: 800;">Q${item.profit.toFixed(2)}</td>
+                    <td class="num">Q${formatNumero(item.costUnit)}</td>
+                    <td class="num" style="color: #b91c1c;">Q${formatNumero(item.costTotal)}</td>
+                    <td class="num">Q${formatNumero(item.saleUnit)}</td>
+                    <td class="num" style="color: #1e40af;">Q${formatNumero(item.saleTotal)}</td>
+                    <td class="num" style="color: ${item.profit >= 0 ? '#16a34a' : '#dc2626'}; font-weight: 800;">Q${formatNumero(item.profit)}</td>
                     <td class="num">${item.margin.toFixed(1)}%</td>
                   </tr>
                 `).join("")}
@@ -1396,39 +1397,39 @@ export default function Taller({
               </h3>
 
               <div style="font-weight: 800; color: #1e40af; font-size: 11px; margin-bottom: 4px;">I. INGRESOS POR VENTAS (RECAUDACIÓN)</div>
-              <div class="statement-row"><span>• Mano de Obra Facturada:</span><span>Q${fin.ventasLabor.toFixed(2)}</span></div>
-              <div class="statement-row"><span>• Repuestos y Materiales:</span><span>Q${fin.ventasParts.toFixed(2)}</span></div>
-              <div class="statement-row"><span>• Insumos de Taller:</span><span>Q${fin.ventasInsumos.toFixed(2)}</span></div>
-              <div class="statement-row"><span>• Servicios Externos / Terceros:</span><span>Q${fin.ventasServices.toFixed(2)}</span></div>
-              ${fin.ventasTools > 0 ? `<div class="statement-row"><span>• Herramienta Especial / Torno:</span><span>Q${fin.ventasTools.toFixed(2)}</span></div>` : ""}
+              <div class="statement-row"><span>• Mano de Obra Facturada:</span><span>Q${formatNumero(fin.ventasLabor)}</span></div>
+              <div class="statement-row"><span>• Repuestos y Materiales:</span><span>Q${formatNumero(fin.ventasParts)}</span></div>
+              <div class="statement-row"><span>• Insumos de Taller:</span><span>Q${formatNumero(fin.ventasInsumos)}</span></div>
+              <div class="statement-row"><span>• Servicios Externos / Terceros:</span><span>Q${formatNumero(fin.ventasServices)}</span></div>
+              ${fin.ventasTools > 0 ? `<div class="statement-row"><span>• Herramienta Especial / Torno:</span><span>Q${formatNumero(fin.ventasTools)}</span></div>` : ""}
               <div class="statement-row" style="font-weight: 700; border-top: 1px solid #e2e8f0; padding-top: 4px;">
-                <span>Subtotal Ventas Brutas:</span><span>Q${fin.subtotalVentas.toFixed(2)}</span>
+                <span>Subtotal Ventas Brutas:</span><span>Q${formatNumero(fin.subtotalVentas)}</span>
               </div>
-              ${fin.descuento > 0 ? `<div class="statement-row" style="color: #dc2626;"><span>(-) Descuento Otorgado:</span><span>- Q${fin.descuento.toFixed(2)}</span></div>` : ""}
+              ${fin.descuento > 0 ? `<div class="statement-row" style="color: #dc2626;"><span>(-) Descuento Otorgado:</span><span>- Q${formatNumero(fin.descuento)}</span></div>` : ""}
               <div class="statement-row" style="font-weight: 800; color: #1e40af; border-top: 1px solid #cbd5e1; padding-top: 4px;">
-                <span>(=) TOTAL VENTAS NETAS:</span><span>Q${fin.ventasNetas.toFixed(2)}</span>
+                <span>(=) TOTAL VENTAS NETAS:</span><span>Q${formatNumero(fin.ventasNetas)}</span>
               </div>
 
               <div style="font-weight: 800; color: #b91c1c; font-size: 11px; margin: 12px 0 4px 0;">II. COSTOS DIRECTOS DE OPERACIÓN (COGS)</div>
-              <div class="statement-row"><span>• Costo de Repuestos Adquiridos:</span><span style="color: #b91c1c;">- Q${fin.costoParts.toFixed(2)}</span></div>
-              <div class="statement-row"><span>• Costo de Insumos:</span><span style="color: #b91c1c;">- Q${fin.costoInsumos.toFixed(2)}</span></div>
-              <div class="statement-row"><span>• Costo de Servicios Externos / Terceros:</span><span style="color: #b91c1c;">- Q${fin.costoServices.toFixed(2)}</span></div>
-              <div class="statement-row"><span>• Costo Mano de Obra (Comisión Técnico / Mecánico):</span><span style="color: #b91c1c;">- Q${fin.costoLabor.toFixed(2)}</span></div>
-              ${fin.costoTools > 0 ? `<div class="statement-row"><span>• Costo de Herramientas / Torno:</span><span style="color: #b91c1c;">- Q${fin.costoTools.toFixed(2)}</span></div>` : ""}
+              <div class="statement-row"><span>• Costo de Repuestos Adquiridos:</span><span style="color: #b91c1c;">- Q${formatNumero(fin.costoParts)}</span></div>
+              <div class="statement-row"><span>• Costo de Insumos:</span><span style="color: #b91c1c;">- Q${formatNumero(fin.costoInsumos)}</span></div>
+              <div class="statement-row"><span>• Costo de Servicios Externos / Terceros:</span><span style="color: #b91c1c;">- Q${formatNumero(fin.costoServices)}</span></div>
+              <div class="statement-row"><span>• Costo Mano de Obra (Comisión Técnico / Mecánico):</span><span style="color: #b91c1c;">- Q${formatNumero(fin.costoLabor)}</span></div>
+              ${fin.costoTools > 0 ? `<div class="statement-row"><span>• Costo de Herramientas / Torno:</span><span style="color: #b91c1c;">- Q${formatNumero(fin.costoTools)}</span></div>` : ""}
               <div class="statement-row" style="font-weight: 800; color: #b91c1c; border-top: 1px solid #cbd5e1; padding-top: 4px;">
-                <span>(=) TOTAL COSTOS DIRECTOS:</span><span>- Q${fin.costosTotales.toFixed(2)}</span>
+                <span>(=) TOTAL COSTOS DIRECTOS:</span><span>- Q${formatNumero(fin.costosTotales)}</span>
               </div>
 
               <div class="statement-row statement-total" style="color: ${fin.utilidadBruta >= 0 ? '#16a34a' : '#dc2626'};">
                 <span>(=) UTILIDAD BRUTA OPERATIVA DE LA ORDEN:</span>
-                <span>Q${fin.utilidadBruta.toFixed(2)} (${fin.margenBrutoPct.toFixed(1)}%)</span>
+                <span>Q${formatNumero(fin.utilidadBruta)} (${fin.margenBrutoPct.toFixed(1)}%)</span>
               </div>
 
               <div style="font-weight: 800; color: #0f172a; font-size: 11px; margin: 10px 0 4px 0;">III. ESTADO DE COBRO Y SALDOS</div>
-              <div class="statement-row"><span>Total Facturación Neta:</span><span>Q${fin.ventasNetas.toFixed(2)}</span></div>
-              <div class="statement-row" style="color: #16a34a;"><span>(-) Anticipos Cobrados a la Fecha:</span><span>- Q${totalAnticipos.toFixed(2)}</span></div>
+              <div class="statement-row"><span>Total Facturación Neta:</span><span>Q${formatNumero(fin.ventasNetas)}</span></div>
+              <div class="statement-row" style="color: #16a34a;"><span>(-) Anticipos Cobrados a la Fecha:</span><span>- Q${formatNumero(totalAnticipos)}</span></div>
               <div class="statement-row" style="font-weight: 800; color: ${saldoRestante > 0 ? '#dc2626' : '#16a34a'}; border-top: 1px dashed #cbd5e1; padding-top: 4px;">
-                <span>(=) SALDO PENDIENTE POR COBRAR:</span><span>Q${saldoRestante.toFixed(2)}</span>
+                <span>(=) SALDO PENDIENTE POR COBRAR:</span><span>Q${formatNumero(saldoRestante)}</span>
               </div>
             </div>
 
@@ -1710,6 +1711,8 @@ export default function Taller({
   const isWorker = userRolLower === "mecanico" || userRolLower === "mecánico";
   const isAdmin = !usuarioActual || !usuarioActual.rol || userRolLower.includes("admin") || userRolLower.includes("gerente") || userRolLower.includes("jefe");
   const isManager = isAdmin || userRolLower.includes("cajero") || userRolLower.includes("taller");
+  // 📝 Colaboradores con acceso a Taller (no mecánicos) también pueden ingresar órdenes nuevas
+  const puedeIngresarOrdenes = isManager || puedeCrearOrdenes(usuarioActual, "taller");
 
   // ❌ / ✂️ Respuesta del cliente al presupuesto (no autoriza / autoriza parcialmente)
   const confirmarAutorizacionCliente = (datos) => {
@@ -2701,7 +2704,7 @@ export default function Taller({
             estado: "Entregado",
             fecha: c.fecha || new Date().toISOString(),
             formaPago: breakdown,
-            formaPagoDesc: paymentMethodsSelected.map(m => `${m.toUpperCase()} (Q${breakdown[m].toFixed(2)})`).join(", "),
+            formaPagoDesc: paymentMethodsSelected.map(m => `${m.toUpperCase()} (Q${formatNumero(breakdown[m])})`).join(", "),
             cajero: usuarioActual?.user || "Admin"
           } : c)
         );
@@ -2776,9 +2779,9 @@ export default function Taller({
           nombreFacturacion: checkoutNombreFacturacion.trim(),
           formaPago: breakdown,
           formaPagoDesc: (() => {
-            const parts = paymentMethodsSelected.map(m => `${m.toUpperCase()} (Q${(breakdown[m] || 0).toFixed(2)})`);
+            const parts = paymentMethodsSelected.map(m => `${m.toUpperCase()} (Q${formatNumero((breakdown[m] || 0))})`);
             if (orderAnticiposTotal > 0) {
-              parts.unshift(`ANTICIPOS PREVIOS (Q${orderAnticiposTotal.toFixed(2)})`);
+              parts.unshift(`ANTICIPOS PREVIOS (Q${formatNumero(orderAnticiposTotal)})`);
             }
             return parts.length > 0 ? parts.join(", ") : "PAGADO CON ANTICIPOS";
           })(),
@@ -3380,7 +3383,7 @@ export default function Taller({
 
     if (discountType === "fixed" && discountFixed > 0) {
       discountAmount = Math.min(subTotal, discountFixed);
-      discountDesc = `Descuento Especial (-Q${discountAmount.toFixed(2)})`;
+      discountDesc = `Descuento Especial (-Q${formatNumero(discountAmount)})`;
     } else if (discountPct > 0) {
       discountAmount = subTotal * (discountPct / 100);
       discountDesc = `Descuento ${discountPct}%`;
@@ -3410,14 +3413,24 @@ export default function Taller({
 
     const totalTableHeight = processedItems.reduce((sum, item) => sum + item.dynamicRowH, 0);
 
+    // 📝 Notas personalizadas del presupuesto (aclaraciones específicas, se imprimen al final)
+    tempCtx.font = "13px 'Plus Jakarta Sans', sans-serif";
+    const notasPersonalizadasLineas = String(o.notasPresupuesto || "")
+      .split(/\r?\n/)
+      .map(t => t.trim())
+      .filter(Boolean)
+      .reduce((acc, parrafo) => acc.concat(wrapText(tempCtx, parrafo, 670)), []);
+    const notasExtra = notasPersonalizadasLineas.length > 0 ? 62 + notasPersonalizadasLineas.length * 19 : 0;
+
     // Set canvas dimensions dynamically based on total table height
     const canvas = document.createElement("canvas");
     canvas.width = 800;
     const tableHeaderY = 515;
     const tableEnd = tableHeaderY + 30 + totalTableHeight;
+    const finPagina1 = tableEnd + 390 + notasExtra;
     
     const page2Height = hasPhotos ? 325 + (Math.ceil(loadedCount / 2) * 310) : 0;
-    canvas.height = tableEnd + 390 + page2Height;
+    canvas.height = finPagina1 + page2Height;
     const ctx = canvas.getContext("2d");
     const brand = getCleanBranding(workshopBranding);
     applyDocumentTheme(ctx, brand); // 🎨 Paleta configurada en toda la hoja
@@ -3703,17 +3716,17 @@ export default function Taller({
         ctx.textAlign = "left";
         ctx.fillText("-Q", 640, middleY);
         ctx.textAlign = "right";
-        ctx.fillText(Math.abs(item.totalPrice).toFixed(2), 750, middleY);
+        ctx.fillText(formatNumero(Math.abs(item.totalPrice)), 750, middleY);
       } else {
         ctx.textAlign = "left";
         ctx.fillText("Q", 515, middleY);
         ctx.textAlign = "right";
-        ctx.fillText(item.unitPrice.toFixed(2), 620, middleY);
+        ctx.fillText(formatNumero(item.unitPrice), 620, middleY);
         
         ctx.textAlign = "left";
         ctx.fillText("Q", 640, middleY);
         ctx.textAlign = "right";
-        ctx.fillText(item.totalPrice.toFixed(2), 750, middleY);
+        ctx.fillText(formatNumero(item.totalPrice), 750, middleY);
       }
       
       ctx.textAlign = "left";
@@ -3775,10 +3788,32 @@ export default function Taller({
     bulletPoints.forEach((text, i) => {
       ctx.fillText("•  " + text, 105, notesY + 48 + (i * 20));
     });
+
+    // 9b. Notas personalizadas del presupuesto
+    if (notasExtra > 0) {
+      const nY = notesY + 145;
+      const nH = notasExtra - 12;
+      ctx.fillStyle = "#fffbeb";
+      drawRoundedRect(ctx, 40, nY, 720, nH, 10);
+      ctx.fill();
+      ctx.strokeStyle = "#f59e0b";
+      ctx.lineWidth = 1.5;
+      drawRoundedRect(ctx, 40, nY, 720, nH, 10);
+      ctx.stroke();
+      ctx.fillStyle = "#000000";
+      ctx.font = "bold 14px 'Plus Jakarta Sans', sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText("NOTAS Y ACLARACIONES", 60, nY + 26);
+      ctx.font = "13px 'Plus Jakarta Sans', sans-serif";
+      ctx.fillStyle = "#1f2937";
+      notasPersonalizadasLineas.forEach((linea, i) => {
+        ctx.fillText(linea, 60, nY + 50 + (i * 19));
+      });
+    }
     
     // 10. Footer Section
-    const footerY = notesY + 160;
-    const footerHeight = (tableEnd + 390) - footerY;
+    const footerY = notesY + 160 + notasExtra;
+    const footerHeight = finPagina1 - footerY;
     ctx.fillStyle = "#0a0c10";
     ctx.fillRect(0, footerY, canvas.width, footerHeight);
     
@@ -3854,7 +3889,7 @@ export default function Taller({
     
     // Draw Page 2 if hasPhotos is true
     if (hasPhotos) {
-      const page2Start = tableEnd + 390;
+      const page2Start = finPagina1;
       
       // 1. Visual Page Divider
       ctx.fillStyle = "#f3f4f6";
@@ -4724,15 +4759,15 @@ export default function Taller({
       </div>
 
       {/* Main Layout Grid */}
-      <div style={isManager ? styles.managerGrid : styles.workerGrid}>
+      <div style={puedeIngresarOrdenes ? styles.managerGrid : styles.workerGrid} className={puedeIngresarOrdenes ? "taller-grid-ingreso" : ""}>
         
-        {/* Left Column: Create Order Form (Only for Admin/Cajero) */}
-        {isManager && esMovil && !formMovilAbierto && (
+        {/* Left Column: Create Order Form (Admin/Cajero y colaboradores autorizados) */}
+        {puedeIngresarOrdenes && esMovil && !formMovilAbierto && (
           <button id="taller-nueva-orden-movil" type="button" className="boton-nuevo-movil" onClick={() => setFormMovilAbierto(true)}>
             <Plus size={22} /> Nueva orden de reparación
           </button>
         )}
-        {isManager && (!esMovil || formMovilAbierto) && (
+        {puedeIngresarOrdenes && (!esMovil || formMovilAbierto) && (
           <div className="glass-panel" style={styles.formCard}>
             <div style={styles.formHeader}>
               <Plus size={20} color="var(--color-primary)" />
@@ -6950,7 +6985,7 @@ export default function Taller({
                         <option value="" disabled>-- Cargar Servicio de Carwash --</option>
                         {carwashPresets.map((p, idx) => (
                           <option key={idx} value={p.tipo}>
-                            🧼 {p.tipo} (Q{p.precio.toFixed(2)})
+                            🧼 {p.tipo} (Q{formatNumero(p.precio)})
                           </option>
                         ))}
                       </select>
@@ -7025,7 +7060,7 @@ export default function Taller({
                           )}
                           {Array.isArray(item.pagos) && item.pagos.length > 0 && (
                             <span style={{ fontSize: "0.72rem", color: "#34d399" }}>
-                              Pagado al proveedor: Q{item.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0).toFixed(2)}
+                              Pagado al proveedor: Q{formatNumero(item.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0))}
                             </span>
                           )}
                         </div>
@@ -7280,7 +7315,7 @@ export default function Taller({
 
                 if (discountType === "fixed" && rawVal > 0) {
                   discountAmount = Math.min(subTotal, rawVal);
-                  discountLabelText = `Descuento Especial (-Q${discountAmount.toFixed(2)})`;
+                  discountLabelText = `Descuento Especial (-Q${formatNumero(discountAmount)})`;
                 } else if (discountType === "percent" && rawVal > 0) {
                   discountAmount = subTotal * (rawVal / 100);
                   discountLabelText = `Descuento (${rawVal}%)`;
@@ -7495,7 +7530,7 @@ export default function Taller({
                     <option value="" disabled>-- Selecciona un Servicio de Carwash --</option>
                     {carwashPresets.map((p, idx) => (
                       <option key={idx} value={p.tipo}>
-                        🧼 {p.tipo} (Q{p.precio.toFixed(2)})
+                        🧼 {p.tipo} (Q{formatNumero(p.precio)})
                       </option>
                     ))}
                   </select>
@@ -7522,7 +7557,7 @@ export default function Taller({
                         onMouseDown={() => selectQuickSuggestion(item)}
                         style={{ padding: "8px 12px", cursor: "pointer", color: "#fff" }}
                       >
-                        <strong>{item.name}</strong> {item.brand ? `(${item.brand})` : ""} - Stock: {item.quantity} - Q{item.salePrice}
+                        <strong>{item.name}</strong> {item.brand ? `(${item.brand})` : ""} - Stock: {item.quantity} - {formatMoney(item.salePrice)}
                       </li>
                     ))}
                   </ul>
@@ -7833,7 +7868,7 @@ export default function Taller({
 
                 if (discountType === "fixed" && discountFixed > 0) {
                   discountAmount = Math.min(subTotal, discountFixed);
-                  labelText = `Descuento Especial (-Q${discountAmount.toFixed(2)})`;
+                  labelText = `Descuento Especial (-Q${formatNumero(discountAmount)})`;
                 } else if (discountPct > 0) {
                   discountAmount = subTotal * (discountPct / 100);
                   labelText = `Descuento (${discountPct}%)`;
@@ -7881,6 +7916,34 @@ export default function Taller({
                 </span>
               </div>
 
+              {/* 📝 Notas personalizadas: se imprimen en la parte de abajo del presupuesto */}
+              <div style={{ width: "100%", textAlign: "left", backgroundColor: "rgba(245, 158, 11, 0.06)", border: "1px solid rgba(245, 158, 11, 0.3)", borderRadius: "10px", padding: "12px" }}>
+                <label htmlFor="notas-presupuesto" style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "#fbbf24", marginBottom: "6px" }}>
+                  📝 Notas y aclaraciones del presupuesto
+                </label>
+                <textarea
+                  id="notas-presupuesto"
+                  className="input-field"
+                  rows={3}
+                  placeholder="Ej. El precio del repuesto puede variar según el proveedor. No incluye alineación. Garantía de 3 meses en mano de obra..."
+                  value={presupuestoFormalOrder.notasPresupuesto || ""}
+                  onChange={(e) => {
+                    const texto = e.target.value;
+                    setPresupuestoFormalOrder(prev => (prev ? { ...prev, notasPresupuesto: texto } : prev));
+                  }}
+                  onBlur={(e) => {
+                    const texto = e.target.value;
+                    const id = presupuestoFormalOrder.id;
+                    setOrdenes(prev => (prev || []).map(x => String(x.id) === String(id)
+                      ? ((x.notasPresupuesto || "") === texto ? x : { ...x, notasPresupuesto: texto, updatedAt: new Date().toISOString() })
+                      : x));
+                  }}
+                  style={{ width: "100%", resize: "vertical", minHeight: "70px", fontSize: "0.9rem" }}
+                />
+                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                  Se guardan en la orden y aparecen al final del presupuesto en PDF / WhatsApp.
+                </span>
+              </div>
               <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", flexWrap: "wrap", alignItems: "center", width: "100%" }}>
                 {!presupuestoFormalOrder.diagnosticoAutorizado && (
                   <div style={{
