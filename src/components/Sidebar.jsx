@@ -418,55 +418,74 @@ export default function Sidebar({
           margin: "8px 12px 10px 12px",
           padding: "10px 12px",
           borderRadius: "10px",
-          backgroundColor: (activeTenantId || "lospits") === "pruebas" ? "rgba(245, 158, 11, 0.15)" : "rgba(59, 130, 246, 0.15)",
-          border: (activeTenantId || "lospits") === "pruebas" ? "1px solid rgba(245, 158, 11, 0.4)" : "1px solid rgba(59, 130, 246, 0.4)",
+          backgroundColor: (activeTenantId || "lospits") === "pruebas" ? "rgba(245, 158, 11, 0.15)" : (activeTenantId || "lospits") === "autozoom" ? "rgba(139, 92, 246, 0.15)" : "rgba(59, 130, 246, 0.15)",
+          border: (activeTenantId || "lospits") === "pruebas" ? "1px solid rgba(245, 158, 11, 0.4)" : (activeTenantId || "lospits") === "autozoom" ? "1px solid rgba(139, 92, 246, 0.4)" : "1px solid rgba(59, 130, 246, 0.4)",
           display: "flex",
           flexDirection: "column",
           gap: "6px"
         }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ fontSize: "0.68rem", fontWeight: "800", textTransform: "uppercase", letterSpacing: "1px", color: (activeTenantId || "lospits") === "pruebas" ? "#fbbf24" : "#60a5fa" }}>
-              {(activeTenantId || "lospits") === "pruebas" ? "🧪 TALLER DE PRUEBAS" : "🏢 TALLER OFICIAL"}
+            <span style={{ fontSize: "0.68rem", fontWeight: "800", textTransform: "uppercase", letterSpacing: "1px", color: (activeTenantId || "lospits") === "pruebas" ? "#fbbf24" : (activeTenantId || "lospits") === "autozoom" ? "#a78bfa" : "#60a5fa" }}>
+              {(activeTenantId || "lospits") === "pruebas" ? "🧪 TALLER DE PRUEBAS" : (activeTenantId || "lospits") === "autozoom" ? "🚗 AUTOZOOM" : "🏢 TALLER OFICIAL"}
             </span>
-            <span style={{ fontSize: "0.65rem", padding: "2px 6px", borderRadius: "4px", backgroundColor: (activeTenantId || "lospits") === "pruebas" ? "#d97706" : "#2563eb", color: "#fff", fontWeight: "700" }}>
+            <span style={{ fontSize: "0.65rem", padding: "2px 6px", borderRadius: "4px", backgroundColor: (activeTenantId || "lospits") === "pruebas" ? "#d97706" : (activeTenantId || "lospits") === "autozoom" ? "#7c3aed" : "#2563eb", color: "#fff", fontWeight: "700" }}>
               {(activeTenantId || "lospits").toUpperCase()}
             </span>
           </div>
           {onTenantChange && (
-            <div style={{ display: "flex", gap: "6px", marginTop: "2px" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginTop: "2px" }}>
+              <div style={{ display: "flex", gap: "6px" }}>
+                <button
+                  type="button"
+                  onClick={() => onTenantChange("lospits")}
+                  style={{
+                    flex: 1,
+                    padding: "5px 6px",
+                    fontSize: "0.7rem",
+                    borderRadius: "5px",
+                    border: (activeTenantId || "lospits") === "lospits" ? "1px solid #3b82f6" : "1px solid rgba(255,255,255,0.1)",
+                    backgroundColor: (activeTenantId || "lospits") === "lospits" ? "#2563eb" : "rgba(0,0,0,0.25)",
+                    color: "#fff",
+                    cursor: "pointer",
+                    fontWeight: "600"
+                  }}
+                >
+                  🏢 Los Pits
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onTenantChange("pruebas")}
+                  style={{
+                    flex: 1,
+                    padding: "5px 6px",
+                    fontSize: "0.7rem",
+                    borderRadius: "5px",
+                    border: (activeTenantId || "lospits") === "pruebas" ? "1px solid #f59e0b" : "1px solid rgba(255,255,255,0.1)",
+                    backgroundColor: (activeTenantId || "lospits") === "pruebas" ? "#d97706" : "rgba(0,0,0,0.25)",
+                    color: "#fff",
+                    cursor: "pointer",
+                    fontWeight: "600"
+                  }}
+                >
+                  🧪 Pruebas
+                </button>
+              </div>
               <button
                 type="button"
-                onClick={() => onTenantChange("lospits")}
+                onClick={() => onTenantChange("autozoom")}
                 style={{
-                  flex: 1,
+                  width: "100%",
                   padding: "5px 6px",
                   fontSize: "0.7rem",
                   borderRadius: "5px",
-                  border: (activeTenantId || "lospits") === "lospits" ? "1px solid #3b82f6" : "1px solid rgba(255,255,255,0.1)",
-                  backgroundColor: (activeTenantId || "lospits") === "lospits" ? "#2563eb" : "rgba(0,0,0,0.25)",
+                  border: (activeTenantId || "lospits") === "autozoom" ? "1px solid #8b5cf6" : "1px solid rgba(255,255,255,0.1)",
+                  backgroundColor: (activeTenantId || "lospits") === "autozoom" ? "#7c3aed" : "rgba(0,0,0,0.25)",
                   color: "#fff",
                   cursor: "pointer",
                   fontWeight: "600"
                 }}
               >
-                🏢 Los Pits
-              </button>
-              <button
-                type="button"
-                onClick={() => onTenantChange("pruebas")}
-                style={{
-                  flex: 1,
-                  padding: "5px 6px",
-                  fontSize: "0.7rem",
-                  borderRadius: "5px",
-                  border: (activeTenantId || "lospits") === "pruebas" ? "1px solid #f59e0b" : "1px solid rgba(255,255,255,0.1)",
-                  backgroundColor: (activeTenantId || "lospits") === "pruebas" ? "#d97706" : "rgba(0,0,0,0.25)",
-                  color: "#fff",
-                  cursor: "pointer",
-                  fontWeight: "600"
-                }}
-              >
-                🧪 Pruebas
+                🚗 Autozoom
               </button>
             </div>
           )}

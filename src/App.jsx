@@ -648,6 +648,14 @@ export default function App() {
   const handleSwitchTenant = (newTenant) => {
     isTenantSwitchingRef.current = true;
     const clean = (newTenant || "lospits").toLowerCase().trim().replace(/[^a-z0-9_-]/g, "");
+    // 🔄 Limpiar la sesión actual para que al recargar no la use para sobrescribir el tenant
+    clearSession();
+    // Limpiar también la sesión del usuario guardada para el taller actual
+    try {
+      const scopedSessionKey = `${tenantId}_usuarioActual`;
+      localStorage.removeItem(scopedSessionKey);
+      localStorage.removeItem("usuarioActual");
+    } catch (e) {}
     setTenantId(clean);
     setLocalStorage("current_tenant_id", clean);
     window.location.reload();
@@ -2899,7 +2907,7 @@ export default function App() {
         realtimeStatus={realtimeStatus}
         handleForceSyncMobile={forcePullFromCloud}
         activeTenantId={tenantId}
-        onTenantChange={isSuperAdminSession() ? handleSwitchTenant : null}
+        onTenantChange={(isSuperAdminSession() || (usuarioActivo && (usuarioActivo.user || "").toLowerCase().trim() === "admin")) ? handleSwitchTenant : null}
         activeModules={activeModules}
         badges={{ taller: missingExternalCostCount, cuentas: cuentasVencidasCount, recompensas: userHasPermission(usuarioActivo, "recompensas") ? puntosPorVencerCount : 0 }}
       />
