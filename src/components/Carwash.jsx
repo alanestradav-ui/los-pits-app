@@ -2538,7 +2538,7 @@ export default function Carwash({
                                 <input
                                   type="checkbox"
                                   checked={isChecked}
-                                  disabled={!isManager}
+                                  disabled={!(isManager || isWorker || puedeIngresarOrdenes) || (!isManager && c.estado === "Entregado")}
                                   onChange={() => {
                                     const newList = isChecked
                                       ? washerList.filter(val => val !== l)

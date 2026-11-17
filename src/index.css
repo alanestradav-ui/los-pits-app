@@ -621,9 +621,19 @@ html {
   h1 { font-size: 1.35rem !important; }
   h2 { font-size: 1.2rem !important; }
 
-  /* 📱 Teléfonos angostos / gama baja: ningún elemento puede obligar a salirse de la pantalla */
-  .app-main [style*="min-width"]:not(table):not(th):not(td),
-  [style*="position: fixed"][style*="z-index"] [style*="min-width"]:not(table):not(th):not(td) {
+  /* 📱 Teléfonos angostos / gama baja: solo los anchos mínimos GRANDES (≥ 200px) se liberan,
+     los pequeños (botones de luces del tablero, chips, etc.) conservan su tamaño */
+  .app-main [style*="min-width: 200px"], .app-main [style*="min-width: 220px"],
+  .app-main [style*="min-width: 250px"], .app-main [style*="min-width: 260px"],
+  .app-main [style*="min-width: 270px"], .app-main [style*="min-width: 280px"],
+  .app-main [style*="min-width: 300px"], .app-main [style*="min-width: 320px"],
+  .app-main [style*="min-width: 350px"], .app-main [style*="min-width: 400px"],
+  [style*="position: fixed"][style*="z-index"] [style*="min-width: 200px"],
+  [style*="position: fixed"][style*="z-index"] [style*="min-width: 220px"],
+  [style*="position: fixed"][style*="z-index"] [style*="min-width: 250px"],
+  [style*="position: fixed"][style*="z-index"] [style*="min-width: 260px"],
+  [style*="position: fixed"][style*="z-index"] [style*="min-width: 270px"],
+  [style*="position: fixed"][style*="z-index"] [style*="min-width: 300px"] {
     min-width: 0 !important;
   }
   .app-main [style*="width"][style*="px"]:not(table):not(th):not(td):not(img):not(canvas):not(svg):not(input[type="checkbox"]):not(input[type="radio"]) {
