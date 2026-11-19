@@ -1657,6 +1657,16 @@ export default function Taller({
   
   const [cajeroComisionApplies, setCajeroComisionApplies] = useState(false);
   const [budgetCajeroComisionApplies, setBudgetCajeroComisionApplies] = useState(false);
+  // 📝 Notas y aclaraciones del presupuesto (editables desde "Editar Presupuesto")
+  const [budgetNotas, setBudgetNotas] = useState("");
+  const budgetNotasOrdenIdRef = useRef(null);
+  useEffect(() => {
+    const id = budgetModalOrder ? String(budgetModalOrder.id) : null;
+    if (id !== budgetNotasOrdenIdRef.current) {
+      budgetNotasOrdenIdRef.current = id;
+      setBudgetNotas(budgetModalOrder ? (budgetModalOrder.notasPresupuesto || "") : "");
+    }
+  }, [budgetModalOrder]);
   
   const [inputInsumoDesc, setInputInsumoDesc] = useState("");
   const [inputInsumoQty, setInputInsumoQty] = useState("1");
@@ -3060,6 +3070,7 @@ export default function Taller({
             presupuesto: updatedBudget,
             fotosDiagnostico: diagnosticPhotos,
             cajeroComisionApplies: budgetCajeroComisionApplies,
+            notasPresupuesto: budgetNotas,
             total: granTotal,
             comision: calculateOrderCommission({ ...o, presupuesto: updatedBudget, total: granTotal }),
             diagnosticoAutorizado: o.diagnosticoAutorizado !== undefined ? o.diagnosticoAutorizado : false,
@@ -7299,6 +7310,25 @@ export default function Taller({
                 </div>
               </>
             )}
+
+            {/* 📝 Notas técnicas / comentarios personalizados del presupuesto */}
+            <div style={{ width: "100%", textAlign: "left", backgroundColor: "rgba(245, 158, 11, 0.06)", border: "1px solid rgba(245, 158, 11, 0.3)", borderRadius: "10px", padding: "12px", marginTop: "12px", boxSizing: "border-box" }}>
+              <label htmlFor="notas-presupuesto-editor" style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "#fbbf24", marginBottom: "6px" }}>
+                📝 Notas técnicas y comentarios del presupuesto
+              </label>
+              <textarea
+                id="notas-presupuesto-editor"
+                className="input-field"
+                rows={3}
+                placeholder="Ej. El precio del repuesto puede variar según el proveedor. No incluye alineación. Garantía de 3 meses en mano de obra..."
+                value={budgetNotas}
+                onChange={(e) => setBudgetNotas(e.target.value)}
+                style={{ width: "100%", resize: "vertical", minHeight: "70px", fontSize: "0.9rem", boxSizing: "border-box" }}
+              />
+              <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                Se guardan al presionar "Guardar Presupuesto" y aparecen al final del presupuesto en PDF / WhatsApp.
+              </span>
+            </div>
 
             {/* Total Summary */}
             <div style={styles.modalSummary}>
