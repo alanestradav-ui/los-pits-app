@@ -6434,7 +6434,7 @@ export default function Taller({
       {/* Detailed Budget Modal Overlay */}
       {budgetModalOrder && createPortal(
         <div style={styles.modalOverlay}>
-          <div className="glass-panel" style={styles.modalContent}>
+          <div className="glass-panel" style={{ ...styles.modalContent, width: "96%", maxWidth: "980px", maxHeight: "calc(var(--alto-app, 100vh) - 24px)", boxSizing: "border-box" }}>
             <div style={styles.modalHeader}>
               <h2 style={{ fontSize: "1.4rem", fontWeight: "800", color: "#fff" }}>
                 Elaborar Presupuesto: {budgetModalOrder.cliente}
@@ -6444,7 +6444,7 @@ export default function Taller({
               </p>
             </div>
 
-            <div style={styles.modalBody}>
+            <div style={{ ...styles.modalBody, overflowY: "visible", flexShrink: 0, paddingRight: 0 }}>
               {/* 📦 Paquetes de Servicio: cargan mano de obra, repuestos e insumos recurrentes */}
               {(() => {
                 const paquetesActivos = (paquetesServicios || []).filter(p => p && !p.eliminado);
@@ -6533,7 +6533,7 @@ export default function Taller({
                 <ul style={styles.budgetList}>
                   {(currentBudget.labor || []).map((item, idx) => (
                     <li key={idx} style={styles.budgetItem}>
-                      <span>{item.desc}</span>
+                      <span style={{ flex: "1 1 180px", minWidth: 0 }}>{item.desc}</span>
                       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                         {!isWorker ? (
                           <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
@@ -10211,18 +10211,21 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     gap: "6px",
-    maxHeight: "120px",
-    overflowY: "auto",
+    maxHeight: "none",
+    overflowY: "visible",
   },
   budgetItem: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: "8px 12px",
+    flexWrap: "wrap",
+    gap: "8px",
+    padding: "10px 12px",
     borderRadius: "8px",
     backgroundColor: "rgba(255, 255, 255, 0.02)",
     border: "1px solid rgba(255, 255, 255, 0.04)",
-    fontSize: "0.85rem",
+    fontSize: "0.9rem",
+    wordBreak: "break-word",
   },
   btnDeleteBudget: {
     background: "transparent",

@@ -436,8 +436,8 @@ export default function Compras({
               />
             </div>
 
-            <div style={{ display: "flex", gap: "10px" }}>
-              <div style={{ ...styles.inputGroup, flex: 1 }}>
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <div style={{ ...styles.inputGroup, flex: "1 1 140px", minWidth: 0 }}>
                 <label style={styles.label}>Total Compra (Q) *</label>
                 <input
                   type="number"
@@ -450,7 +450,7 @@ export default function Compras({
                   required
                 />
               </div>
-              <div style={{ ...styles.inputGroup, flex: 1 }}>
+              <div style={{ ...styles.inputGroup, flex: "1 1 140px", minWidth: 0 }}>
                 <label style={styles.label}>Fecha *</label>
                 <input
                   type="date"
@@ -462,8 +462,8 @@ export default function Compras({
               </div>
             </div>
 
-            <div style={{ display: "flex", gap: "10px" }}>
-              <div style={{ ...styles.inputGroup, flex: 1 }}>
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <div style={{ ...styles.inputGroup, flex: "1 1 140px", minWidth: 0 }}>
                 <label style={styles.label}>Forma de Pago</label>
                 <select
                   className="select-field"
@@ -478,7 +478,7 @@ export default function Compras({
                   <option value="credito">📋 Crédito (Cuentas por Pagar)</option>
                 </select>
               </div>
-              <div style={{ ...styles.inputGroup, flex: 1 }}>
+              <div style={{ ...styles.inputGroup, flex: "1 1 140px", minWidth: 0 }}>
                 <label style={styles.label}>Asignar a Módulo</label>
                 <select
                   className="select-field"
@@ -498,7 +498,7 @@ export default function Compras({
 
             <div style={styles.inputGroup}>
               <label style={styles.label}>Tipo de Gasto</label>
-              <div style={{ display: "flex", gap: "15px", marginTop: "5px" }}>
+              <div style={{ display: "flex", gap: "10px 15px", marginTop: "5px", flexWrap: "wrap" }}>
                 {[
                   { value: "gasto", label: "🧾 Gasto General" },
                   { value: "herramienta", label: "🛠️ Herramienta" },
@@ -555,9 +555,9 @@ export default function Compras({
                       </div>
                     )}
 
-                    <div style={{ display: "flex", gap: "10px" }}>
+                    <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                       {((tipoGasto === "insumo" && targetInventory === "taller") || tipoGasto === "herramienta") && (
-                        <div style={{ ...styles.inputGroup, flex: 1 }}>
+                        <div style={{ ...styles.inputGroup, flex: "1 1 140px", minWidth: 0 }}>
                           <label style={styles.label}>Código del Item *</label>
                           <input
                             placeholder="Ej. ROT-05"
@@ -568,7 +568,7 @@ export default function Compras({
                           />
                         </div>
                       )}
-                      <div style={{ ...styles.inputGroup, flex: 2 }}>
+                      <div style={{ ...styles.inputGroup, flex: "2 1 140px", minWidth: 0 }}>
                         <label style={styles.label}>Nombre del Item *</label>
                         <input
                           placeholder="Nombre descriptivo"
@@ -579,8 +579,8 @@ export default function Compras({
                       </div>
                     </div>
 
-                    <div style={{ display: "flex", gap: "10px" }}>
-                      <div style={{ ...styles.inputGroup, flex: 1 }}>
+                    <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                      <div style={{ ...styles.inputGroup, flex: "1 1 140px", minWidth: 0 }}>
                         <label style={styles.label}>Cantidad a Cargar *</label>
                         <input
                           type="number"
@@ -590,7 +590,7 @@ export default function Compras({
                           min="1"
                         />
                       </div>
-                      <div style={{ ...styles.inputGroup, flex: 1.5 }}>
+                      <div style={{ ...styles.inputGroup, flex: "1.5 1 140px", minWidth: 0 }}>
                         <label style={styles.label}>Costo Unitario Calculado</label>
                         <input
                           className="input-field"
@@ -602,8 +602,8 @@ export default function Compras({
 
                     {/* Additional fields for specific inventories */}
                     {tipoGasto === "insumo" && (
-                      <div style={{ display: "flex", gap: "10px" }}>
-                        <div style={{ ...styles.inputGroup, flex: 1 }}>
+                      <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                        <div style={{ ...styles.inputGroup, flex: "1 1 140px", minWidth: 0 }}>
                           <label style={styles.label}>Marca / Fabricante</label>
                           <input
                             placeholder="Ej. Toyota, Bosch"
@@ -613,7 +613,7 @@ export default function Compras({
                           />
                         </div>
                         {targetInventory !== "carwash" && (
-                          <div style={{ ...styles.inputGroup, flex: 1 }}>
+                          <div style={{ ...styles.inputGroup, flex: "1 1 140px", minWidth: 0 }}>
                             <label style={styles.label}>Presentación / Tamaño</label>
                             <input
                               placeholder="Ej. Caja, Galón, Unidad"
@@ -627,8 +627,8 @@ export default function Compras({
                     )}
 
                     {tipoGasto === "insumo" && targetInventory !== "carwash" && (
-                      <div style={{ display: "flex", gap: "10px" }}>
-                        <div style={{ ...styles.inputGroup, flex: 1 }}>
+                      <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                        <div style={{ ...styles.inputGroup, flex: "1 1 140px", minWidth: 0 }}>
                           <label style={styles.label}>Precio Venta (Q) *</label>
                           <input
                             type="number"
@@ -640,7 +640,7 @@ export default function Compras({
                             step="any"
                           />
                         </div>
-                        <div style={{ ...styles.inputGroup, flex: 1 }}>
+                        <div style={{ ...styles.inputGroup, flex: "1 1 140px", minWidth: 0 }}>
                           <label style={styles.label}>Stock Mínimo (Alerta)</label>
                           <input
                             type="number"
@@ -655,8 +655,8 @@ export default function Compras({
 
                     {tipoGasto === "herramienta" && (
                       <>
-                        <div style={{ display: "flex", gap: "10px" }}>
-                          <div style={{ ...styles.inputGroup, flex: 1 }}>
+                        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                          <div style={{ ...styles.inputGroup, flex: "1 1 140px", minWidth: 0 }}>
                             <label style={styles.label}>Estado Inicial</label>
                             <select
                               className="select-field"
@@ -671,7 +671,7 @@ export default function Compras({
                               <option value="Malo">Malo</option>
                             </select>
                           </div>
-                          <div style={{ ...styles.inputGroup, flex: 1.5 }}>
+                          <div style={{ ...styles.inputGroup, flex: "1.5 1 140px", minWidth: 0 }}>
                             <label style={styles.label}>Ubicación física</label>
                             <input
                               placeholder="Ej. Estante A, Caja de llaves"

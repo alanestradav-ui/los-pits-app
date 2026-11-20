@@ -295,6 +295,16 @@ p {
     grid-template-columns: 1fr;
   }
 }
+/* 📱 En celular la columna nunca se ensancha por una tabla ancha (la tabla se desplaza dentro de su caja) */
+@media (max-width: 768px) {
+  .responsive-inventory-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .responsive-inventory-grid > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
 
 .responsive-dashboard-grid {
   display: grid;
